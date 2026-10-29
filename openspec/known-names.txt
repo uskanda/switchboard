@@ -1,0 +1,7 @@
+# Names that are real but live outside this repository: Claude Code's files, flags and fields, and the
+# GitHub API's fields. The terminology check of the development harness treats these as existing.
+# Add a name here only after confirming it is real (docs/ROADMAP.md records the Claude Code ones). One per line.
+CLAUDE.md
+.mcp.json
+.claude/
+settings.json
