@@ -1,0 +1,50 @@
+# switchboard 設定例
+# トークンはここに書かない。OS のキーチェーン等から読む（token_ref で参照名を指定）。
+
+version: 1
+
+host:
+  name: macbook-air          # この端末の名前（隠しマーカーと担当判定に使う）
+
+forges:
+  github:
+    enabled: true
+    token_ref: switchboard/github   # キーチェーンの項目名
+    search_scope: "user:YOUR_GITHUB_USER"   # 受信箱の検索範囲（org: も可）
+  gitlab:
+    enabled: false
+    base_url: https://gitlab.com
+    token_ref: switchboard/gitlab
+
+trusted_authors:              # 指示として採用するコメントの投稿者
+  github: [YOUR_GITHUB_USER]
+  gitlab: [YOUR_GITLAB_USER]
+
+labels:
+  ready: "agent:ready"
+  running: "agent:running"
+  waiting: "agent:waiting"
+  done: "agent:done"
+
+projects:
+  - ref: gh:YOUR_GITHUB_USER/example-repo
+    path: ~/Repos/example-repo
+    host: macbook-air         # 実行する端末
+  # - ref: gl:group/project
+  #   path: ~/Repos/project
+  #   host: home-server
+
+agent:
+  mode: poll                  # poll | relay
+  poll_interval: 60s
+  reconcile_interval: 10m     # relay モード時の取りこぼし照合
+  worktree_branch_prefix: switchboard/issue-
+  timeout: 45m
+  resume: opportunistic       # never | opportunistic
+
+claude:
+  permission_settings: ./config/claude-permissions.json   # 許可ツール・拒否ルール
+  extra_instructions: ./config/agent-prompt.md
+
+relay:
+  url: https://relay.example.ts.net/events   # Phase 4 以降
