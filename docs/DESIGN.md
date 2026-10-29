@@ -5,14 +5,14 @@
 
 表記：
 - 「〔検証 Vn〕」は ROADMAP.md の検証項目（V1〜V6）または本書で追加する検証項目（V7〜、11 章）で確認するまで前提にしない事項
-- 「〔確認済〕」は公式ドキュメントで確認した事項（確認日は 11 章に記載）
+- 「〔確認済 Cn〕」は公式ドキュメントで確認した事項（一覧と出典は 11.4）。文書で確認しただけで、実機では確かめていない
 
 ---
 
 ## 1. 設計の要点
 
 1. **Go の単一バイナリ**（ADR-010 案）。CLI・常駐エージェント・フック・中継をすべて `switchboard` のサブコマンドにする
-2. **`claude -p` の終了を状態遷移点にする**。ヘッドレス実行は「止まって待つ」のではなく「質問を残して終了する」。終了時の出力（終了プロトコル、5 章）から waiting / done / error を判定する
+2. **`claude -p` の終了を状態遷移点にする**。ヘッドレス実行は「止まって待つ」のではなく「質問を残して終了する」（事前許可のないツールも確認待ちにならず拒否される〔確認済 C15〕）。終了時の構造化出力（終了プロトコル、5 章）から waiting / done / error を判定する
 3. **フォージへの書き込みはエージェントに一本化**。フックはフォージに触れず、ローカルでの検査・プロトコル強制だけを担う（仕様変更）
 4. **push と PR 作成もエージェントが行う**。Claude Code のプロセスにはフォージの資格情報を渡さず、ローカルコミットまでに留める（仕様変更）
 5. **状態はフォージから復元できる**。「どこまで読んだか」はマーカー内の `ack`（最後に取り込んだコメントID）で表す。ローカル DB は監査・重複排除・最適化用で、消えても動く
@@ -28,10 +28,12 @@
 | ADR-010 確定 | 技術スタックを Go にする | 複数端末（macOS / Linux）へ単一バイナリで配れる。常駐・SSE・並行処理が標準ライブラリで足りる。GitHub / GitLab の Go SDK が成熟している | CLAUDE.md「技術スタック」節 |
 | ADR-011 | フォージへの書き込み（コメント・ラベル）をエージェントに一本化し、フックの役割をローカル検査に限定する | (a) フックは Claude Code の子プロセスで、そこにトークンを渡すと Claude のツール実行からも到達しやすい (b) 書き手が 1 つだとラベル付け替えと冪等性を一か所で管理できる (c) ヘッドレス実行ではプロセス終了＝ターン終了なので、親のエージェントが確実に後処理できる (d) 変化の速い hooks スキーマへの依存が減る | ARCHITECTURE.md 2.3, 4.2 / SPEC.md F2 |
 | ADR-012 | push・PR 作成はエージェントが行い、Claude Code にはフォージ資格情報を渡さない | プロンプトインジェクション時の被害（任意 push、トークン持ち出し、任意コメント）をプロセス境界で抑える。push 前に差分検査（保護パス・秘密情報）を挟める | ARCHITECTURE.md 3, 4.4 / SECURITY.md T6, T7, T9 |
-| ADR-013 | 終了プロトコル：各実行は `waiting` / `done` のどちらかを構造化出力で宣言して終える。宣言がない・異常終了は `waiting(reason=error)` とする | `-p` には「入力待ち」という停止状態がない（〔検証 V3〕）。終了理由を機械判定できる形で受け取る必要がある | SPEC.md 4 |
+| ADR-013 | 終了プロトコル：各実行は `waiting` / `done` のどちらかを構造化出力で宣言して終える。宣言がない・異常終了は `waiting(reason=error)` とする | `-p` では事前許可のないツールは確認待ちにならず拒否され、人間の入力を待って止まる状態がない〔確認済 C15〕。「質問を残して終了」を機械判定できる形で受け取る必要がある | SPEC.md 4, F2 |
 | ADR-014 | 信頼判定の対象を、コメント投稿者に加えて issue 本文の投稿者・最終編集者、状態ラベルの付与者、コメントの編集者に広げる。判定はログイン名ではなく数値のユーザーIDで行う | 本文・ラベル・編集は第三者（コラボレーター含む）も操作できる。ログイン名は改名・再取得されうる | SECURITY.md T1 / SPEC.md F1 |
 | ADR-015 | エージェント用の書き込みアカウントを人間と分ける（Phase 3 目標。Phase 1 は同一アカウント＋マーカー判定で可） | 「bot の投稿＝エージェント出力」「信頼済み人間の投稿＝指示」と投稿者だけで区別できる（T8 が単純になる）。同一アカウントだと自分の投稿として扱われ、フォージのプッシュ通知が自分に届かない | ADR-008 の解決 / SECURITY.md T8 |
 | ADR-016 | 実行中に届いた信頼済みコメントは破棄せず、実行終了後に次の入力として即座に取り込む | 返答と実行が行き違ったときに取りこぼさない | SPEC.md 4 |
+| ADR-017 | GitLab webhook は署名トークン（HMAC-SHA256、`webhook-signature`）を優先し、`X-Gitlab-Token` は署名トークンが使えない場合の代替とする。重複排除キーは GitLab では `Idempotency-Key`（= `webhook-id`）を使う | `X-Gitlab-Token` は平文の共有シークレットで、GitLab 自身が非推奨としている。`X-Gitlab-Event-UUID` は再送時に同じ値になる保証が文書化されていない〔確認済 C9, C10〕 | CLAUDE.md 不変条件 / ARCHITECTURE.md 2.1 |
+| ADR-018 | 実行前に worktree の `.claude/`・`.mcp.json`・`CLAUDE.md` がベースブランチと一致することを確認し、一致しなければ実行しない | `-p` は対象リポジトリのフックと `.mcp.json` を信頼確認なしで読み込む〔確認済 C19〕。前回の実行で Claude 自身がフックを書き足すと、次の実行でサンドボックスの外で動く（持続化の経路になる） | SECURITY.md T7 |
 
 ADR-008（受信箱用トークンの分離）は ADR-015 とセットで解決する：**受信箱のトークンは人間（マスター）の ID でなければならない**（返答が信頼済み投稿者のコメントになる必要があるため）。エージェントのトークンは bot の ID にできる。
 
@@ -62,7 +64,8 @@ ADR-008（受信箱用トークンの分離）は ADR-015 とセットで解決�
  │                              │ claude -p（資格情報なし環境）     │         │
  │                              │  hooks: switchboard hook ...    │         │
  │                              │   PreToolUse: 危険操作の拒否      │         │
- │                              │   Stop: 終了プロトコルの強制       │         │
+ │                              │   PermissionRequest: 拒否の記録   │         │
+ │                              │   Stop: outcome 漏れの差し戻し    │         │
  │                              └───────────────────────────────┘         │
  │ ~/.local/state/switchboard/  state.db（監査・重複排除）, runs/<run-id>/  │
  └─────────────────────────────────────────────────────────────────────────┘
@@ -84,7 +87,7 @@ SPEC.md 6 章の CLI に、内部用のサブコマンドを加える。
 | `agent run` / `agent status` | 常駐エージェント | エージェント |
 | `labels sync` | 状態ラベルの作成・統一 | エージェント |
 | `relay serve` | 中継 | なし（webhook シークレットのみ） |
-| `hook pre-tool-use` / `hook stop` | Claude Code から呼ばれるフック（内部用） | なし |
+| `hook pre-tool-use` / `hook permission-request` / `hook stop` | Claude Code から呼ばれるフック（内部用） | なし |
 | `doctor` | 設定検証、trusted_authors のユーザーID解決、トークン権限の自己診断、claude のバージョン確認 | 両方（読み取りのみ） |
 
 ### 4.2 フォージ抽象（`internal/forge`）
@@ -112,13 +115,13 @@ type Forge interface {
 
 | 処理 | GitHub | GitLab |
 |---|---|---|
-| 更新検知 | `GET /repos/{o}/{r}/issues?state=all&since=…` を ETag 付き条件付きリクエストで | `GET /projects/:id/issues?updated_after=…` |
+| 更新検知 | `GET /repos/{o}/{r}/issues?state=all&since=…` を ETag 付き条件付きリクエストで（認証付きの 304 はレート制限を消費しない〔確認済 C13〕） | `GET /projects/:id/issues?updated_after=…` |
 | ラベル付与者 | Issue events / timeline の `labeled` イベントの actor | resource label events API |
 | 状態ラベル付け替え | `PUT …/issues/{n}/labels`（全置換）で「現在のラベル − agent:* ＋ 新状態」を 1 リクエストで送り、直後に再取得して検証 | `PUT /projects/:id/issues/:iid` に `add_labels` と `remove_labels` を同時指定 |
 | 受信箱 | GraphQL `search(type: ISSUE)` で issue と直近コメントを 1 リクエスト | 設定済みプロジェクトごとに REST を並列（`/issues?scope=all` は使わない、4.6 参照） |
 | PR / MR | `POST /repos/{o}/{r}/pulls`（draft） | `POST /projects/:id/merge_requests` |
 
-**ラベル付け替えの原子性について**：GitHub には「X を Y に置き換える」原子的操作がなく、SPEC.md 4 章の「原子的に行う」はそのままでは実現できない〔検証 V14〕。全置換 1 リクエスト＋事後検証＋reconciler による正規化（agent:* が 2 つ以上付いていたら優先順位 `running > waiting > ready > done` で 1 つに戻し、ログに残す）を実用上の解とする。
+**ラベル付け替えの原子性について**：GitHub には「X を Y に置き換える」操作がなく、書き込み系 API は条件付きリクエスト（If-Match）にも対応していない〔確認済 C4〕。全置換 PUT は 1 リクエストとしては原子的だが後勝ちになるため、SPEC.md 4 章の「原子的に行う」はそのままでは実現できない。全置換 1 リクエスト＋事後検証＋reconciler による正規化（agent:* が 2 つ以上付いていたら優先順位 `running > waiting > ready > done` で 1 つに戻し、ログに残す）を実用上の解とする。GitLab のスコープ付きラベル（`agent::waiting`、排他）を使えば GitLab 側は自然に 1 つになるが、Premium 以上が必要〔確認済 C7〕なので前提にしない。
 
 ### 4.3 エージェント（`internal/agent`）
 
@@ -130,7 +133,7 @@ type Forge interface {
 4. **runner**：worktree を用意し `claude -p` を起動・監視する（4.4）
 5. **finalizer**：終了プロトコルを解釈し（5 章）、出力検査 → push・PR → コメント → ラベルの順で書き戻す。書き戻しは冪等（同じ run の結果を二重投稿しない：コメント本文のマーカーに `run=` を入れ、投稿前に同じ run のマーカーがないか確認する）
 
-実行中の監視：runner は実行中も担当 issue をポーリング間隔で確認し、close された、または人間が `agent:running` を外した場合はプロセスグループに SIGTERM → 猶予後 SIGKILL で止める（SPEC.md 4 章「実行を止める」）。
+実行中の監視：runner は実行中も担当 issue をポーリング間隔で確認し、close された、または人間が `agent:running` を外した場合は、SIGINT（ターンを正常に終える）→ 猶予後 SIGTERM → SIGKILL の順でプロセスグループを止める（SPEC.md 4 章「実行を止める」）。SIGTERM から始めると result が記録されない〔確認済 C23〕。
 
 ### 4.4 Claude Code アダプタ（`internal/adapters/claudecode`）
 
@@ -139,27 +142,36 @@ Claude Code の CLI・出力形式・hooks の入出力に依存するコード�
 **起動コマンド（案）**
 
 ```
+# 新規起動時は --session-id <新規UUID>、再開時は --resume <session-id> --fork-session
 claude -p \
-  --session-id <新規UUID> | --resume <session-id> \
+  --session-id <新規UUID> \
   --output-format stream-json --verbose \
-  --settings   <run-dir>/settings.json \
+  --permission-mode dontAsk \
+  --settings <run-dir>/settings.json \
+  --setting-sources <V17 の結果で決める> \
   --strict-mcp-config --mcp-config <run-dir>/mcp.json \
   --append-system-prompt-file <run-dir>/system.md \
   --max-turns <agent.max_turns> \
-  [--json-schema <outcome schema>]          # 〔検証 V8〕
+  --json-schema <outcome schema> \
   < <run-dir>/prompt.md
 ```
 
-- `--session-id` でセッションIDをエージェント側で先に決める。フック入力から取り出す必要がなくなり、V1 への依存が下がる〔検証 V7〕
+- 新規起動時は `--session-id` でセッションIDをエージェント側で先に決める〔確認済 C17、`-p` との組み合わせは V7〕。フック入力から取り出す必要がなくなり、V1 への依存が下がる
+- 再開時は `--fork-session` で毎回新しいIDに分岐させ、新しいIDは stream-json の結果から取る。分岐なしで同じセッションを 2 か所から再開すると発言が 1 つの transcript に混ざる〔確認済 C17〕ので、マスターが同じセッションを対話で開いていても衝突しないようにする（V4 のリスクを設計で消す）
+- `--permission-mode dontAsk` と明示 allow で動かす。`-p` で事前許可のないツールは確認待ちにならず拒否され、最終 result の `permission_denials` に残る〔確認済 C15、dontAsk の厳密な挙動は V18〕
 - `--strict-mcp-config` と空に近い `mcp.json` で、対象リポジトリの `.mcp.json` 由来の MCP サーバーを読み込ませない
+- `-p` は `--bare` を付けない限り、対象リポジトリの `.claude/settings.json` のフックと `.mcp.json` を信頼確認なしで読み込む〔確認済 C19〕。`--bare` はサブスクリプションの OAuth 認証を読まないため使えない〔確認済 C19, C21〕。対策は 3 つ：(1) `--strict-mcp-config` で MCP を固定する (2) `--setting-sources` でプロジェクト設定を外せるか検証する〔V17〕 (3) 実行前に worktree の `.claude/`・`.mcp.json`・`CLAUDE.md` がベースブランチと一致することを確認し、違えば実行しない（ADR-018）
 - `settings.json` は run ごとにエージェントが生成する（許可ツール・拒否ルール・フック・サンドボックス設定）。フックはこの設定経由でのみ登録するので、マスターが手で開く対話セッションには影響しない
-- 作業ディレクトリは issue ごとに固定パスの worktree（`<data>/worktrees/<forge>/<project>/issue-<n>`、ブランチ `switchboard/issue-<n>`）。`--resume` はセッションが作業ディレクトリに紐づくため、パスを固定しておく必要がある〔検証 V4〕
+- 作業ディレクトリは issue ごとに固定パスの worktree（`<data>/worktrees/<forge>/<project>/issue-<n>`、ブランチ `switchboard/issue-<n>`）。`--resume` は作業ディレクトリに縛られず、ID で全プロジェクトから探す〔確認済 C17〕。それでもファイルの文脈を揃えるためにパスは固定する
+- transcript（`~/.claude/projects/…/<session-id>.jsonl`）の形式は内部仕様でバージョンごとに変わる〔確認済 C22〕ので解析しない。必要な情報は stream-json と Stop フックの `last_assistant_message` から取る
 
 **環境変数**：親の環境を引き継がず、許可リストで組み立てる。
 
 | 渡す | 渡さない |
 |---|---|
-| `PATH`, `HOME`, `LANG`, `TMPDIR`, `SHELL`, `USER`, `SWITCHBOARD_RUN_DIR`, `SWITCHBOARD_ISSUE_REF`, `GIT_TERMINAL_PROMPT=0` | `GH_TOKEN`, `GITHUB_TOKEN`, `GITLAB_TOKEN`, `SSH_AUTH_SOCK`, クラウドの認証情報、その他すべて |
+| `PATH`, `HOME`, `LANG`, `TMPDIR`, `SHELL`, `USER`, `SWITCHBOARD_RUN_DIR`, `SWITCHBOARD_ISSUE_REF`, `GIT_TERMINAL_PROMPT=0`、専用 OS ユーザー運用時は `CLAUDE_CODE_OAUTH_TOKEN` | `GH_TOKEN`, `GITHUB_TOKEN`, `GITLAB_TOKEN`, `SSH_AUTH_SOCK`, `ANTHROPIC_API_KEY`, クラウドの認証情報、その他すべて |
+
+`ANTHROPIC_API_KEY` を必ず落とすのは、`-p` ではこれがあると常に優先され、サブスクリプションではなく API 課金で動くため〔確認済 C21〕。
 
 加えて `GIT_CONFIG_COUNT` 系で `credential.helper` を空にし、`remote.origin.pushurl` を無効な URL にする。ただしこれは誤操作防止の「段差」であり、同じ OS ユーザーで動く限り `~/.ssh` や `gh` の設定ファイルには到達できる。境界としては 7 章の L1（OS ユーザー分離またはサンドボックス）が必要。
 
@@ -187,10 +199,11 @@ prompt.md（stdin）
 | イベント | 役割 | 失敗時 |
 |---|---|---|
 | `PreToolUse`（Bash 等） | 権限設定の上に重ねる拒否：`git push`、`gh` / `glab` の書き込み系、`security find-generic-password` 等のキーチェーン参照、`~/.ssh` 参照など。判定結果を run-dir に記録 | 拒否（安全側） |
-| `Stop` | 終了プロトコルの強制。出力に outcome がなく、かつ `stop_hook_active` でなければ block して「outcome を出力して終了せよ」と返す〔検証 V1〕 | 通す（無限ループ防止） |
+| `PermissionRequest` | `-p` でも実行され、判定を返さなければそのまま拒否される〔確認済 C15〕。判定は返さず、拒否された要求を run-dir に記録して `reason=permission` の質問文に使う | 何もしない（拒否のまま） |
+| `Stop` | `--json-schema` が期待どおり動かない場合（V8 が NG）の予備。`last_assistant_message` に outcome がなく、かつ `stop_hook_active` でなければ block して「outcome を出力して終了せよ」と返す〔確認済 C14〕 | 通す（Claude Code 側にも連続 8 回で打ち切る上限がある〔確認済 C14〕） |
 
-- PreToolUse の文字列判定は回避可能（`sh -c`、別名、エンコード）なので **境界ではない**。目的はログと誤操作防止。実際の境界は 7 章の L0〜L2
-- Notification フックはヘッドレス実行では使わない前提〔検証 V2, V13〕。対話セッションの待ちを受信箱に出す拡張をする場合に改めて検討する（SPEC.md 8 章の対象外と整合）
+- PreToolUse の判定は権限ルールを迂回しない。Bash の権限ルール自体も、文書で「同じプログラムを別の形で呼ぶと一致せず、プログラムに対するセキュリティ境界ではない」とされている〔確認済 C18〕。したがって文字列判定（`sh -c`、絶対パス、別名で回避できる）は **境界ではない**。目的はログと誤操作防止で、実際の境界は 7 章の L0・L1・L5
+- Notification フックは `-p` で発火するかが文書に書かれていない〔V13〕。ヘッドレス実行では使わない。対話セッションの待ちを受信箱に出す拡張をする場合に改めて検討する（SPEC.md 8 章の対象外と整合）
 
 ### 4.6 受信箱（`internal/inbox`）
 
@@ -202,8 +215,8 @@ $ switchboard inbox
  3  github  uskanda/bar          #3     macbook-air  5m      permission Bash(npm publish) が拒否…
 ```
 
-- GitHub：GraphQL の `search(type: ISSUE)` で `is:issue is:open label:"agent:waiting" user:<user>` を引き、同じクエリ内で各 issue の直近コメント（作成者ID・本文・日時）も取る。1 リクエストで済む〔検証 V15〕
-- GitLab：設定済みプロジェクトごとに `GET /projects/:id/issues?labels=agent:waiting&state=opened` と直近ノートを並列取得。`GET /issues?scope=all` は閲覧可能な範囲が広く、第三者のプロジェクトの issue が混ざりうるため使わない〔検証 V16〕
+- GitHub：GraphQL の `search(type: ISSUE)` で `is:issue is:open label:"agent:waiting" user:<user>` を引き、同じクエリ内で各 issue の直近コメント（作成者ID・本文・日時）も取る。1 リクエストで済む〔検証 V14〕。REST の Search API は 30 回/分の制限がある〔確認済 C2〕ので、受信箱を高頻度で自動更新する用途（Phase 5 の Web 表示）では GraphQL のポイント予算側を使う
+- GitLab：設定済みプロジェクトごとに `GET /projects/:id/issues?labels=agent:waiting&state=opened` と直近ノートを並列取得。`GET /issues` は「アクセスできる全 issue」が対象で、GitLab.com では `scope=all` が 400 で拒否される場合がある〔確認済 C6〕ため使わない
 - **allowlist**：どちらのフォージでも、設定の `projects` に含まれない issue は表示しない
 - 端末名・待ち開始時刻・理由は、エージェントの ID が投稿したコメントの末尾マーカーからだけ取る（T8）。見つからない場合は `?` と表示
 - 行番号 → ref の対応は `$XDG_CACHE_HOME/switchboard/inbox.json` に保存し、`reply 3` で使う。投稿前に issue を取り直し、`agent:waiting` でなくなっていたら警告して中止（`--force` で続行）
@@ -216,7 +229,10 @@ $ switchboard inbox
 - リスナーを 2 つに分ける
   - webhook 受信：`127.0.0.1:<port>` で待ち、Tailscale Funnel（または Cloudflare Tunnel）でこのポートだけを公開。パスは `/webhook/{github|gitlab}/<hook-key>`。`hook-key` でプロジェクトごとの webhook シークレットを引き、1 つのシークレット漏えいの影響をそのプロジェクトに限定する
   - SSE 配信：Tailnet 側のアドレスだけで待つ（`tailscale serve` 等）。端末ごとの bearer トークン（中継側はハッシュのみ保持）で認証
-- 処理順：ボディ上限（例 5 MiB）→ 署名検証（GitHub は HMAC-SHA256、GitLab は `X-Gitlab-Token` の定数時間比較）→ 配信IDで重複排除（LRU、72 時間）→ 対象イベントだけ抽出 → 残りを破棄
+- 処理順：ボディ上限（例 5 MiB）→ 署名検証 → 配信IDで重複排除（LRU、72 時間）→ 対象イベントだけ抽出 → 残りを破棄
+  - 署名検証：GitHub は `X-Hub-Signature-256`（HMAC-SHA256）。GitLab は署名トークン（`webhook-id` / `webhook-timestamp` / `webhook-signature`、GitLab 19.0 以降）を優先し、タイムスタンプが許容幅（例 5 分）外なら破棄してリプレイを防ぐ。署名トークンが使えない環境に限り `X-Gitlab-Token` を定数時間比較〔確認済 C9、利用中の GitLab で要確認 V16〕（ADR-017）
+  - 配信ID：GitHub は `X-GitHub-Delivery`（手動再送でも同じ値〔確認済 C8〕）、GitLab は `Idempotency-Key`（= `webhook-id`、再試行間で同一〔確認済 C10〕）。`X-Gitlab-Event-UUID` は使わない
+- GitHub は失敗した配信を自動では再送しない〔確認済 C8〕。中継が落ちている間のイベントは失われる前提で、reconcile のポーリングで必ず回収する
 - 対象イベント：GitHub `issues`（labeled / unlabeled / closed / reopened / edited）・`issue_comment`（created / edited）、GitLab Issue Hook・Note Hook（noteable_type = Issue）
 - 配信形式：
 
@@ -240,13 +256,13 @@ ADR-007（公開方法）は、自宅サーバーがあるなら Tailscale Funne
 
 | 現在 | 契機 | ガード（すべて満たす） | アクション | 次 |
 |---|---|---|---|---|
-| ready | 検知 | open / 担当端末が自分 / ラベル付与者が信頼済み / 本文の作成者・最終編集者が信頼済み / ロック取得 | ラベル付け替え → worktree 作成 → 新規起動 | running |
+| ready | 検知 | open / 担当端末が自分 / ラベル付与者が信頼済み / 本文の作成者・最終編集者が信頼済み / 既存 worktree があればその Claude 設定ファイルがベースと一致（ADR-018） / ロック取得 | ラベル付け替え → worktree 作成 → 新規起動 | running |
 | running | 実行終了 | outcome = waiting | 質問をコメント（マーカー付き） | waiting |
 | running | 実行終了 | outcome = done / 出力検査 OK | push → PR 作成 → 結果コメント | done |
 | running | 実行終了 | outcome なし・異常終了・タイムアウト・max-turns・出力検査 NG | 理由をコメント | waiting（reason=error / verify） |
 | running | 実行終了 | 利用上限 | 解除予定をコメント、端末の scheduler を停止 | waiting（reason=limit） |
 | running | 実行中 | close された / `agent:running` が外された | プロセス停止、キャンセルを記録（ラベルは触らない） | （人間の操作のまま） |
-| waiting | 新着コメント | `ack` より後に信頼済みコメントがある / 担当端末が自分 / ロック取得 | ラベル付け替え → resume または新規起動 | running |
+| waiting | 新着コメント | `ack` より後に信頼済みコメントがある / 担当端末が自分 / worktree の Claude 設定ファイルがベースと一致（ADR-018） / ロック取得 | ラベル付け替え → resume または新規起動 | running |
 | running → waiting 直後 | — | 実行中に信頼済みコメントが届いていた（ADR-016） | 待たずに直ちに再実行 | running |
 | done | 新着コメント | — | 何もしない（誤再実行を防ぐ）。続きは人間が `agent:ready` を付け直す | done |
 | 任意 | 起動時 / reconcile | 自分の担当で running なのに実行プロセスがない | 中断をコメント | waiting（reason=error） |
@@ -264,15 +280,15 @@ Claude には最終出力として次のどちらかを返させる。
 
 受け取り方は 2 段構え：
 
-1. `--json-schema` による構造化出力が使えるならそれを使う〔検証 V8〕
-2. 使えない場合は最終メッセージ末尾の `<switchboard-outcome>{…}</switchboard-outcome>` を解析し、Stop フックで出力漏れを 1 回だけ差し戻す
+1. `--json-schema` による構造化出力を使う。結果は result の `structured_output` に入り、有効な出力なしで終わると `structured_output` が付かない〔確認済 C16、実機確認は V8〕
+2. 1 が実機で期待どおり動かない場合は、最終メッセージ末尾の `<switchboard-outcome>{…}</switchboard-outcome>` を解析し、Stop フックで出力漏れを差し戻す
 
 エージェント側の判定（優先順）：
 
-1. タイムアウト / exit code ≠ 0 / `is_error` / max-turns 到達 → `waiting(reason=error)`
+1. タイムアウト / exit code ≠ 0 / `is_error` / `subtype` が `error_max_turns`・`error_during_execution`・`error_max_structured_output_retries` 等 → `waiting(reason=error)`〔確認済 C24〕
 2. 利用上限の兆候 → `waiting(reason=limit)`〔検証 V12〕
-3. outcome が解析できない → `waiting(reason=error)`
-4. `status=waiting` → 権限拒否（result の `permission_denials` 等〔検証 V11〕）があれば `reason=permission`、なければ `reason=question`
+3. `structured_output` がない・スキーマ不一致 → `waiting(reason=error)`
+4. `status=waiting` → result の `permission_denials` が空でなければ `reason=permission`〔確認済 C15、形は V11〕、空なら `reason=question`
 5. `status=done` → 6.3 の出力検査へ。NG なら `waiting(reason=verify)`
 
 ### 5.3 「どこまで読んだか」（ack）
@@ -300,7 +316,7 @@ Claude には最終出力として次のどちらかを返させる。
 | コメント（指示） | 作成者が信頼済み、かつ未編集、または編集者が信頼済み | 指示として使わない（`include_untrusted` 時のみ参考データ） |
 | マーカー | 作成者がエージェントの ID、かつコメント末尾の単独行、引用ブロック内でない | 無視 |
 
-- 書き込み権限を持つ人は他人のコメントを編集できる〔検証 V17〕ため、「作成者が自分」だけでは不十分
+- 書き込み権限を持つ人は他人のコメントを編集できる〔確認済 C5〕ため、「作成者が自分」だけでは不十分。GitHub は GraphQL の `editor` / `lastEditedAt` / `userContentEdits` で編集者と履歴を取れる〔確認済 C5〕。ラベル付与者は issue events の `labeled` イベントの `actor` で取れる〔確認済 C11〕
 - コメントは実行開始時点の本文をスナップショットとして run-dir に保存し、監査ログにはコメントIDと本文ハッシュを残す
 
 ### 6.3 出力検査（push 前）
@@ -308,11 +324,11 @@ Claude には最終出力として次のどちらかを返させる。
 finalizer は push の前に以下を確認し、1 つでも NG なら push せず `waiting(reason=verify)` にする。
 
 - ブランチが `switchboard/issue-<n>` で、ベースブランチより先にコミットがある
-- 差分が `protected_paths`（既定：`.github/workflows/**`、`.gitlab-ci.yml`、`.claude/**`、`CODEOWNERS` 等）に触れていない。触れる場合は人間の明示承認（信頼済みコメントでの承認）を要求
+- 差分が `protected_paths`（既定：`.github/workflows/**`、`.gitlab-ci.yml`、`.claude/**`、`.mcp.json`、`CLAUDE.md`、`CODEOWNERS` 等）に触れていない。触れる場合は人間の明示承認（信頼済みコメントでの承認）を要求
 - 差分・コミットメッセージ・投稿予定コメントに秘密情報のパターン（`ghp_`、`github_pat_`、`glpat-`、`AKIA`、秘密鍵ヘッダ等。`gitleaks` があれば併用）がない（T9）
 - プロジェクトに `verify_command`（テスト等）があれば成功する
 
-CI 設定の変更を止める理由：push しただけで CI が走るため、CI 定義を書き換えられると CI のシークレットに到達されうる。GitHub は fine-grained PAT に Workflows 権限を付けなければワークフローファイルを含む push 自体が拒否される〔検証 V18〕ので、トークン側でも二重に止める。
+CI 設定の変更を止める理由：push しただけで CI が走るため、CI 定義を書き換えられると CI のシークレットに到達されうる。GitHub の fine-grained PAT は、REST API でワークフローファイルを変更するのに Workflows 権限が要る〔確認済 C3〕。`git push` でも同様に拒否されると広く知られているが文書では確認できていない〔検証 V15〕。確認できればトークン側でも二重に止められる。
 
 ---
 
@@ -320,12 +336,18 @@ CI 設定の変更を止める理由：push しただけで CI が走るため�
 
 | 層 | 内容 | 境界か | 導入 |
 |---|---|---|---|
-| L0 フォージ側 | トークンの最小権限（Workflows 権限なし、admin なし）、main のブランチ保護 / ルールセット（利用できるプランなら）、PR は draft | ○ | Phase 1 |
-| L1 資格情報の分離 | Claude Code を資格情報のない環境で動かす。推奨は専用 OS ユーザー（`switchboard`）で実行し、Claude のサブスク認証はそのユーザーで別途行う〔検証 V6, V10〕。代替は Claude Code のサンドボックス（ファイル・ネットワーク制限）〔検証 V9〕 | ○ | Phase 1 は環境変数の除去のみ、Phase 3 で OS ユーザー分離 |
-| L2 Claude Code の権限設定 | 許可ツールの明示、`git push` / `gh` / `glab` / ネットワーク系の deny。deny は他の設定ソースの allow より優先される〔検証 V5〕 | △ | Phase 1 |
+| L0 フォージ側 | トークンの最小権限（Workflows 権限なし、admin なし）、main のブランチ保護 / ルールセット、PR は draft。ただし GitHub Free の**非公開**リポジトリではブランチ保護もルールセットも使えない〔確認済 C1〕。その場合 L0 はトークン権限だけになるので、エージェントは push の refspec を `switchboard/issue-<n>` に固定し、ベースブランチへの push をコードで禁止する | ○ | Phase 1 |
+| L1 資格情報の分離 | Claude Code を資格情報のない環境で動かす。推奨は専用 OS ユーザー（`switchboard`）で実行し、Claude のサブスク認証はそのユーザーで `claude setup-token`（1 年有効の OAuth トークン、CI・スクリプト向け〔確認済 C21〕）を使う〔利用規約上の扱いは V6、実機は V10〕。併用として Claude Code のサンドボックス（下記の注意つき）〔`-p` での適用は V9〕 | ○ | Phase 1 は環境変数の除去のみ、Phase 3 で OS ユーザー分離 |
+| L2 Claude Code の権限設定 | 許可ツールの明示、`git push` / `gh` / `glab` / ネットワーク系の deny。deny はどの設定ソースの allow よりも先に評価される〔確認済 C18、実機は V5〕。ただし Bash ルールは境界ではない〔確認済 C18〕 | △ | Phase 1 |
 | L3 PreToolUse フック | 文字列ベースの追加拒否とログ | × | Phase 1 |
 | L4 資源制限 | タイムアウト、max-turns、同時実行数、worktree への作業限定 | △ | Phase 1 |
 | L5 出力検査 | 6.3 の push 前検査、投稿前の秘密情報検査 | ○（出口） | Phase 1 |
+
+サンドボックスを使う場合の注意〔すべて確認済 C20〕：
+
+- 既定で無効。起動できない環境では **既定でサンドボックスなしのまま続行する** ので、`sandbox.failIfUnavailable: true` を必須にする
+- 覆うのはシェルコマンドとその子プロセスだけ。ファイル系ツール・MCP サーバー・フックはサンドボックスの外で動く
+- `sandbox.filesystem.denyRead` は Read ツールを止めず、`sandbox.network.allowedDomains` は WebFetch を制限しない。権限ルール側の `Read(~/.ssh/**)` 等の deny と WebFetch の deny を必ず併用する
 
 正直な評価：Phase 1 の時点では L1 が弱く、Claude が同じ OS ユーザーの `~/.ssh` 等に到達できる。Phase 1 は自分の非公開リポジトリ・自分だけが書ける issue に限定して運用し、公開リポジトリや他者が書き込める issue を扱うのは L1 を入れてからにする。
 
@@ -408,7 +430,7 @@ agent:
 | 事象 | 振る舞い |
 |---|---|
 | エージェントのクラッシュ・端末再起動 | 起動時の reconcile で「自分の担当・running・プロセスなし」を検出し `waiting(reason=error)` にする。worktree は残すので次回の実行で続きから |
-| `claude -p` のハング | `agent.timeout` でプロセスグループごと停止 |
+| `claude -p` のハング | `agent.timeout` で、4.3 と同じ SIGINT → SIGTERM → SIGKILL の順にプロセスグループを停止 |
 | フォージ API の失敗 | 指数バックオフで再試行。書き戻しは run-dir の `outcome.json` から再開できるようにし、finalizer は冪等にする |
 | 中継の停止・切断 | 自動でポーリング間隔に戻す（SPEC.md 7 章）。再接続時は `Last-Event-ID` で回収 |
 | 利用上限 | 端末の scheduler を一時停止。待ちは `reason=limit` として受信箱に出る |
@@ -458,25 +480,69 @@ switchboard/
 
 ### 11.1 Phase 1 で作る範囲（ROADMAP.md の Phase 1 に対して）
 
-- 本書の 4.2（GitHub のみ）、4.3（ポーリングのみ）、4.4、4.5、4.6（GitHub のみ）、5 章、6 章、7 章の L0・L2〜L5、8 章
+- 本書の 4.2（GitHub のみ）、4.3（ポーリングのみ）、4.4、4.5、4.6（GitHub のみ）、5 章、6 章、7 章の L0・L2〜L5 と L1 のうち環境変数の除去、8 章
 - 先送り：GitLab（Phase 2）、OS ユーザー分離と bot アカウント（Phase 3）、中継（Phase 4）
 
-### 11.2 追加の検証項目（ROADMAP.md の検証項目表に追記する案）
+### 11.2 既存の検証項目（V1〜V6）への影響
+
+文書で確認できたものは「文書確認済」とした。ROADMAP.md の「結果」欄は実機で確かめてから埋める。
+
+| # | 文書での状況 | 本設計での扱い |
+|---|---|---|
+| V1 | 文書確認済：全フックに `session_id`・`cwd` 等が入る〔C14〕 | `--session-id` で先に決めるので依存は小さい |
+| V2 | `notification_type`（`permission_prompt` / `idle_prompt` 等）で区別できる〔C14〕。ただし `-p` で発火するかは記載なし | ヘッドレスでは使わない（V13） |
+| V3 | 文書確認済：停止せず拒否され、`permission_denials` に残る〔C15〕 | 5.2 の判定の前提 |
+| V4 | 分岐なしの同時再開は transcript が混ざる〔C17〕 | 再開時は常に `--fork-session` |
+| V5 | 文書確認済：deny が全ソースの allow より優先〔C18〕。ただし Bash ルールは境界ではない | 境界は L0・L1・L5 に置く |
+| V6 | `setup-token` は CI・スクリプト向けと記載〔C21〕。常駐デーモンでの利用が規約上どう扱われるかは記載なし | 利用規約を確認してから Phase 3 の常駐化へ進む |
+
+### 11.3 追加の検証項目（ROADMAP.md の検証項目表に追記する案）
 
 | # | 項目 | 本書の該当 |
 |---|---|---|
-| V7 | `-p` で `--session-id <uuid>` を指定でき、`--resume` と組み合わせて再開できるか | 4.4 |
-| V8 | `--json-schema` による構造化出力が `-p` で使えるか、結果のどこに入るか | 5.2 |
-| V9 | `--settings` で渡したフック・権限・サンドボックス設定が適用されるか。対象リポジトリの `.claude/settings.json` とどう合成されるか | 4.4, 7 |
-| V10 | 専用 OS ユーザーでのサブスク認証（`claude setup-token` 等）がヘッドレス常駐で使えるか | 7 |
-| V11 | stream-json の最終 result に権限拒否の一覧（`permission_denials` 等）が含まれるか | 5.2 |
-| V12 | 利用上限到達時の終了コード・出力の形 | 4.3, 5.2 |
+| V7 | `-p` で `--session-id <uuid>` を指定できるか（フラグ自体は文書にある） | 4.4 |
+| V8 | `--json-schema` の `structured_output` が stream-json の result に入るか、スキーマ違反時の挙動 | 5.2 |
+| V9 | `--settings` で渡したフック・権限・サンドボックス設定が `-p` で適用されるか。サンドボックスが `-p` で有効になるか | 4.4, 7 |
+| V10 | 専用 OS ユーザー＋`CLAUDE_CODE_OAUTH_TOKEN` でヘッドレス実行が回るか | 7 |
+| V11 | `permission_denials` の要素の形（ツール名・入力が取れるか） | 5.2 |
+| V12 | 利用上限到達時の終了コード・`subtype`・出力の形 | 4.3, 5.2 |
 | V13 | `-p` 実行中に Notification フックが発火するか | 4.5 |
-| V14 | GitHub のラベル全置換 PUT の競合時の挙動 | 4.2 |
-| V15 | GitHub GraphQL search で issue＋直近コメントを 1 リクエストで取れるか、レート制限の消費 | 4.6 |
-| V16 | GitLab `GET /issues?scope=all` の対象範囲 | 4.6 |
-| V17 | 他人のコメント・issue 本文を編集できる権限と、編集者を API で取れるか | 6.2 |
-| V18 | Workflows 権限なしの fine-grained PAT でワークフロー変更を含む push が拒否されるか | 6.3 |
+| V14 | GitHub GraphQL search で issue＋直近コメントを 1 リクエストで取れるか、ポイント消費 | 4.6 |
+| V15 | Workflows 権限なしの fine-grained PAT で、ワークフロー変更を含む `git push` が拒否されるか | 6.3 |
+| V16 | 利用する GitLab（GitLab.com 等）で webhook 署名トークンが使えるか | 4.7 |
+| V17 | `--setting-sources` で対象リポジトリの `.claude/settings.json` を読み込ませずに済むか、CLAUDE.md の読み込みに影響しないか | 4.4 |
+| V18 | `--permission-mode dontAsk` の `-p` での挙動（allow 外を拒否して続行するか） | 4.4 |
+
+### 11.4 文書で確認済みの事項（2026-10-29）
+
+この節は公式ドキュメントで確かめた内容。ネットワーク制限のため docs.github.com / docs.gitlab.com はページを直接読めず、公式ドメインに絞った検索結果の抜粋で確認した。code.claude.com はページを読んで確認した（抜粋は要約を含む）。どちらも実装に使う前に実機かページ本文で確かめ直す。
+
+| # | 事項 | 出典 |
+|---|---|---|
+| C1 | GitHub Free の非公開リポジトリでは、ブランチ保護もルールセットも使えない（Pro 以上） | docs.github.com: About protected branches / About rulesets |
+| C2 | REST の Search API は認証付きで 30 回/分。GraphQL はポイント制（5,000/時） | docs.github.com: REST search / GraphQL rate limits |
+| C3 | fine-grained PAT で REST の Contents API からワークフローファイルを変えるには Workflows 権限が要る | docs.github.com: Permissions required for fine-grained PATs |
+| C4 | `PUT …/issues/{n}/labels` は全置換。書き込み系は条件付きリクエスト非対応 | docs.github.com: Labels / Best practices for REST |
+| C5 | write 権限があれば他人のコメントを編集できる。GraphQL に `editor` / `lastEditedAt` / `userContentEdits` がある | docs.github.com: Managing disruptive comments / GraphQL issues |
+| C6 | GitLab `GET /issues` は既定で `created_by_me`。GitLab.com では `scope=all` が 400 になる場合がある | docs.gitlab.com: Issues API |
+| C7 | GitLab のスコープ付きラベルは Premium 以上 | docs.gitlab.com: Labels |
+| C8 | GitHub の手動再送では `X-GitHub-Delivery` が同じ。失敗した配信は自動再送されない | docs.github.com: Webhook best practices / Handling failed deliveries |
+| C9 | GitLab の `X-Gitlab-Token` は平文の共有シークレットで非推奨。HMAC-SHA256 の署名トークンが GitLab 19.0 で導入、19.1 で正式提供 | docs.gitlab.com: Webhooks / 19.0 release |
+| C10 | GitLab の `Idempotency-Key`（= `webhook-id`）は再試行間で同一。`X-Gitlab-Event-UUID` は再帰 webhook で共有される | docs.gitlab.com: Webhooks |
+| C11 | GitHub issue events の `labeled` に `actor` が入る | docs.github.com: Issue event types |
+| C12 | GitLab.com の Project Access Token は Premium 以上。作成すると bot ユーザーができる | docs.gitlab.com: Project access tokens |
+| C13 | 認証付きの条件付きリクエストが 304 を返した場合、primary rate limit を消費しない | docs.github.com: Best practices for REST |
+| C14 | フック共通入力に `session_id`・`transcript_path`・`cwd`・`permission_mode`・`hook_event_name`。Stop に `stop_hook_active`・`last_assistant_message`。`decision: "block"`＋`reason` で停止を差し戻せ、連続 8 回で打ち切られる。Notification に `notification_type` | code.claude.com: hooks |
+| C15 | `-p` で承認の要るツール呼び出しは、承認する仕組みがなければ拒否される。最終 result に `permission_denials` が載る。PermissionRequest フックは `-p` でも実行される | code.claude.com: headless / hooks |
+| C16 | `--json-schema` は print mode 専用で、結果は `structured_output` に入る | code.claude.com: cli-reference / headless |
+| C17 | `--session-id`・`--fork-session` がある。`--resume` は ID で全プロジェクトから探す。分岐なしの同時再開は transcript が混ざる | code.claude.com: cli-reference / sessions |
+| C18 | 権限ルールは deny → ask → allow の順で全スコープ横断に評価。Bash ルールは「プログラムに対するセキュリティ境界ではない」 | code.claude.com: permissions |
+| C19 | `--bare` なしの `-p` は、未信頼フォルダでもプロジェクトの `.claude/settings.json` のフックと `.mcp.json` を読む。`--bare` は OAuth・キーチェーン認証を読まない | code.claude.com: headless |
+| C20 | サンドボックスは macOS / Linux / WSL2、既定は無効、起動できないと既定で非サンドボックスのまま続行（`failIfUnavailable`）。シェルコマンドとその子プロセスのみが対象。`denyRead` は Read ツールを止めず、`allowedDomains` は WebFetch を制限しない | code.claude.com: sandboxing |
+| C21 | `claude setup-token` は 1 年有効の OAuth トークンを発行（CI・スクリプト向け、Pro/Max 等）。`-p` では `ANTHROPIC_API_KEY` があると常に優先 | code.claude.com: authentication |
+| C22 | transcript は `~/.claude/projects/<project>/<session-id>.jsonl`。形式は内部仕様でリリースごとに変わりうる | code.claude.com: sessions |
+| C23 | SIGTERM では終了コード 143 でターンが未完了のまま終わり、result が記録されない。SIGINT ならターンを正常に終える | code.claude.com: headless / cli-reference |
+| C24 | result の `subtype` に `success` / `error_during_execution` / `error_max_turns` / `error_max_structured_output_retries` 等。`--max-turns` 到達はエラー終了 | code.claude.com: agent-sdk (Python) / cli-reference |
 
 ---
 
@@ -484,7 +550,7 @@ switchboard/
 
 1. ADR-010：Go で確定してよいか
 2. ADR-011 / 012：フォージ書き込みと push をエージェントに一本化する（フックの役割を縮小する）か
-3. ADR-015：エージェント用アカウントの分離をどのフェーズで入れるか（GitHub は別アカウントまたは GitHub App、GitLab は Project Access Token の bot）
+3. ADR-015：エージェント用アカウントの分離をどのフェーズで入れるか。GitHub は別アカウント（machine user）または GitHub App。GitLab は Project Access Token が bot ユーザーを作るので理想的だが、GitLab.com では Premium 以上が必要〔確認済 C12〕。Free なら、別の GitLab アカウントを対象プロジェクトにだけ Developer で参加させ、その PAT を使うのが代替（スコープをトークンではなくメンバーシップで絞る）。SECURITY.md 4 章の GitLab の記述もこれに合わせて修正が要る
 4. L1（専用 OS ユーザー）を Phase 1 から入れるか、Phase 3 まで待つか
 5. 非信頼コメントを既定でプロンプトから完全に除外してよいか（本書は除外を推奨）
 6. done 後のコメントを無視し、再実行は `agent:ready` の付け直しに限る運用でよいか
