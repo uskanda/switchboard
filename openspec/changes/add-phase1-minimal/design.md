@@ -48,9 +48,9 @@ internal/state/             状態ディレクトリ（ロック、記録、監�
 
 ### 2. GitHubへの接続
 
-REST APIには `google/go-github` を使う。編集者（`editor`、`lastEditedAt`）はRESTに無いため、issueとコメントの編集者を取るGraphQLのクエリを1本だけ、標準ライブラリのHTTPで送る。
+REST APIとGraphQLは、どちらも標準ライブラリのHTTPで呼ぶ。使うRESTのエンドポイントは10本ほどである。編集者（`editor`、`lastEditedAt`）はRESTに無いため、issueとコメントの編集者を取るGraphQLのクエリを1本だけ送る。
 
-- 代替：GraphQLのクライアントライブラリを使う案は、クエリが1本だけなので依存を増やす利点が小さく、採らない
+- 代替：当初はRESTに `google/go-github` を使う予定だった。ETagの条件付きリクエストを1か所で扱うには、自前で書くほうが簡潔なため、実装の段階で採るのをやめた。GraphQLのクライアントライブラリも、クエリが1本だけなので採らない
 - ポーリングは `GET /repos/{owner}/{repo}/issues?state=all&since=<前回の取得時刻 - 60秒>` に、ETagの条件付きリクエストを付ける。60秒を重ねるのは、時計のずれによる取りこぼしを防ぐため
 - ラベルの付与者は、issue eventsの `labeled` イベントの `actor` から取る
 
