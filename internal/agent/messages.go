@@ -87,3 +87,9 @@ func textsFor(lang string) texts {
 	}
 	return english
 }
+
+// QuestionLabels are the lines that introduce the question in the agent's posts, in every language. The inbox
+// uses them to quote the question.
+func QuestionLabels() []string {
+	return []string{"**" + english.question + "**", "**" + japanese.question + "**"}
+}

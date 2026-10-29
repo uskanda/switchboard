@@ -65,9 +65,9 @@
 
 ## 10. 受信箱（`inbox`）
 
-- [ ] 10.1 `switchboard inbox` と `--json` を実装し、設定に無いリポジトリのissueが出ないことと、マーカーからだけ項目を取ることをテストで確かめる
-- [ ] 10.2 `switchboard show` と、行番号の記録を実装し、記録が無いときの報告をテストで確かめる
-- [ ] 10.3 `switchboard reply` と `--editor`、`--force` を実装し、待ちでないissueへの投稿が止まることをテストで確かめる
+- [x] 10.1 `switchboard inbox` と `--json` を実装し、設定に無いリポジトリのissueが出ないことと、マーカーからだけ項目を取ることをテストで確かめる
+- [x] 10.2 `switchboard show` と、行番号の記録を実装し、記録が無いときの報告をテストで確かめる
+- [x] 10.3 `switchboard reply` と `--editor`、`--force` を実装し、待ちでないissueへの投稿が止まることをテストで確かめる
 
 ## 11. 診断と文書
 

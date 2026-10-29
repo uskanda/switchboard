@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"flag"
 	"os"
 	"path/filepath"
 	"strings"
@@ -57,5 +58,35 @@ func TestMissingConfigFails(t *testing.T) {
 	var out, errb bytes.Buffer
 	if code := cli.Run([]string{"agent", "status", "--config", "/nonexistent.yaml"}, &out, &errb); code != 1 {
 		t.Fatalf("exit %d, want 1", code)
+	}
+}
+
+func TestOptionsMayFollowPositionalArguments(t *testing.T) {
+	cases := []struct {
+		args  []string
+		force bool
+		pos   string
+	}{
+		{[]string{"1", "Go with B.", "--force"}, true, "1|Go with B."},
+		{[]string{"--force", "1", "text"}, true, "1|text"},
+		{[]string{"1", "--", "--force"}, false, "1|--force"},
+		{[]string{"gh:o/r#2", "x"}, false, "gh:o/r#2|x"},
+	}
+	for _, c := range cases {
+		fs := flag.NewFlagSet("t", flag.ContinueOnError)
+		force := fs.Bool("force", false, "")
+		if err := parseInterspersed(fs, c.args); err != nil {
+			t.Fatalf("%v: %v", c.args, err)
+		}
+		if *force != c.force || strings.Join(fs.Args(), "|") != c.pos {
+			t.Errorf("%v: force=%v args=%q", c.args, *force, fs.Args())
+		}
+	}
+}
+
+func TestInboxWithoutAnInboxTokenRefFails(t *testing.T) {
+	var out, errb bytes.Buffer
+	if code := cli.Run([]string{"inbox", "--config", writeConfig(t)}, &out, &errb); code != 1 || !strings.Contains(errb.String(), "inbox_token_ref") {
+		t.Fatalf("exit %d: %s", code, errb.String())
 	}
 }

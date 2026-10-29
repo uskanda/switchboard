@@ -2,7 +2,6 @@ package agent
 
 import (
 	"bytes"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,8 +9,6 @@ import (
 	"time"
 
 	"github.com/uskanda/switchboard/internal/config"
-	"github.com/uskanda/switchboard/internal/forge"
-	"github.com/uskanda/switchboard/internal/state"
 )
 
 func TestNoUpdateStartsNothing(t *testing.T) {
@@ -347,7 +344,3 @@ func TestStatusWithoutAnAgent(t *testing.T) {
 		t.Fatalf("status:\n%s", out.String())
 	}
 }
-
-var _ = errors.Is
-var _ forge.IssueRef
-var _ state.Dir

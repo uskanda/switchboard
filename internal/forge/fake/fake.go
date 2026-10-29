@@ -20,6 +20,8 @@ type Forge struct {
 	users    map[string]forge.User
 	PRs      []forge.ChangeRequest
 	Comments int // number of PostComment calls, for tests that count writes
+	// PostAs is the login PostComment posts as; "agent" when empty.
+	PostAs string
 	// FailSetLabels, when set, is returned by the next SetLabels call and then cleared.
 	FailSetLabels error
 	failNth       int // FailNthSetLabels: calls left until the failing one
@@ -267,12 +269,17 @@ func (f *Forge) SetLabels(_ context.Context, ref forge.IssueRef, labels []string
 	return nil
 }
 
-// PostComment implements forge.Forge. The comment is authored by the user registered as "agent", or the zero user.
+// PostComment implements forge.Forge. The comment is authored by the user named by PostAs ("agent" by default),
+// or the zero user when no such user is registered.
 func (f *Forge) PostComment(_ context.Context, ref forge.IssueRef, body string) (*forge.Comment, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.Comments++
-	c := f.addComment(ref, body, f.users["agent"])
+	as := f.PostAs
+	if as == "" {
+		as = "agent"
+	}
+	c := f.addComment(ref, body, f.users[as])
 	return &c, nil
 }
 
