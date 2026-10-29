@@ -1,7 +1,7 @@
 # システム設計案
 
-状態：**案（未承認）**。SPEC.md / ARCHITECTURE.md / SECURITY.md / DECISIONS.mdを前提に、実装に使う設計を示す。
-仕様からの変更・追加を含むため、採用する項目はDECISIONS.mdにADRとして追加してから実装に使う（2章にADR案を列挙）。
+状態：**一部採用**。SPEC.md / ARCHITECTURE.md / SECURITY.md / DECISIONS.mdを前提に、実装に使う設計を示す。
+2章のADR案のうち、ADR-010、ADR-011、ADR-012、ADR-015は2026-10-29に採用した。grilling（change `add-phase1-minimal`）では、ADR-019〜027も新たに決めた。本書とDECISIONS.mdが食い違うときは、DECISIONS.mdを正とする。
 
 本書の表記は次のとおり。
 - 「〔検証Vn〕」はROADMAP.mdの検証項目（V1〜V6）または本書で追加する検証項目（V7〜、11章）で確認するまで前提にしない事項
@@ -152,7 +152,7 @@ claude -p \
   --output-format stream-json --verbose \
   --permission-mode dontAsk \
   --settings <run-dir>/settings.json \
-  --setting-sources <V17 の結果で決める> \
+  --setting-sources user \
   --strict-mcp-config --mcp-config <run-dir>/mcp.json \
   --append-system-prompt-file <run-dir>/system.md \
   --max-turns <agent.max_turns> \
@@ -164,7 +164,7 @@ claude -p \
 - 再開時は `--fork-session` で毎回新しいIDに分岐させ、新しいIDはstream-jsonの結果から取る。分岐なしで同じセッションを2か所から再開すると発言が1つのtranscriptに混ざる〔確認済C17〕ので、マスターが同じセッションを対話で開いていても衝突しないようにする（V4のリスクを設計で消す）
 - `--permission-mode dontAsk` と明示allowで動かす。`-p` で事前許可のないツールは確認待ちにならず拒否され、最終resultの `permission_denials` に残る〔確認済C15、dontAskの厳密な挙動はV18〕
 - `--strict-mcp-config` と空に近い `mcp.json` で、対象リポジトリの `.mcp.json` 由来のMCPサーバーを読み込ませない
-- `-p` は `--bare` を付けない限り、対象リポジトリの `.claude/settings.json` のフックと `.mcp.json` を信頼確認なしで読み込む〔確認済C19〕。`--bare` はサブスクリプションのOAuth認証を読まないため使えない〔確認済C19, C21〕。対策は次の3つ。(1) `--strict-mcp-config` でMCPを固定する。(2) `--setting-sources` でプロジェクト設定を外せるか検証する〔V17〕。(3) 実行前にworktreeの `.claude/`・`.mcp.json`・`CLAUDE.md` がベースブランチと一致するか確認し、一致しなければ実行しない（ADR-018）
+- `-p` は `--bare` を付けない限り、対象リポジトリの `.claude/settings.json` のフックと `.mcp.json` を信頼確認なしで読み込む〔確認済C19〕。`--bare` はサブスクリプションのOAuth認証を読まないため使えない〔確認済C19, C21〕。対策は次の3つ。(1) `--strict-mcp-config` でMCPを固定する。(2) `--setting-sources user` でユーザー層の設定だけを読み込み、プロジェクト設定を外す（ADR-021。挙動はV17で確かめる）。(3) 実行前にworktreeの `.claude/`・`.mcp.json`・`CLAUDE.md` がベースブランチと一致するか確認し、一致しなければ実行しない（ADR-018）
 - `settings.json` はrunごとにエージェントが生成する（許可ツール・拒否ルール・フック・サンドボックス設定）。フックはこの設定経由でのみ登録するので、マスターが手で開く対話セッションには影響しない
 - 作業ディレクトリは、issueごとに固定したパスのworktreeとする。パスは `<data>/worktrees/<forge>/<project>/issue-<n>`。ブランチは `switchboard/issue-<n>`。`--resume` は作業ディレクトリに縛られず、IDで全プロジェクトから探す〔確認済C17〕。それでもファイルの文脈を揃えるため、パスは固定する
 - transcript（`~/.claude/projects/…/<session-id>.jsonl`）の形式は内部仕様でバージョンごとに変わる〔確認済C22〕ので解析しない。必要な情報はstream-jsonとStopフックの `last_assistant_message` から取る
@@ -175,7 +175,7 @@ claude -p \
 |---|---|
 | `PATH`, `HOME`, `LANG`, `TMPDIR`, `SHELL`, `USER`, `SWITCHBOARD_RUN_DIR`, `SWITCHBOARD_ISSUE_REF`, `GIT_TERMINAL_PROMPT=0`、専用 OS ユーザー運用時は `CLAUDE_CODE_OAUTH_TOKEN` | `GH_TOKEN`, `GITHUB_TOKEN`, `GITLAB_TOKEN`, `SSH_AUTH_SOCK`, `ANTHROPIC_API_KEY`, クラウドの認証情報、その他すべて |
 
-`-p` は `ANTHROPIC_API_KEY` があると常にそれを優先し、API課金で動く〔確認済C21〕。サブスクリプションで動かすため、この変数は必ず環境から除く。
+`-p` は `ANTHROPIC_API_KEY` があると常にそれを優先し、API課金で動く〔確認済C21〕。既定の認証方式はサブスクリプションなので、この変数を環境から除く。利用者が設定でAPIキーを選んだときだけ渡す（ADR-027）。
 
 加えて `GIT_CONFIG_COUNT` 系で `credential.helper` を空にし、`remote.origin.pushurl` を無効なURLにする。ただしこれは誤操作防止の「段差」であり、同じOSユーザーで動く限り `~/.ssh` や `gh` の設定ファイルには到達できる。境界としては7章のL1（OSユーザー分離またはサンドボックス）が必要。
 
@@ -334,7 +334,7 @@ finalizerはpushの前に以下を確認し、1つでもNGならpushせず `wait
 - ブランチが `switchboard/issue-<n>` で、ベースブランチより先にコミットがある
 - 差分が `protected_paths` に触れていない。既定の対象は `.github/workflows/**`、`.gitlab-ci.yml`、`.claude/**`、`.mcp.json`、`CLAUDE.md`、`CODEOWNERS` 等。触れる場合は、信頼済みコメントによる人間の明示承認を要求する
 - 差分・コミットメッセージ・投稿予定コメントに秘密情報のパターン（`ghp_`、`github_pat_`、`glpat-`、`AKIA`、秘密鍵ヘッダ等。`gitleaks` があれば併用）がない（T9）
-- プロジェクトに `verify_command`（テスト等）があれば成功する
+- プロジェクトに `verify_command` があれば、エージェントが実行して成功する。未設定なら検証を省き、PRの本文に「検証なし」と書く（ADR-022）
 
 CI設定の変更を止める理由：pushしただけでCIが走るため、CI定義を書き換えられるとCIのシークレットに到達されうる。GitHubのfine-grained PATは、REST APIでワークフローファイルを変更するのにWorkflows権限が要る〔確認済C3〕。`git push` でも同様に拒否されると広く知られているが文書では確認できていない〔検証V15〕。確認できればトークン側でも二重に止められる。
 
@@ -419,9 +419,14 @@ projects:
     path: ~/Repos/example-repo
     host: macbook-air
     base_branch: main
-    verify_command: "make test"        # 任意
+    verify_command: "make test"        # 任意。未設定なら検証なし（ADR-022）
     include_untrusted: false           # 公開リポジトリでは true にできない
     protected_paths_extra: []
+comments:
+  language: en                       # 既定は英語（ADR-025）
+  check_command: ""                  # 投稿前の検査。既定では何もしない
+claude:
+  auth: subscription                 # subscription | api_key（ADR-027）
 agent:
   max_parallel: 1
   max_turns: 80
@@ -556,9 +561,6 @@ switchboard/
 
 ## 12. 判断が必要な事項
 
-1. ADR-010：Goで確定してよいか
-2. ADR-011 / 012：フォージ書き込みとpushをエージェントに一本化する（フックの役割を縮小する）か
-3. ADR-015：エージェント用アカウントの分離をどのフェーズで入れるか。GitHubは別アカウント（machine user）またはGitHub App。GitLabはProject Access Tokenがbotユーザーを作るので理想的だが、GitLab.comではPremium以上が必要〔確認済C12〕。Freeなら、別のGitLabアカウントを対象プロジェクトにだけDeveloperで参加させ、そのPATを使うのが代替（スコープをトークンではなくメンバーシップで絞る）。SECURITY.md 4章のGitLabの記述もこれに合わせて修正が要る
-4. L1（専用OSユーザー）をPhase 1から入れるか、Phase 3まで待つか
-5. 非信頼コメントを既定でプロンプトから除外してよいか（本書は除外を推奨）
-6. done後のコメントを無視し、再実行は `agent:ready` の付け直しに限る運用でよいか
+このリストの項目は、2026-10-29のgrilling（change `add-phase1-minimal`）ですべて決めた。結果はDECISIONS.mdのADR-010、ADR-011、ADR-012、ADR-015、ADR-023、ADR-024にある。done後のコメントで再実行しないことは、grillingの記録にある。
+
+未決のまま残るのは、ADR-013、ADR-014、ADR-016、ADR-017、ADR-018である。ADR-017はPhase 2で、ほかはPhase 1の成果物を書くときに決める。
