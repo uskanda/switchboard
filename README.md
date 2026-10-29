@@ -151,6 +151,12 @@ switchboard reply 1 "Bで進めてください"
 make verify
 ```
 
+実物の `claude` で、着手から質問、返答、完了までを通す確認もある。モデルを呼ぶため、`make verify` とCIでは動かない。
+
+```bash
+go test -tags realclaude -run RealClaude -v -timeout 30m ./internal/integration/
+```
+
 Secret Serviceが無い開発環境では、設定に `secrets: {allow_env: true}` を書く。するとSecret Serviceに項目が無いとき、環境変数からトークンを読む。変数の名前は、`token_ref` が `switchboard/github` なら `SWITCHBOARD_TOKEN_SWITCHBOARD_GITHUB` である。
 
 ## ライセンス

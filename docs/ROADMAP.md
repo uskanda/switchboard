@@ -76,6 +76,7 @@
 | V16 | 利用するGitLabでwebhookの署名トークンが使えるか | 未確認。Phase 2で確かめる | |
 | V17 | `--setting-sources` で対象リポジトリの `.claude/settings.json` を読み込ませずに済むか | 済む。`--setting-sources user` ではプロジェクトのフックが動かなかった。ただし、プロジェクトの `CLAUDE.md` も読み込まれなくなった | 2026-10-29 |
 | V18 | `--permission-mode dontAsk` の `-p` での挙動 | allowに無いツール呼び出しを、確認せずに拒否して続行する。PermissionRequestフックは発火しない。ただし `uname -a` のような読み取り専用のコマンドは、allowに無くても実行された | 2026-10-29 |
+| V19 | Phase 1の完了条件（`agent:ready` から待ち、返答、PRの作成まで手で操作せずに回るか）を、実物の `claude` で満たすか | 満たす。偽のフォージと実物のgitリポジトリに対し、claude 2.1.312（モデルは既定）で、質問、受信箱からの返答、完了、draftのPRの作成まで回った。1回目は5秒、2回目は11秒だった。`go test -tags realclaude ./internal/integration/` で再現できる。実物のGitHubに対する確認は、マスターの端末で行う | 2026-10-29 |
 
 ### 検証で分かった、設計に関わる点
 
