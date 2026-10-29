@@ -152,7 +152,6 @@ claude -p \
   --output-format stream-json --verbose \
   --permission-mode dontAsk \
   --settings <run-dir>/settings.json \
-  --setting-sources user \
   --strict-mcp-config --mcp-config <run-dir>/mcp.json \
   --append-system-prompt-file <run-dir>/system.md \
   --max-turns <agent.max_turns> \
@@ -164,7 +163,7 @@ claude -p \
 - 再開時は `--fork-session` で毎回新しいIDに分岐させ、新しいIDはstream-jsonの結果から取る。分岐なしで同じセッションを2か所から再開すると発言が1つのtranscriptに混ざる〔確認済C17〕ので、マスターが同じセッションを対話で開いていても衝突しないようにする（V4のリスクを設計で消す）
 - `--permission-mode dontAsk` と明示allowで動かす。`-p` で事前許可のないツールは確認待ちにならず拒否され、最終resultの `permission_denials` に残る〔確認済C15、dontAskの厳密な挙動はV18〕
 - `--strict-mcp-config` と空に近い `mcp.json` で、対象リポジトリの `.mcp.json` 由来のMCPサーバーを読み込ませない
-- `-p` は `--bare` を付けない限り、対象リポジトリの `.claude/settings.json` のフックと `.mcp.json` を信頼確認なしで読み込む〔確認済C19〕。`--bare` はサブスクリプションのOAuth認証を読まないため使えない〔確認済C19, C21〕。対策は次の3つ。(1) `--strict-mcp-config` でMCPを固定する。(2) `--setting-sources user` でユーザー層の設定だけを読み込み、プロジェクト設定を外す（ADR-021。挙動はV17で確かめる）。(3) 実行前にworktreeの `.claude/`・`.mcp.json`・`CLAUDE.md` がベースブランチと一致するか確認し、一致しなければ実行しない（ADR-018）
+- `-p` は `--bare` を付けない限り、対象リポジトリの `.claude/settings.json` のフックと `.mcp.json` を信頼確認なしで読み込む〔確認済C19〕。`--bare` はサブスクリプションのOAuth認証を読まないため使えない〔確認済C19, C21〕。対策は次の3つ。(1) `--strict-mcp-config` でMCPを固定する。(2) `--setting-sources` は付けず、プロジェクト設定も読み込む（ADR-028。V17のとおり、外すと `CLAUDE.md` も読み込まれない）。(3) 実行前にworktreeの `.claude/`・`.mcp.json`・`CLAUDE.md` がベースブランチと一致するか確認し、一致しなければ実行しない（ADR-018）
 - `settings.json` はrunごとにエージェントが生成する（許可ツール・拒否ルール・フック・サンドボックス設定）。フックはこの設定経由でのみ登録するので、マスターが手で開く対話セッションには影響しない
 - 作業ディレクトリは、issueごとに固定したパスのworktreeとする。パスは `<data>/worktrees/<forge>/<project>/issue-<n>`。ブランチは `switchboard/issue-<n>`。`--resume` は作業ディレクトリに縛られず、IDで全プロジェクトから探す〔確認済C17〕。それでもファイルの文脈を揃えるため、パスは固定する
 - transcript（`~/.claude/projects/…/<session-id>.jsonl`）の形式は内部仕様でバージョンごとに変わる〔確認済C22〕ので解析しない。必要な情報はstream-jsonとStopフックの `last_assistant_message` から取る
@@ -563,4 +562,4 @@ switchboard/
 
 このリストの項目は、2026-10-29のgrilling（change `add-phase1-minimal`）ですべて決めた。結果はDECISIONS.mdのADR-010、ADR-011、ADR-012、ADR-015、ADR-023、ADR-024にある。done後のコメントで再実行しないことは、grillingの記録にある。
 
-未決のまま残るのは、ADR-013、ADR-014、ADR-016、ADR-017、ADR-018である。ADR-017はPhase 2で、ほかはPhase 1の成果物を書くときに決める。
+ADR-013、ADR-014、ADR-016、ADR-018は、change `add-phase1-minimal` の第6ラウンドで採用した。未決のまま残るのはADR-017で、Phase 2で決める。
