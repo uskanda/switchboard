@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -277,4 +278,54 @@ func Parse(r io.Reader, res *Result) error {
 		}
 	}
 	return sc.Err()
+}
+
+// CheckedVersion is the claude version the flags and output formats above were checked against.
+const CheckedVersion = "2.1.312"
+
+var versionRE = regexp.MustCompile(`\d+\.\d+\.\d+`)
+
+// Version runs `binary --version` and returns the version number it prints.
+func Version(ctx context.Context, binary string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, binary, "--version").Output()
+	if err != nil {
+		return "", fmt.Errorf("%s --version: %w", binary, err)
+	}
+	v := versionRE.FindString(string(out))
+	if v == "" {
+		return "", fmt.Errorf("%s --version printed no version: %q", binary, strings.TrimSpace(string(out)))
+	}
+	return v, nil
+}
+
+// Older reports whether version v is older than base. A version that does not parse counts as older.
+func Older(v, base string) bool {
+	parse := func(s string) ([3]int, bool) {
+		var n [3]int
+		parts := strings.Split(s, ".")
+		if len(parts) != 3 {
+			return n, false
+		}
+		for i, p := range parts {
+			x, err := strconv.Atoi(p)
+			if err != nil {
+				return n, false
+			}
+			n[i] = x
+		}
+		return n, true
+	}
+	a, ok := parse(v)
+	b, _ := parse(base)
+	if !ok {
+		return true
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return a[i] < b[i]
+		}
+	}
+	return false
 }

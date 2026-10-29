@@ -15,6 +15,8 @@ import (
 	"github.com/uskanda/switchboard/internal/agent"
 	"github.com/uskanda/switchboard/internal/cli"
 	"github.com/uskanda/switchboard/internal/config"
+	"github.com/uskanda/switchboard/internal/doctor"
+	"github.com/uskanda/switchboard/internal/forge"
 	"github.com/uskanda/switchboard/internal/forge/github"
 	"github.com/uskanda/switchboard/internal/inbox"
 	"github.com/uskanda/switchboard/internal/labels"
@@ -30,6 +32,7 @@ func init() {
 	cli.Register("inbox", inboxList)
 	cli.Register("show", inboxShow)
 	cli.Register("reply", inboxReply)
+	cli.Register("doctor", runDoctor)
 }
 
 // parse parses the options of a subcommand: --config and those added by more. It returns the configuration, or an
@@ -256,5 +259,24 @@ func inboxReply(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 	fmt.Fprintf(stdout, "posted the reply to gh:%s/%s#%d\n", ref.Owner, ref.Repo, ref.Number)
+	return 0
+}
+
+func runDoctor(args []string, stdout, stderr io.Writer) int {
+	cfg, _, code := parse("doctor", args, stderr, nil)
+	if code >= 0 {
+		return code
+	}
+	d := &doctor.Doctor{
+		Config:  cfg,
+		State:   state.Dir{Path: state.DefaultDir()},
+		Secrets: secret.Resolver{Store: secret.Keyring{}, AllowEnv: cfg.Secrets.AllowEnv},
+		Forge:   func(token string) forge.Forge { return github.New(token) },
+		Out:     stdout,
+	}
+	if n := d.Run(context.Background()); n > 0 {
+		fmt.Fprintf(stderr, "switchboard: doctor found %d problem(s)\n", n)
+		return 1
+	}
 	return 0
 }

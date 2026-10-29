@@ -90,3 +90,13 @@ func TestInboxWithoutAnInboxTokenRefFails(t *testing.T) {
 		t.Fatalf("exit %d: %s", code, errb.String())
 	}
 }
+
+func TestDoctorReportsAMissingToken(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent")
+	var out, errb bytes.Buffer
+	code := cli.Run([]string{"doctor", "--config", writeConfig(t)}, &out, &errb)
+	if code != 1 || !strings.Contains(out.String(), "fail  agent token") || !strings.Contains(errb.String(), "problem") {
+		t.Fatalf("exit %d\n%s\n%s", code, out.String(), errb.String())
+	}
+}

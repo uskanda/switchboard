@@ -238,3 +238,33 @@ func TestCancelStopsWithSIGINT(t *testing.T) {
 		t.Fatalf("signals = %q", got)
 	}
 }
+
+func TestVersion(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "claude")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho '2.1.312 (Claude Code)'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	v, err := Version(context.Background(), bin)
+	if err != nil || v != "2.1.312" {
+		t.Fatalf("Version = %q, %v", v, err)
+	}
+	if _, err := Version(context.Background(), filepath.Join(dir, "missing")); err == nil {
+		t.Fatal("a missing binary has a version")
+	}
+}
+
+func TestOlder(t *testing.T) {
+	cases := []struct {
+		v    string
+		want bool
+	}{
+		{"2.1.312", false}, {"2.1.400", false}, {"2.2.0", false}, {"3.0.0", false},
+		{"2.1.311", true}, {"2.0.999", true}, {"1.9.0", true}, {"garbage", true},
+	}
+	for _, c := range cases {
+		if got := Older(c.v, CheckedVersion); got != c.want {
+			t.Errorf("Older(%q) = %v", c.v, got)
+		}
+	}
+}
