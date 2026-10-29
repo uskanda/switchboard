@@ -6,10 +6,10 @@
 
 前提にしている Claude Code の挙動を確認する。結果は下の「検証項目」に追記する。
 
-- [ ] Stop / Notification フックの入力内容（session_id、cwd、待ち理由が取れるか）
-- [ ] `claude -p` 実行中に人間の判断が必要になったときの挙動
-- [ ] `--resume` の条件と、対話中セッションと重なった場合の挙動
-- [ ] 許可ツール・拒否ルールの設定で main への push・マージを確実に止められるか
+- [x] Stop / Notification フックの入力内容（session_id、cwd、待ち理由が取れるか）
+- [x] `claude -p` 実行中に人間の判断が必要になったときの挙動
+- [ ] `--resume` の条件と、対話中セッションと重なった場合の挙動（条件は確認済み。重なった場合は未確認）
+- [x] 許可ツール・拒否ルールの設定で main への push・マージを確実に止められるか
 
 完了条件：検証項目がすべて「結果」欄つきで埋まっている
 
@@ -54,11 +54,32 @@
 
 ## 検証項目
 
+確認の条件：クラウド環境（Claude Code on the webのコンテナ）、`claude` 2.1.312、モデルはhaiku。`claude -p` は、許可リストで組み立てた環境変数（`env -i` で `HOME`・`PATH`・プロキシの設定だけを渡す）で起動した。記録は `add-phase1-minimal` の作業中に取った。
+
 | # | 項目 | 結果 | 確認日 |
 |---|---|---|---|
-| V1 | Stop / Notification フックで session_id・cwd が取れるか | 未確認 | |
-| V2 | Notification フックで「権限確認待ち」と「入力待ち」を区別できるか | 未確認 | |
-| V3 | `claude -p` で判断が必要になった場合、停止するか失敗するか | 未確認 | |
-| V4 | 対話中セッションと `--resume` が重なった場合の挙動 | 未確認 | |
-| V5 | 権限設定で main への push・マージを拒否できるか | 未確認 | |
-| V6 | サブスクリプション認証でのヘッドレス常駐実行に制約がないか | 未確認 | |
+| V1 | Stop / Notification フックで session_id・cwd が取れるか | 取れる。Stopの入力には `session_id`・`cwd`・`transcript_path`・`permission_mode`・`stop_hook_active` が入る。`last_assistant_message` は、最後の出力がテキストのときだけ入り、`--json-schema` の構造化出力で終わったときは入らない | 2026-10-29 |
+| V2 | Notification フックで「権限確認待ち」と「入力待ち」を区別できるか | `-p` ではNotificationフックが一度も発火しなかったため、区別は確かめられない（V13） | 2026-10-29 |
+| V3 | `claude -p` で判断が必要になった場合、停止するか失敗するか | 停止も失敗もしない。許可の無いツール呼び出しは拒否され、実行は続く。拒否された呼び出しはresultの `permission_denials` に残る | 2026-10-29 |
+| V4 | 対話中セッションと `--resume` が重なった場合の挙動 | 重なった場合は未確認。`--fork-session` を付けると新しいセッションIDで再開されるため、設計では常に分岐させて重なりを避ける | 2026-10-29 |
+| V5 | 権限設定で main への push・マージを拒否できるか | 確実には拒否できない。`Bash(git push*)` のdenyは `git push` を直接呼ぶ形だけを止め、`sh -c 'git push ...'` はすり抜けてpushされた | 2026-10-29 |
+| V6 | サブスクリプション認証でのヘッドレス常駐実行に制約がないか | 未確認。マスターの端末で確かめる | |
+| V7 | `-p` で `--session-id <uuid>` を指定できるか | 指定できる。resultとフックの `session_id` に指定したIDが入る。`--resume <id> --fork-session` は新しいIDを返し、別の作業ディレクトリからも再開できた | 2026-10-29 |
+| V8 | `--json-schema` の `structured_output` がstream-jsonのresultに入るか | 入る。Claudeは `StructuredOutput` ツールで出力し、resultの `structured_output` にスキーマどおりのオブジェクトが入る | 2026-10-29 |
+| V9 | `--settings` のフック・権限・サンドボックス設定が `-p` で適用されるか | フックと権限は適用される。サンドボックスは、このコンテナに `bwrap` が無いため確かめられない。`-p` でも依存の不足を警告し、サンドボックスなしで続行した | 2026-10-29 |
+| V10 | 専用OSユーザーと `CLAUDE_CODE_OAUTH_TOKEN` でヘッドレス実行が回るか | 未確認。マスターの端末で確かめる | |
+| V11 | `permission_denials` の要素の形 | 要素は `tool_name`・`tool_use_id`・`tool_input` を持つ。Bashなら `tool_input.command` に拒否されたコマンドが入る | 2026-10-29 |
+| V12 | 利用上限に達したときの終了コード・`subtype`・出力の形 | 未確認。意図して再現する方法が無いため、Phase 1の運用中に記録する | |
+| V13 | `-p` 実行中にNotificationフックが発火するか | 発火しなかった。`dontAsk` と `default` の権限モードの両方で確かめた | 2026-10-29 |
+| V14 | GitHub GraphQL searchでissueと直近コメントを1リクエストで取れるか | 未確認。このコンテナにはGraphQLを呼べる認証が無いため、Phase 1の実装で確かめる | |
+| V15 | Workflows権限なしのfine-grained PATで、ワークフロー変更を含む `git push` が拒否されるか | 未確認。マスターの端末で、検証用リポジトリとPATを使って確かめる | |
+| V16 | 利用するGitLabでwebhookの署名トークンが使えるか | 未確認。Phase 2で確かめる | |
+| V17 | `--setting-sources` で対象リポジトリの `.claude/settings.json` を読み込ませずに済むか | 済む。`--setting-sources user` ではプロジェクトのフックが動かなかった。ただし、プロジェクトの `CLAUDE.md` も読み込まれなくなった | 2026-10-29 |
+| V18 | `--permission-mode dontAsk` の `-p` での挙動 | allowに無いツール呼び出しを、確認せずに拒否して続行する。PermissionRequestフックは発火しない。ただし `uname -a` のような読み取り専用のコマンドは、allowに無くても実行された | 2026-10-29 |
+
+### 検証で分かった、設計に関わる点
+
+- 親のClaude Codeのセッションから起動すると、子の `claude -p` は環境変数 `CLAUDE_CODE_SESSION_ID` を引き継ぎ、親と同じセッションIDで動いた。エージェントは環境を許可リストで組み立てる設計（DESIGN.md 4.4節）なので、この変数は渡さない
+- `--setting-sources user` ではプロジェクトの `CLAUDE.md` も読み込まれない（V17）。ADR-021はプロジェクト設定を読み込まないと決めているため、リポジトリの指示をプロンプトで渡す方法か、ADR-018の検査を前提にプロジェクト設定を読み込む方法かを、Phase 1の成果物で決める
+- `default` の権限モードでは、承認の要る呼び出しでPermissionRequestフックが動き、判定を返さなければ拒否された。`dontAsk` ではこのフックが動かないため、拒否の記録は `permission_denials` から取る
+- denyルールは境界にならない（V5）。Claudeのプロセスにフォージの資格情報を渡さないADR-012が、push対策の本体になる
