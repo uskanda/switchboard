@@ -40,7 +40,9 @@ type cached struct {
 type Option func(*Client)
 
 // WithBaseURL points the REST API at base (tests, GitHub Enterprise).
-func WithBaseURL(base string) Option { return func(c *Client) { c.baseURL = strings.TrimRight(base, "/") } }
+func WithBaseURL(base string) Option {
+	return func(c *Client) { c.baseURL = strings.TrimRight(base, "/") }
+}
 
 // WithGraphQLURL points the GraphQL API at u.
 func WithGraphQLURL(u string) Option { return func(c *Client) { c.graphqlURL = u } }

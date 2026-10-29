@@ -9,7 +9,7 @@ verify: verify-fmt verify-vet verify-test ## Run every check that applies to thi
 	@echo "verify: ok"
 
 verify-fmt: ## Fail when a Go file is not gofmt-formatted
-	@out="$$(gofmt -l $$(git ls-files '*.go'))"; \
+	@out="$$(gofmt -l $$(git ls-files --cached --others --exclude-standard '*.go'))"; \
 	if [ -n "$$out" ]; then echo "[fmt] not formatted:"; echo "$$out"; exit 1; fi; \
 	echo "[fmt] ok"
 
