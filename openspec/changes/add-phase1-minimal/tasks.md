@@ -4,7 +4,7 @@
 
 - [x] 1.1 Goモジュール（`github.com/uskanda/switchboard`）とサブコマンドの骨組みを作る。`go build ./...` が通り、`switchboard --help` に7つのサブコマンドが出ることを確かめる
 - [x] 1.2 `Makefile` の `verify` を、`gofmt` の差分の検査、`go vet ./...`、`go test ./...` に置き換え、`make verify` が通ることを確かめる
-- [ ] 1.3 GitHub ActionsのCI（Ubuntu、ハーネスを入れない）で `make verify` を実行するワークフローを追加し、PRでCIが緑になることを確かめる
+- [x] 1.3 GitHub ActionsのCI（Ubuntu、ハーネスを入れない）で `make verify` を実行するワークフローを追加し、PRでCIが緑になることを確かめる
 - [x] 1.4 MITのLICENSEファイルを追加し、製品のコードと既定の設定に `uskn` が現れないことを確かめるテストを書いて通す
 
 ## 2. 設定と資格情報（`config`）
@@ -35,11 +35,11 @@
 
 ## 6. claude CLIとの接続
 
-- [ ] 6.1 Phase 0で記録したstream-jsonを返す偽の `claude` スクリプトを、テスト用のデータとして追加する
-- [ ] 6.2 起動の引数、許可リストの環境変数、実行ごとのClaude Codeの設定ファイルと空のMCP設定の生成を実装する。`GH_TOKEN`、`SSH_AUTH_SOCK`、`CLAUDE_CODE_SESSION_ID`、`ANTHROPIC_API_KEY` が渡らないことを、偽の `claude` が受け取った環境で確かめる
-- [ ] 6.3 resultの解析（`structured_output`、`permission_denials`、`is_error`、`subtype`）を実装し、記録した出力でテストが通ることを確かめる
-- [ ] 6.4 プロセスグループでの起動と、SIGINT、SIGTERM、SIGKILLの順の停止を実装し、終わらない偽の `claude` が止まることをテストで確かめる
-- [ ] 6.5 プロンプトと追記の指示の組み立てを実装し、信頼済みの入力だけが入ることをテストで確かめる
+- [x] 6.1 Phase 0で記録したstream-jsonを返す偽の `claude` スクリプトを、テスト用のデータとして追加する
+- [x] 6.2 起動の引数、許可リストの環境変数、実行ごとのClaude Codeの設定ファイルと空のMCP設定の生成を実装する。`GH_TOKEN`、`SSH_AUTH_SOCK`、`CLAUDE_CODE_SESSION_ID`、`ANTHROPIC_API_KEY` が渡らないことを、偽の `claude` が受け取った環境で確かめる
+- [x] 6.3 resultの解析（`structured_output`、`permission_denials`、`is_error`、`subtype`）を実装し、記録した出力でテストが通ることを確かめる
+- [x] 6.4 プロセスグループでの起動と、SIGINT、SIGTERM、SIGKILLの順の停止を実装し、終わらない偽の `claude` が止まることをテストで確かめる
+- [x] 6.5 プロンプトと追記の指示の組み立てを実装し、信頼済みの入力だけが入ることをテストで確かめる
 
 ## 7. 作業場所と出力検査
 
