@@ -24,7 +24,7 @@ GitHub / GitLab の issue を起点に、複数端末・複数プロダクトに
 
 | ファイル | 内容 |
 |---|---|
-| [CLAUDE.md](CLAUDE.md) | Claude Code で本リポジトリを開発する際の指示 |
+| [AGENTS.md](AGENTS.md) | Claude Code で本リポジトリを開発する際の指示 |
 | [docs/SPEC.md](docs/SPEC.md) | 想定仕様（要件・状態モデル・CLI） |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 構成・コンポーネント・処理フロー |
 | [docs/DESIGN.md](docs/DESIGN.md) | システム設計案（未承認。ADR案・詳細設計・追加検証項目） |

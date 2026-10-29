@@ -1,0 +1,8 @@
+# OpenSpec project config installed by uskn-harness. The `uskn` schema (grilling → proposal → specs →
+# design → tasks) is provided at the user level by `uskn-harness sync`; the repository only selects it.
+schema: uskn
+
+context: |
+  Language: ja
+  All artifacts must be written in ja.
+  Keep OpenSpec structural headings and SHALL/MUST keywords in English.
