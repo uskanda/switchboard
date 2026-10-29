@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -121,4 +122,28 @@ func (d Dir) ReadJSON(name string, v any) error {
 		return err
 	}
 	return json.Unmarshal(data, v)
+}
+
+// ErrLocked reports that another holder has the lock.
+var ErrLocked = errors.New("locked")
+
+// Lock takes the exclusive lock locks/<name>.lock without waiting and returns the function that releases it. The
+// lock is an flock, so it is released when the process exits, even after a crash.
+func (d Dir) Lock(name string) (func(), error) {
+	dir := filepath.Join(d.Path, "locks")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(filepath.Join(dir, name+".lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		f.Close()
+		if errors.Is(err, syscall.EWOULDBLOCK) {
+			return nil, fmt.Errorf("%s: %w", name, ErrLocked)
+		}
+		return nil, err
+	}
+	return func() { f.Close() }, nil
 }

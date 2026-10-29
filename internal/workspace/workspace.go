@@ -31,6 +31,9 @@ type Space struct {
 // Dir is the worktree path.
 func (s *Space) Dir() string { return filepath.Join(s.Root, fmt.Sprintf("issue-%d", s.Number)) }
 
+// IssueBranch is the branch the run works on.
+func (s *Space) IssueBranch() string { return s.branch() }
+
 func (s *Space) branch() string {
 	if s.Branch != "" {
 		return s.Branch

@@ -71,9 +71,12 @@ secret-tool store --label='switchboard github' service switchboard/github userna
 
 - `<identities.json>`：ログイン名とユーザーIDの対応
 - `<audit.jsonl>`：信頼判定と書き戻しの記録。1行に1件
-- `runs/<run-id>/`：プロンプト、追記の指示、Claude Codeの設定、stream-jsonの出力、結果
-- `locks/<owner>-<repo>-<n>.lock`：issueごとのファイルロック（`flock`）
-- `<poll.json>`：プロジェクトごとの前回の取得時刻とETag
+- `runs/<run-id>/`：プロンプト、追記の指示、Claude Codeの設定、stream-jsonの出力、書き戻す結果（`outcome.json`）
+- `locks/<owner>-<repo>-<n>.lock`：issueごとのファイルロック（`flock`）。`locks/agent.lock` は、同じ状態ディレクトリで2つ目のエージェントが起動することを防ぐ
+- `issues/<owner>/<repo>/<n>.json`：issueごとの最後の実行の記録。`agent.json`（エージェントのプロセス）と `last.json`（最後に終わった実行）とあわせて、`agent status` が読む
+- `worktrees/<owner>/<repo>/issue-<n>/`：issueごとのworktree
+
+前回の取得時刻は保存しない。起動の直後は全件を取得して評価し、以後は見た更新時刻の最大から60秒を引いた時刻を `since` に使う。止まっている間に付いたラベルや返答も、起動の直後の評価で対象になる。`since` は新しい更新を見たときだけ変わるので、更新が無い間は、ETagの条件付きリクエストが304を返す。
 
 受信箱の行番号の記録は、`$XDG_CACHE_HOME/switchboard/inbox.json` に置く。
 
@@ -108,6 +111,8 @@ claude -p --session-id <uuid> --output-format stream-json --verbose
 ### 6. 設定の検査と出力検査
 
 - 実行前の検査は、`git diff --quiet <base_branch> -- .claude .mcp.json CLAUDE.md AGENTS.md` と、同じパスの未追跡ファイルの有無で行う
+- `verify_command` は、Claudeが書いたコードを実行するため、`claude -p` と同じ許可リストの環境変数だけで実行する。フォージのトークンは渡さない
+- 返答による再開では、最新のエージェントの投稿が `state=waiting` のマーカーを持つことも確かめる。第三者が `agent:waiting` を付けただけのissueは実行しない
 - 秘密情報の検査は、正規表現で行う。対象は `base_branch` から `HEAD` までの差分、コミットメッセージ、投稿する文章とする。形式は、GitHubとGitLabのトークンの接頭辞、AWSのアクセスキー、秘密鍵のヘッダとする
 - pushは、`git push origin switchboard/issue-<n>:refs/heads/switchboard/issue-<n>` の形に固定する。トークンは `GIT_ASKPASS` で、エージェントの子プロセスにだけ渡す
 

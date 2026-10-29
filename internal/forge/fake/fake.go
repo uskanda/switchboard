@@ -22,6 +22,8 @@ type Forge struct {
 	Comments int // number of PostComment calls, for tests that count writes
 	// FailSetLabels, when set, is returned by the next SetLabels call and then cleared.
 	FailSetLabels error
+	failNth       int // FailNthSetLabels: calls left until the failing one
+	failNthEr     error
 	// AfterSetLabels, when set, runs after each successful SetLabels, with the lock released. Tests use it to
 	// simulate a human changing labels right after the agent did.
 	AfterSetLabels func(ref forge.IssueRef)
@@ -231,6 +233,14 @@ func (f *Forge) LabelActor(_ context.Context, ref forge.IssueRef, label string) 
 	return &u, nil
 }
 
+// FailNthSetLabels makes the n-th SetLabels call from now fail with err. Unlike FailSetLabels, it is safe to call
+// while other goroutines use the forge.
+func (f *Forge) FailNthSetLabels(n int, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.failNth, f.failNthEr = n, err
+}
+
 // SetLabels implements forge.Forge. Labels it sets are attributed to the zero user.
 func (f *Forge) SetLabels(_ context.Context, ref forge.IssueRef, labels []string) error {
 	f.mu.Lock()
@@ -238,6 +248,13 @@ func (f *Forge) SetLabels(_ context.Context, ref forge.IssueRef, labels []string
 		f.FailSetLabels = nil
 		f.mu.Unlock()
 		return err
+	}
+	if f.failNth > 0 {
+		f.failNth--
+		if f.failNth == 0 {
+			f.mu.Unlock()
+			return f.failNthEr
+		}
 	}
 	is := f.issue(ref)
 	is.data.Labels = append([]string(nil), labels...)

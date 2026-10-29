@@ -2,6 +2,7 @@ package state
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,4 +60,26 @@ func TestIdentitiesRoundTrip(t *testing.T) {
 	if err != nil || got["alice"] != 1 {
 		t.Fatalf("Identities = %v, %v", got, err)
 	}
+}
+
+func TestLockIsExclusiveUntilReleased(t *testing.T) {
+	d := Dir{Path: t.TempDir()}
+	unlock, err := d.Lock("o-r-12")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Lock("o-r-12"); !errors.Is(err, ErrLocked) {
+		t.Fatalf("second Lock = %v, want ErrLocked", err)
+	}
+	other, err := d.Lock("o-r-13")
+	if err != nil {
+		t.Fatalf("another issue must lock independently: %v", err)
+	}
+	other()
+	unlock()
+	again, err := d.Lock("o-r-12")
+	if err != nil {
+		t.Fatalf("Lock after release = %v", err)
+	}
+	again()
 }
