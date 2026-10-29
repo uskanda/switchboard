@@ -273,14 +273,34 @@ func (f *Forge) SetLabels(_ context.Context, ref forge.IssueRef, labels []string
 // or the zero user when no such user is registered.
 func (f *Forge) PostComment(_ context.Context, ref forge.IssueRef, body string) (*forge.Comment, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.Comments++
 	as := f.PostAs
+	f.mu.Unlock()
 	if as == "" {
 		as = "agent"
 	}
-	c := f.addComment(ref, body, f.users[as])
+	return f.PostCommentAs(ref, body, as)
+}
+
+// PostCommentAs posts as the user registered as login. Tests that give the agent and the user separate clients of
+// one fake forge use it through As.
+func (f *Forge) PostCommentAs(ref forge.IssueRef, body, login string) (*forge.Comment, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Comments++
+	c := f.addComment(ref, body, f.users[login])
 	return &c, nil
+}
+
+// As is a client of the fake forge that posts as login.
+func (f *Forge) As(login string) forge.Forge { return client{f, login} }
+
+type client struct {
+	*Forge
+	login string
+}
+
+func (c client) PostComment(_ context.Context, ref forge.IssueRef, body string) (*forge.Comment, error) {
+	return c.PostCommentAs(ref, body, c.login)
 }
 
 // EnsureLabel implements forge.Forge.
