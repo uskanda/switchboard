@@ -33,3 +33,11 @@
 | エージェント（agent） | 各端末で常駐し、issue を取得して Claude Code を起動するプロセス |
 | 受信箱（inbox） | 全プロダクト横断の「応答待ち」一覧 |
 | 待ち（waiting） | Claude Code が人間の応答を必要として停止している状態 |
+
+## Branch model
+
+```yaml
+default: main
+qa: none
+protected: none
+```
