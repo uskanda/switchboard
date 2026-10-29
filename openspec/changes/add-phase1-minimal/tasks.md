@@ -2,10 +2,10 @@
 
 ## 1. 土台
 
-- [ ] 1.1 Goモジュール（`github.com/uskanda/switchboard`）とサブコマンドの骨組みを作る。`go build ./...` が通り、`switchboard --help` に7つのサブコマンドが出ることを確かめる
-- [ ] 1.2 `Makefile` の `verify` を、`gofmt` の差分の検査、`go vet ./...`、`go test ./...` に置き換え、`make verify` が通ることを確かめる
+- [x] 1.1 Goモジュール（`github.com/uskanda/switchboard`）とサブコマンドの骨組みを作る。`go build ./...` が通り、`switchboard --help` に7つのサブコマンドが出ることを確かめる
+- [x] 1.2 `Makefile` の `verify` を、`gofmt` の差分の検査、`go vet ./...`、`go test ./...` に置き換え、`make verify` が通ることを確かめる
 - [ ] 1.3 GitHub ActionsのCI（Ubuntu、ハーネスを入れない）で `make verify` を実行するワークフローを追加し、PRでCIが緑になることを確かめる
-- [ ] 1.4 MITのLICENSEファイルを追加し、製品のコードと既定の設定に `uskn` が現れないことを確かめるテストを書いて通す
+- [x] 1.4 MITのLICENSEファイルを追加し、製品のコードと既定の設定に `uskn` が現れないことを確かめるテストを書いて通す
 
 ## 2. 設定と資格情報（`config`）
 
