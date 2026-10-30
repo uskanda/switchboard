@@ -30,6 +30,9 @@ var commands = []*command{
 	{words: []string{"service", "uninstall"}, summary: "stop the systemd service and remove its unit and credentials"},
 	{words: []string{"service", "status"}, summary: "show whether the systemd service is installed and running"},
 	{words: []string{"relay", "serve"}, summary: "take forge webhooks and pass their issue IDs to the agents over SSE"},
+	{words: []string{"relay", "hook", "add"}, summary: "make a webhook secret for a project and register the webhook with the inbox token"},
+	{words: []string{"relay", "hook", "remove"}, summary: "remove the webhook of a project and its secret"},
+	{words: []string{"relay", "token", "add"}, summary: "make the bearer token a host subscribes to the relay with"},
 }
 
 // Register sets the handler of the command named by words, such as "agent run". It panics on an unknown name,

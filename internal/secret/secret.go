@@ -33,6 +33,17 @@ func (Keyring) Get(ref string) (string, error) {
 	return v, err
 }
 
+// Set stores value for ref, replacing an item stored before.
+func (Keyring) Set(ref, value string) error { return keyring.Set(ref, "token", value) }
+
+// Delete removes the item of ref; a missing item is not an error.
+func (Keyring) Delete(ref string) error {
+	if err := keyring.Delete(ref, "token"); err != nil && !errors.Is(err, keyring.ErrNotFound) {
+		return err
+	}
+	return nil
+}
+
 // Resolver finds the token for a reference: the store first, then, when AllowEnv is set, the environment variable
 // named by EnvName.
 type Resolver struct {

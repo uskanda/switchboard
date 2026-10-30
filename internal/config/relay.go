@@ -58,7 +58,7 @@ func (c *Config) validateRelay() []error {
 	for i := range c.Relay.Hooks {
 		h := &c.Relay.Hooks[i]
 		key := fmt.Sprintf("relay.hooks[%d]", i)
-		p, ok := c.project(h.Project)
+		p, ok := c.Project(h.Project)
 		if !ok {
 			errs = append(errs, fmt.Errorf("%s.project: %q is not a configured project", key, h.Project))
 		} else {
@@ -89,8 +89,8 @@ func (c *Config) validateRelay() []error {
 	return errs
 }
 
-// project finds the configured project with ref.
-func (c *Config) project(ref string) (Project, bool) {
+// Project finds the configured project with ref.
+func (c *Config) Project(ref string) (Project, bool) {
 	for _, p := range c.Projects {
 		if p.Ref == ref {
 			return p, true
