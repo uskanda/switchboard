@@ -327,6 +327,20 @@ func (f *Forge) PostCommentAs(ref forge.IssueRef, body, login string) (*forge.Co
 	return &c, nil
 }
 
+// DeleteComment implements forge.Forge.
+func (f *Forge) DeleteComment(_ context.Context, ref forge.IssueRef, id int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	is := f.issue(ref)
+	for i, c := range is.comments {
+		if c.ID == id {
+			is.comments = append(is.comments[:i], is.comments[i+1:]...)
+			return nil
+		}
+	}
+	return forge.ErrNotFound
+}
+
 // As is a client of the fake forge that posts as login.
 func (f *Forge) As(login string) forge.Forge { return client{f, login} }
 

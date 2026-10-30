@@ -394,6 +394,12 @@ func (c *Client) PostComment(ctx context.Context, ref forge.IssueRef, body strin
 	return &forge.Comment{ID: gc.ID, Body: gc.Body, Author: gc.User.user(), CreatedAt: gc.CreatedAt}, nil
 }
 
+// DeleteComment implements forge.Forge.
+func (c *Client) DeleteComment(ctx context.Context, ref forge.IssueRef, id int64) error {
+	_, err := c.do(ctx, http.MethodDelete, c.url(fmt.Sprintf("/repos/%s/%s/issues/comments/%d", ref.Owner, ref.Repo, id), nil), nil, nil, nil)
+	return err
+}
+
 // EnsureLabel implements forge.Forge.
 func (c *Client) EnsureLabel(ctx context.Context, owner, repo, name, color, description string) (bool, error) {
 	_, err := c.do(ctx, http.MethodGet, c.url(fmt.Sprintf("/repos/%s/%s/labels/%s", owner, repo, url.PathEscape(name)), nil), nil, nil, nil)

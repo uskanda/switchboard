@@ -322,3 +322,15 @@ func TestErrorsDoNotLeakTheToken(t *testing.T) {
 		t.Fatalf("a 404 is not ErrNotFound: %v", err)
 	}
 }
+
+func TestDeleteComment(t *testing.T) {
+	s, c := newServer(t)
+	deleted := false
+	s.on("DELETE "+proj+"/issues/3/notes/90", func(w http.ResponseWriter, _ *http.Request) {
+		deleted = true
+		w.WriteHeader(http.StatusNoContent)
+	})
+	if err := c.DeleteComment(ctx, ref, 90); err != nil || !deleted {
+		t.Fatalf("DeleteComment = %v, deleted %v", err, deleted)
+	}
+}

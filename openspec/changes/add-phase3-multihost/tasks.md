@@ -2,7 +2,7 @@
 
 ## 1. コメントの削除（`forge`）
 
-- [ ] 1.1 `forge.Forge` に `DeleteComment` を足し、GitHub、GitLab、偽物に実装する。HTTPのやり取りを記録した入力と偽物で、消したコメントが一覧から消えることをテストで確かめる
+- [x] 1.1 `forge.Forge` に `DeleteComment` を足し、GitHub、GitLab、偽物に実装する。HTTPのやり取りを記録した入力と偽物で、消したコメントが一覧から消えることをテストで確かめる
 
 ## 2. 端末をまたいだ重複の防止（`agent`）
 
