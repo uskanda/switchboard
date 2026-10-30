@@ -93,7 +93,7 @@ func serviceInstall(args []string, stdout, stderr io.Writer) int {
 	case !relay && len(s.Creds) == 0:
 		return fail(stderr, fmt.Errorf("no project of this host (%s); nothing to run", cfg.Host.Name))
 	}
-	unit, err := os.CreateTemp("", "switchboard-agent-*.service")
+	unit, err := os.CreateTemp("", strings.TrimSuffix(s.UnitName(), ".service")+"-*.service")
 	if err != nil {
 		return fail(stderr, err)
 	}
