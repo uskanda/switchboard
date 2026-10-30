@@ -43,3 +43,22 @@ func TestGitLabCIIsAProtectedPath(t *testing.T) {
 		t.Fatalf("protected = %v", protected)
 	}
 }
+
+// The token answers git for fetch as well as push: a private https remote needs it for both.
+func TestAuthEnvOffersTheTokenToGit(t *testing.T) {
+	s := &Space{Token: "tok", TokenUser: "oauth2"}
+	env, cleanup, err := s.authEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	joined := strings.Join(env, "\n")
+	if !strings.Contains(joined, "GIT_ASKPASS=") || !strings.Contains(joined, "SWITCHBOARD_GIT_TOKEN=tok") || !strings.Contains(joined, "GIT_TERMINAL_PROMPT=0") {
+		t.Fatalf("env = %v", env)
+	}
+	none, cleanup2, err := (&Space{}).authEnv()
+	if err != nil || none != nil {
+		t.Fatalf("without a token: %v, %v", none, err)
+	}
+	cleanup2()
+}
