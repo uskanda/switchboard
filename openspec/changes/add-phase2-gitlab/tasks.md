@@ -57,6 +57,6 @@
 
 ## 10. 結合の確認
 
-- [ ] 10.1 偽のGitHubと偽のGitLab、実物のgitリポジトリ、偽の `claude` を使う結合テストを書く。両フォージの待ちが1つの受信箱に出て、両方に返答し、PRとMRができるまでを1本で通す。CIで通ることを確かめる
+- [x] 10.1 偽のGitHubと偽のGitLab、実物のgitリポジトリ、偽の `claude` を使う結合テストを書く。両フォージの待ちが1つの受信箱に出て、両方に返答し、PRとMRができるまでを1本で通す。CIで通ることを確かめる
 - [ ] 10.2 `uskanda` のPATを、Secret Serviceの `switchboard/gitlab` と `switchboard/gitlab-inbox` に登録してもらう。`nas/switchboard-sandbox` と、GitHubの `uskanda/switchboard-sandbox` に1つずつissueを立てる。実物の `claude` で、1つの受信箱に両方の待ちが出るところから、両方に返答してMRとPRができるまでを通す。結果をROADMAP.mdに記録する
 - [ ] 10.3 `nas/switchboard-sandbox` にProject Access Tokenを作る。プロジェクトの `token_ref` と `agent_identity` を、そのbotで上書きする。botとして質問を投稿し、返答を受けてMRを作るまでを実物で通す。結果をROADMAP.mdに記録する
