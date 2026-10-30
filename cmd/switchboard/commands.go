@@ -18,11 +18,11 @@ import (
 	"github.com/uskanda/switchboard/internal/doctor"
 	"github.com/uskanda/switchboard/internal/forge"
 	"github.com/uskanda/switchboard/internal/forge/github"
+	"github.com/uskanda/switchboard/internal/forge/gitlab"
 	"github.com/uskanda/switchboard/internal/inbox"
 	"github.com/uskanda/switchboard/internal/labels"
 	"github.com/uskanda/switchboard/internal/secret"
 	"github.com/uskanda/switchboard/internal/state"
-	"github.com/uskanda/switchboard/internal/trust"
 )
 
 func init() {
@@ -80,27 +80,27 @@ func parseInterspersed(fs *flag.FlagSet, args []string) error {
 	return fs.Parse(append([]string{"--"}, positional...))
 }
 
-// agentForge connects to GitHub with the agent token.
-func agentForge(cfg *config.Config) (*github.Client, string, error) {
+// connect reads tokens from the Secret Service (and the environment when allow_env is set).
+func connect(cfg *config.Config) *conn {
 	r := secret.Resolver{Store: secret.Keyring{}, AllowEnv: cfg.Secrets.AllowEnv}
-	token, err := r.Token(cfg.Forges.GitHub.TokenRef)
-	if err != nil {
-		return nil, "", err
-	}
-	return github.New(token), token, nil
+	return newConn(cfg, r.Token)
 }
 
-// userInbox connects to GitHub with the user's own token (inbox_token_ref).
-func userInbox(cfg *config.Config) (*inbox.Inbox, error) {
-	ref := cfg.Forges.GitHub.InboxTokenRef
-	if ref == "" {
-		return nil, errors.New("forges.github.inbox_token_ref is not set; the inbox reads and replies with your own token")
-	}
-	token, err := secret.Resolver{Store: secret.Keyring{}, AllowEnv: cfg.Secrets.AllowEnv}.Token(ref)
+// userInbox connects to each forge with the user's own token (inbox_token_ref). only, "github" or "gitlab",
+// limits it to one forge.
+func userInbox(cfg *config.Config, only string) (*inbox.Inbox, error) {
+	forges, err := connect(cfg).inboxForges(only)
 	if err != nil {
 		return nil, err
 	}
-	return &inbox.Inbox{Config: cfg, Forge: github.New(token), Cache: inbox.DefaultCache(), Now: time.Now}, nil
+	b := &inbox.Inbox{Config: cfg, Forges: forges, Cache: inbox.DefaultCache(), Now: time.Now}
+	switch only {
+	case "github":
+		b.Only = forge.GitHub
+	case "gitlab":
+		b.Only = forge.GitLab
+	}
+	return b, nil
 }
 
 func stateDir() (state.Dir, error) {
@@ -118,13 +118,18 @@ func labelsSync(args []string, stdout, stderr io.Writer) int {
 	if code >= 0 {
 		return code
 	}
-	f, _, err := agentForge(cfg)
-	if err != nil {
-		return fail(stderr, err)
-	}
-	n, err := labels.Sync(context.Background(), f, cfg.Projects, cfg.Labels)
-	if err != nil {
-		return fail(stderr, err)
+	c := connect(cfg)
+	n := 0
+	for _, p := range cfg.Projects {
+		r, err := c.agentClient(p)
+		if err != nil {
+			return fail(stderr, err)
+		}
+		created, err := labels.Sync(context.Background(), r.Forge, []config.Project{p}, cfg.Labels)
+		n += created
+		if err != nil {
+			return fail(stderr, err)
+		}
 	}
 	fmt.Fprintf(stdout, "created %d label(s) in %d project(s)\n", n, len(cfg.Projects))
 	return 0
@@ -137,7 +142,8 @@ func agentRun(args []string, stdout, stderr io.Writer) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	f, token, err := agentForge(cfg)
+	c := connect(cfg)
+	routes, err := c.agentRoutes()
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -146,11 +152,12 @@ func agentRun(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 	audit := d.Audit()
-	j, err := trust.Resolve(ctx, f, d, cfg.TrustedAuthors.GitHub, cfg.Forges.GitHub.AgentIdentity, audit)
-	if err != nil {
-		return fail(stderr, err)
+	for _, kind := range []string{forge.GitHub, forge.GitLab} {
+		if err := c.judge(ctx, kind, routes, d, audit); err != nil {
+			return fail(stderr, err)
+		}
 	}
-	a := &agent.Agent{Config: cfg, Forge: f, Judge: j, State: d, Audit: audit, GitToken: token, Log: stderr}
+	a := &agent.Agent{Config: cfg, Routes: routes, State: d, Audit: audit, Log: stderr}
 	if err := a.Run(ctx); err != nil {
 		return fail(stderr, err)
 	}
@@ -170,29 +177,34 @@ func agentStatus(args []string, stdout, stderr io.Writer) int {
 
 func inboxList(args []string, stdout, stderr io.Writer) int {
 	var asJSON bool
-	cfg, fs, code := parse("inbox", args, stderr, func(fs *flag.FlagSet) { fs.BoolVar(&asJSON, "json", false, "write the listing as JSON") })
+	var only string
+	cfg, fs, code := parse("inbox", args, stderr, func(fs *flag.FlagSet) {
+		fs.BoolVar(&asJSON, "json", false, "write the listing as JSON")
+		fs.StringVar(&only, "forge", "", "list one forge only: github or gitlab")
+	})
 	if code >= 0 {
 		return code
 	}
-	if fs.NArg() != 0 {
-		fmt.Fprintln(stderr, "usage: switchboard inbox [--json] [--config FILE]")
+	if fs.NArg() != 0 || (only != "" && only != "github" && only != "gitlab") {
+		fmt.Fprintln(stderr, "usage: switchboard inbox [--json] [--forge github|gitlab] [--config FILE]")
 		return 2
 	}
-	b, err := userInbox(cfg)
+	b, err := userInbox(cfg, only)
 	if err != nil {
 		return fail(stderr, err)
 	}
-	items, err := b.List(context.Background())
-	if err != nil {
-		return fail(stderr, err)
-	}
+	// A forge that cannot be read still leaves the others' listing, followed by the error.
+	items, listErr := b.List(context.Background())
 	if asJSON {
 		if err := inbox.PrintJSON(stdout, items); err != nil {
 			return fail(stderr, err)
 		}
-		return 0
+	} else {
+		inbox.Print(stdout, items, time.Now())
 	}
-	inbox.Print(stdout, items, time.Now())
+	if listErr != nil {
+		return fail(stderr, listErr)
+	}
 	return 0
 }
 
@@ -202,10 +214,10 @@ func inboxShow(args []string, stdout, stderr io.Writer) int {
 		return code
 	}
 	if fs.NArg() != 1 {
-		fmt.Fprintln(stderr, "usage: switchboard show <row|gh:owner/repo#n> [--config FILE]")
+		fmt.Fprintln(stderr, "usage: switchboard show <row|gh:owner/repo#n|gl:group/project#n> [--config FILE]")
 		return 2
 	}
-	b, err := userInbox(cfg)
+	b, err := userInbox(cfg, "")
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -229,10 +241,10 @@ func inboxReply(args []string, stdout, stderr io.Writer) int {
 		return code
 	}
 	if fs.NArg() < 1 || (useEditor == (fs.NArg() > 1)) {
-		fmt.Fprintln(stderr, "usage: switchboard reply <row|gh:owner/repo#n> <text>  |  switchboard reply --editor <row|gh:owner/repo#n>")
+		fmt.Fprintln(stderr, "usage: switchboard reply <row|gh:owner/repo#n|gl:group/project#n> <text>  |  switchboard reply --editor <row|ref>")
 		return 2
 	}
-	b, err := userInbox(cfg)
+	b, err := userInbox(cfg, "")
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -258,7 +270,7 @@ func inboxReply(args []string, stdout, stderr io.Writer) int {
 	if err := b.Reply(ctx, ref, text, force); err != nil {
 		return fail(stderr, err)
 	}
-	fmt.Fprintf(stdout, "posted the reply to gh:%s/%s#%d\n", ref.Owner, ref.Repo, ref.Number)
+	fmt.Fprintf(stdout, "posted the reply to %s\n", ref)
 	return 0
 }
 
@@ -271,8 +283,13 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 		Config:  cfg,
 		State:   state.Dir{Path: state.DefaultDir()},
 		Secrets: secret.Resolver{Store: secret.Keyring{}, AllowEnv: cfg.Secrets.AllowEnv},
-		Forge:   func(token string) forge.Forge { return github.New(token) },
-		Out:     stdout,
+		Forge: func(kind, token string) forge.Forge {
+			if kind == forge.GitLab {
+				return gitlab.New(token, cfg.Forges.GitLab.BaseURL)
+			}
+			return github.New(token)
+		},
+		Out: stdout,
 	}
 	if n := d.Run(context.Background()); n > 0 {
 		fmt.Fprintf(stderr, "switchboard: doctor found %d problem(s)\n", n)

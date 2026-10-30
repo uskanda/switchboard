@@ -63,7 +63,7 @@ func newWorld(t *testing.T) *world {
 		Config:  cfg,
 		State:   state.Dir{Path: t.TempDir()},
 		Secrets: secret.Resolver{Store: store{"agent": "a", "inbox": "i"}},
-		Forge:   func(string) forge.Forge { return f },
+		Forge:   func(_, _ string) forge.Forge { return f },
 		Out:     w.out,
 	}
 	return w

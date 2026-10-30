@@ -420,4 +420,27 @@ func remove(xs []string, x string) []string {
 	return out
 }
 
+// Version is what a GitLab instance reports as its version.
+func (f *Forge) Version(context.Context) (string, error) { return "fake", nil }
+
+// ProjectID numbers the projects in the order of their names, as a stand-in for GitLab's project IDs.
+func (f *Forge) ProjectID(_ context.Context, owner, name string) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.repos[owner+"/"+name]; !ok {
+		return 0, forge.ErrNotFound
+	}
+	var names []string
+	for n := range f.repos {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for i, n := range names {
+		if n == owner+"/"+name {
+			return int64(i + 1), nil
+		}
+	}
+	return 0, forge.ErrNotFound
+}
+
 var _ forge.Forge = (*Forge)(nil)
