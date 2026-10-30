@@ -71,7 +71,7 @@
 | V11 | `permission_denials` の要素の形 | 要素は `tool_name`・`tool_use_id`・`tool_input` を持つ。Bashなら `tool_input.command` に拒否されたコマンドが入る | 2026-10-29 |
 | V12 | 利用上限に達したときの終了コード・`subtype`・出力の形 | 未確認。意図して再現する方法が無いため、Phase 1の運用中に記録する | |
 | V13 | `-p` 実行中にNotificationフックが発火するか | 発火しなかった。`dontAsk` と `default` の権限モードの両方で確かめた | 2026-10-29 |
-| V14 | GitHub GraphQL searchでissueと直近コメントを1リクエストで取れるか | 未確認。このコンテナにはGraphQLを呼べる認証が無いため、Phase 1の実装で確かめる | |
+| V14 | GitHub GraphQL searchでissueと直近コメントを1リクエストで取れるか | 未確認。Phase 1の受信箱は、DESIGN.md 4.6節の想定と違い、RESTのSearch API（`/search/issues`）を1回呼び、待ちのissueごとにGraphQLでスレッドを取る。実物のGitHubで、この形で動くことはV20で確かめた。Search APIには30回/分の制限があるため、GraphQLの1リクエストで取る形に変えるかは、自動更新するPhase 5のWeb表示の前に決める | 2026-10-30 |
 | V15 | Workflows権限なしのfine-grained PATで、ワークフロー変更を含む `git push` が拒否されるか | 未確認。マスターの端末で、検証用リポジトリとPATを使って確かめる | |
 | V16 | 利用するGitLabでwebhookの署名トークンが使えるか | 未確認。Phase 2で確かめる | |
 | V17 | `--setting-sources` で対象リポジトリの `.claude/settings.json` を読み込ませずに済むか | 済む。`--setting-sources user` ではプロジェクトのフックが動かなかった。ただし、プロジェクトの `CLAUDE.md` も読み込まれなくなった | 2026-10-29 |
