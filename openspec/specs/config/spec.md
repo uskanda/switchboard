@@ -32,7 +32,9 @@ switchboardの各サブコマンドが共通に使う設定ファイルを読み
 - **THEN** コマンドは0以外の終了コードで終わり、`agnet` を未知のキーとして報告する
 
 ### Requirement: トークンの取り出し
-`switchboard` は、`token_ref` が指す項目をSecret Serviceから取り出してトークンとして使わなければならない（MUST）。
+`switchboard` は、`token_ref` に対応するsystemdのクレデンシャルがあれば、その中身をトークンとして使わなければならない（MUST）。クレデンシャルは、環境変数 `CREDENTIALS_DIRECTORY` が指すディレクトリから探す。
+クレデンシャルの名前は、`token_ref` の英数字以外の文字を `_` に置き換えた文字列とする。
+クレデンシャルが無いとき、`switchboard` は、`token_ref` が指す項目をSecret Serviceから取り出してトークンとして使わなければならない（MUST）。
 設定の `secrets` の `allow_env` が `true` の間、Secret Serviceに項目が無いとき、`switchboard` は環境変数からトークンを読まなければならない（MUST）。
 変数の名前は `SWITCHBOARD_TOKEN_` に、`token_ref` を英大文字にして英数字以外を `_` に置き換えた文字列を続けたものとする。
 
@@ -47,6 +49,10 @@ switchboardの各サブコマンドが共通に使う設定ファイルを読み
 #### Scenario: 環境変数が許されていない
 - **WHEN** `allow_env` が無い設定で、Secret Serviceに項目が無い
 - **THEN** コマンドは0以外の終了コードで終わり、取り出せない `token_ref` を報告する。環境変数は読まれない
+
+#### Scenario: systemdのクレデンシャル
+- **WHEN** systemdのサービスとして動き、`$CREDENTIALS_DIRECTORY/switchboard_github` がある
+- **THEN** その中身がトークンとして使われ、Secret Serviceには問い合わせない
 
 ### Requirement: 設定ファイルにトークンを書かせない
 設定ファイルの値がフォージのトークンの形式に一致するとき、`switchboard` は、その値を使わずに終了しなければならない（MUST）。
