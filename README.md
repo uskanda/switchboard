@@ -38,7 +38,7 @@ GitHub/GitLabのissueを起点に、複数端末・複数プロダクトにま�
 
 ## ステータス
 
-Phase 2の実装中。Phase 1は完了し、Ubuntuの端末と実物のGitHubで、着手から待ち、返答、draftのPRの作成まで回ることを確かめている（[docs/ROADMAP.md](docs/ROADMAP.md) の検証項目V20）。Phase 2では、GitLab（GitLab.comとセルフホスト）のプロジェクトも扱い、両フォージの待ちを1つの受信箱に出す。対象はLinux（Ubuntu）の1台の端末で、issueの更新はポーリングで検知する。中継サーバーと常駐化は、[docs/ROADMAP.md](docs/ROADMAP.md) の後のフェーズで扱う。
+Phase 3の実装中。Phase 1とPhase 2は完了している。GitHubとGitLab（GitLab.comとセルフホスト）のプロジェクトを扱い、両フォージの待ちを1つの受信箱に出せることを、実物で確かめた（[docs/ROADMAP.md](docs/ROADMAP.md) の検証項目V20、V24）。Phase 3では、エージェントをsystemdのサービスとして常駐させ、複数の端末が同じissueを重ねて実行しないようにする。対象はLinux（Ubuntu）で、issueの更新はポーリングで検知する。macOSと中継サーバーは、後のフェーズで扱う。
 
 ## 必要なもの
 
@@ -175,6 +175,47 @@ switchboard reply 1 "Bで進めてください"
 ```
 
 すべてのコマンドは `--config` で設定ファイルを指定できる。指定が無いときは `~/.config/switchboard/config.yaml` を読む。
+
+### 常駐させる
+
+ログインしていなくてもエージェントが動き続けるように、systemdのサービスとして常駐させられる。サービスは自分のOSユーザーで動き、異常に終わると自動で再起動する。トークンは、ホストの鍵で暗号化したsystemdのクレデンシャルとして置く。置くのは、この端末の担当プロジェクトのエージェント用トークンだけで、受信箱のトークンは置かない。
+
+設置するときは、Secret Serviceからトークンを読むので、keyringを解錠しておく。まず、何をsudoで実行するかを確かめる。
+
+```bash
+switchboard service install --dry-run
+```
+
+表示されるのは、次のコマンドである（クレデンシャルの行は、トークンの数だけ並ぶ）。トークンは標準入力で渡し、画面には出さない。
+
+| コマンド | 目的 |
+|---|---|
+| `sudo install -d -m 0700 /etc/credstore.encrypted` | クレデンシャルの置き場所を作る |
+| `sudo systemd-creds encrypt --name=<名前> - /etc/credstore.encrypted/switchboard.<名前>` | トークンを暗号化して置く |
+| `sudo install -m 0644 <一時ファイル> /etc/systemd/system/switchboard-agent.service` | unitを置く |
+| `sudo systemctl daemon-reload` | unitを読み込ませる |
+| `sudo systemctl enable switchboard-agent.service` | 起動時に動くようにする |
+| `sudo systemctl restart switchboard-agent.service` | 動かし直す（初めてなら起動する） |
+
+よければ設置する。コマンドを全部表示してから、`[y/N]` で確認を求める。sudoのパスワードは、端末で入力する。
+
+```bash
+switchboard service install
+```
+
+状態は `switchboard service status` で、ログは `journalctl -u switchboard-agent.service` で見る。撤去は `switchboard service uninstall` で行う。
+
+次のときは、`switchboard service install` をもう一度実行する。
+
+- トークンを入れ替えたとき（クレデンシャルを置き直す）
+- `claude` や `git` の場所を変えたとき（unitには、設置したときの `PATH` を書く）
+- 設定ファイルの場所や、担当のプロジェクトを変えたとき
+
+サブスクリプションの認証（`claude.auth: subscription`）で常駐させてよいかは、switchboardでは確かめていない。Claudeの利用規約に照らして、利用者が判断すること。
+
+### 複数の端末で動かす
+
+担当は、プロジェクトの `host` で端末ごとに分ける。設定を誤って2台が同じプロジェクトを担当しても、同じissueを2台が実行することは無い。エージェントは、着手のときに「端末ubuntu-aで実行を始めます」のような着手のコメントを投稿してから、issueを取り直す。最も早く着手のコメントを出した端末だけが実行し、他の端末は自分のコメントを消して退く。2台とも、この版のswitchboardにすること。
 
 ## 開発
 
