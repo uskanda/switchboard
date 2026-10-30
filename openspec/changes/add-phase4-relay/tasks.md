@@ -41,7 +41,7 @@
 
 - [x] 8.1 DECISIONS.mdで、ADR-007とADR-017を決め、ADR-035（中継の認証とシークレット）を足す。DESIGN.md 4.7節を、決めた形に合わせる
 - [x] 8.2 README.mdに、中継の設置、webhookの登録、GitLabの許可リストの設定、止まったwebhookの有効化を書く
-- [ ] 8.3 GitHubの実物での確認を、GitHubのissueにする
+- [x] 8.3 GitHubの実物での確認を、GitHubのissueにする（#12）
 
 ## 9. 結合の確認
 
