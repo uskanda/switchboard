@@ -16,9 +16,15 @@ forges:
     inbox_token_ref: switchboard/github-inbox   # your own identity: issues read/write only (inbox and reply)
     agent_identity: YOUR_GITHUB_USER  # the account the agent posts as (Phase 1: the same as yours)
     search_scope: "user:YOUR_GITHUB_USER"       # inbox search scope (org:NAME also works)
+  # gitlab:                            # needed once a project is gl:
+  #   base_url: https://gitlab.com      # the default; a self-managed GitLab goes here
+  #   token_ref: switchboard/gitlab     # agent token: a personal access token with the api scope
+  #   inbox_token_ref: switchboard/gitlab-inbox   # your own identity for the inbox and reply
+  #   agent_identity: YOUR_GITLAB_USER
 
 trusted_authors:                      # accounts whose comments are taken as instructions
   github: [YOUR_GITHUB_USER]
+  # gitlab: [YOUR_GITLAB_USER]
 
 labels:
   ready: "agent:ready"
@@ -48,3 +54,8 @@ projects:
     verify_command: ""                # empty: no verification, and the pull request says so
     include_untrusted: false          # true is refused for public repositories
     protected_paths_extra: []
+  # - ref: gl:YOUR_GROUP/switchboard-sandbox   # gl:group/project, or gl:group/sub/project
+  #   path: ~/repos/switchboard-sandbox-gl
+  #   host: ubuntu-a
+  #   token_ref: switchboard/gitlab-sandbox-bot   # optional, with agent_identity: the agent of this project only
+  #   agent_identity: project_N_bot_XXXX          # posts as a project access token's bot; the inbox does not change

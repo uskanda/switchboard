@@ -38,9 +38,11 @@ type Secrets struct {
 	AllowEnv bool `yaml:"allow_env"`
 }
 
-// Forges holds the per-forge settings. Only GitHub exists in this version.
+// Forges holds the per-forge settings. A forge is configured when its token_ref is set; only the forges of the
+// configured projects need to be.
 type Forges struct {
 	GitHub GitHub `yaml:"github"`
+	GitLab GitLab `yaml:"gitlab"`
 }
 
 // GitHub is the GitHub forge setting.
@@ -51,9 +53,18 @@ type GitHub struct {
 	SearchScope   string `yaml:"search_scope"`
 }
 
+// GitLab is the GitLab forge setting. There is no search scope: the inbox reads the configured projects only.
+type GitLab struct {
+	BaseURL       string `yaml:"base_url"` // https://gitlab.com when empty
+	TokenRef      string `yaml:"token_ref"`
+	InboxTokenRef string `yaml:"inbox_token_ref"`
+	AgentIdentity string `yaml:"agent_identity"`
+}
+
 // TrustedAuthors lists, per forge, the logins whose input is taken as an instruction.
 type TrustedAuthors struct {
 	GitHub []string `yaml:"github"`
+	GitLab []string `yaml:"gitlab"`
 }
 
 // Labels are the names of the four state labels.
@@ -84,7 +95,8 @@ type Agent struct {
 	MaxTurns     int           `yaml:"max_turns"`
 }
 
-// Project is one repository. Ref is the configured "gh:owner/repo"; Forge, Owner and Repo are parsed from it.
+// Project is one repository. Ref is the configured "gh:owner/repo" or "gl:group/project"; Forge ("gh" or "gl"),
+// Owner and Repo are parsed from it. On GitLab, Owner is the namespace and may hold subgroups.
 type Project struct {
 	Ref                 string   `yaml:"ref"`
 	Path                string   `yaml:"path"`
@@ -93,6 +105,10 @@ type Project struct {
 	VerifyCommand       string   `yaml:"verify_command"`
 	IncludeUntrusted    bool     `yaml:"include_untrusted"`
 	ProtectedPathsExtra []string `yaml:"protected_paths_extra"`
+	// TokenRef and AgentIdentity, set together, replace the forge's agent token and identity for this project, as
+	// with a GitLab project access token. The inbox never uses them.
+	TokenRef      string `yaml:"token_ref"`
+	AgentIdentity string `yaml:"agent_identity"`
 
 	Forge string `yaml:"-"`
 	Owner string `yaml:"-"`
@@ -241,6 +257,8 @@ func (c *Config) applyDefaults() {
 	set(&c.Comments.Language, "en")
 	set(&c.Claude.Binary, "claude")
 	set(&c.Claude.Auth, "subscription")
+	set(&c.Forges.GitLab.BaseURL, "https://gitlab.com")
+	c.Forges.GitLab.BaseURL = strings.TrimRight(c.Forges.GitLab.BaseURL, "/")
 	if c.Agent.PollInterval == 0 {
 		c.Agent.PollInterval = 60 * time.Second
 	}
@@ -277,11 +295,6 @@ func (c *Config) validate() error {
 		errs = append(errs, fmt.Errorf("version must be 1, got %d", c.Version))
 	}
 	need(c.Host.Name, "host.name")
-	need(c.Forges.GitHub.TokenRef, "forges.github.token_ref")
-	need(c.Forges.GitHub.AgentIdentity, "forges.github.agent_identity")
-	if len(c.TrustedAuthors.GitHub) == 0 {
-		errs = append(errs, errors.New("trusted_authors.github needs at least one login"))
-	}
 	switch c.Comments.Language {
 	case "en", "ja":
 	default:
@@ -310,22 +323,96 @@ func (c *Config) validate() error {
 		if err := p.parseRef(); err != nil {
 			errs = append(errs, fmt.Errorf("%s.ref: %w", key, err))
 		}
+		if (p.TokenRef == "") != (p.AgentIdentity == "") {
+			errs = append(errs, fmt.Errorf("%s: token_ref and agent_identity override the agent together; set both or neither", key))
+		}
+	}
+	// A forge's settings are required once a project is on it.
+	if c.Uses("gh") {
+		need(c.Forges.GitHub.TokenRef, "forges.github.token_ref (a project is on GitHub)")
+		need(c.Forges.GitHub.AgentIdentity, "forges.github.agent_identity")
+		if len(c.TrustedAuthors.GitHub) == 0 {
+			errs = append(errs, errors.New("trusted_authors.github needs at least one login"))
+		}
+	}
+	if c.Uses("gl") {
+		need(c.Forges.GitLab.TokenRef, "forges.gitlab.token_ref (a project is on GitLab)")
+		need(c.Forges.GitLab.AgentIdentity, "forges.gitlab.agent_identity")
+		if len(c.TrustedAuthors.GitLab) == 0 {
+			errs = append(errs, errors.New("trusted_authors.gitlab needs at least one login"))
+		}
 	}
 	return errors.Join(errs...)
 }
 
-var repoRef = regexp.MustCompile(`^gh:([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)$`)
+var (
+	repoRef    = regexp.MustCompile(`^gh:([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)$`)
+	projectRef = regexp.MustCompile(`^gl:((?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)$`)
+)
 
 func (p *Project) parseRef() error {
 	if strings.HasPrefix(p.Ref, "gl:") {
-		return fmt.Errorf("%s: GitLab is not supported in this version", p.Ref)
+		m := projectRef.FindStringSubmatch(p.Ref)
+		if m == nil {
+			return fmt.Errorf("%q is not of the form gl:group/project or gl:group/sub/project", p.Ref)
+		}
+		p.Forge, p.Owner, p.Repo = "gl", m[1], m[2]
+		return nil
 	}
 	m := repoRef.FindStringSubmatch(p.Ref)
 	if m == nil {
-		return fmt.Errorf("%q is not of the form gh:owner/repo", p.Ref)
+		return fmt.Errorf("%q is not of the form gh:owner/repo or gl:group/project", p.Ref)
 	}
-	p.Forge, p.Owner, p.Repo = "github", m[1], m[2]
+	p.Forge, p.Owner, p.Repo = "gh", m[1], m[2]
 	return nil
+}
+
+// Uses reports whether a configured project is on the forge ("gh" or "gl").
+func (c *Config) Uses(forge string) bool {
+	for _, p := range c.Projects {
+		if p.Forge == forge {
+			return true
+		}
+	}
+	return false
+}
+
+// AgentTokenRef is the token the agent uses for p: the project's override, else its forge's token_ref.
+func (c *Config) AgentTokenRef(p Project) string {
+	if p.TokenRef != "" {
+		return p.TokenRef
+	}
+	if p.Forge == "gl" {
+		return c.Forges.GitLab.TokenRef
+	}
+	return c.Forges.GitHub.TokenRef
+}
+
+// AgentIdentity is the login the agent posts as on p: the project's override, else its forge's agent_identity.
+func (c *Config) AgentIdentity(p Project) string {
+	if p.AgentIdentity != "" {
+		return p.AgentIdentity
+	}
+	if p.Forge == "gl" {
+		return c.Forges.GitLab.AgentIdentity
+	}
+	return c.Forges.GitHub.AgentIdentity
+}
+
+// InboxTokenRef is the forge's inbox token, which no project overrides.
+func (c *Config) InboxTokenRef(forge string) string {
+	if forge == "gl" {
+		return c.Forges.GitLab.InboxTokenRef
+	}
+	return c.Forges.GitHub.InboxTokenRef
+}
+
+// TrustedAuthorsOf lists the trusted logins of the forge.
+func (c *Config) TrustedAuthorsOf(forge string) []string {
+	if forge == "gl" {
+		return c.TrustedAuthors.GitLab
+	}
+	return c.TrustedAuthors.GitHub
 }
 
 // ProjectsFor returns the projects assigned to host.

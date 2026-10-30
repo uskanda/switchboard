@@ -12,10 +12,10 @@
 
 ## 3. 設定（`config`）
 
-- [ ] 3.1 `gl:group/project` と `gl:group/sub/project` の受け付け、GitLabの設定が無いときの報告を、失敗するテストから実装する。`gl:` を拒否する要件のテストを外し、specのシナリオに対応するテストが通ることを確かめる
-- [ ] 3.2 GitLabの設定と、`trusted_authors` の `gitlab` を実装する。GitLabの設定のキーは `base_url`（既定値は `https://gitlab.com`）、`token_ref`、`inbox_token_ref`、`agent_identity` である。GitLabの設定で `search_scope` を拒否することもテストで確かめる
-- [ ] 3.3 プロジェクトごとの `token_ref` と `agent_identity` の上書きを実装する。片方だけの上書きを設定の誤りにすることを、テストで確かめる
-- [ ] 3.4 `config/switchboard.example.yaml` に、GitLabの設定と、上書きの例をコメントで足し、例が検証を通ることをテストで確かめる
+- [x] 3.1 `gl:group/project` と `gl:group/sub/project` の受け付け、GitLabの設定が無いときの報告を、失敗するテストから実装する。`gl:` を拒否する要件のテストを外し、specのシナリオに対応するテストが通ることを確かめる
+- [x] 3.2 GitLabの設定と、`trusted_authors` の `gitlab` を実装する。GitLabの設定のキーは `base_url`（既定値は `https://gitlab.com`）、`token_ref`、`inbox_token_ref`、`agent_identity` である。GitLabの設定で `search_scope` を拒否することもテストで確かめる
+- [x] 3.3 プロジェクトごとの `token_ref` と `agent_identity` の上書きを実装する。片方だけの上書きを設定の誤りにすることを、テストで確かめる
+- [x] 3.4 `config/switchboard.example.yaml` に、GitLabの設定と、上書きの例をコメントで足し、例が検証を通ることをテストで確かめる
 
 ## 4. GitLabのクライアント（`internal/forge/gitlab`）
 
