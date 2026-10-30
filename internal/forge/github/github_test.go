@@ -275,3 +275,15 @@ func TestErrorsDoNotLeakTheToken(t *testing.T) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
 }
+
+func TestDeleteComment(t *testing.T) {
+	s, c := newServer(t)
+	deleted := false
+	s.on("DELETE /repos/o/r/issues/comments/55", func(w http.ResponseWriter, _ *http.Request) {
+		deleted = true
+		w.WriteHeader(http.StatusNoContent)
+	})
+	if err := c.DeleteComment(ctx, forge.IssueRef{Forge: forge.GitHub, Owner: "o", Repo: "r", Number: 1}, 55); err != nil || !deleted {
+		t.Fatalf("DeleteComment = %v, deleted %v", err, deleted)
+	}
+}

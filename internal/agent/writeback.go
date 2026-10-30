@@ -93,7 +93,8 @@ func (a *Agent) writeBack(ctx context.Context, ref forge.IssueRef, o *outcome) e
 	}
 	posted := false
 	for _, c := range comments {
-		if m, ok := marker.Parse(c.Body); ok && c.Author.ID == a.judgeOf(ref).AgentIDOf(ref) && m.Run == o.Run {
+		// The claim of the run carries the same run; only a comment in the outcome's state counts as posted.
+		if m, ok := marker.Parse(c.Body); ok && c.Author.ID == a.judgeOf(ref).AgentIDOf(ref) && m.Run == o.Run && m.State == o.State {
 			posted = true
 		}
 	}

@@ -26,6 +26,9 @@ var commands = []*command{
 	{words: []string{"show"}, summary: "show the last question of one waiting issue"},
 	{words: []string{"reply"}, summary: "post a reply to one waiting issue"},
 	{words: []string{"doctor"}, summary: "check the configuration, the tokens and the claude CLI"},
+	{words: []string{"service", "install"}, summary: "run the agent as a systemd service, after showing what sudo will run"},
+	{words: []string{"service", "uninstall"}, summary: "stop the systemd service and remove its unit and credentials"},
+	{words: []string{"service", "status"}, summary: "show whether the systemd service is installed and running"},
 }
 
 // Register sets the handler of the command named by words, such as "agent run". It panics on an unknown name,

@@ -41,3 +41,22 @@ func TestGitLabFake(t *testing.T) {
 		t.Errorf("BodyEdit = %+v, body %q", is.BodyEdit, is.Body)
 	}
 }
+
+func TestDeleteComment(t *testing.T) {
+	f := New(nil)
+	me := f.AddUser("me", 1)
+	f.AddRepo("o", "r", true)
+	ref := f.AddIssue("o", "r", 1, "t", "b", me)
+	a := f.AddComment(ref, "keep", me)
+	b := f.AddComment(ref, "drop", me)
+	if err := f.DeleteComment(context.Background(), ref, b.ID); err != nil {
+		t.Fatal(err)
+	}
+	cs := f.CommentsOf(ref)
+	if len(cs) != 1 || cs[0].ID != a.ID {
+		t.Fatalf("comments = %+v", cs)
+	}
+	if err := f.DeleteComment(context.Background(), ref, b.ID); err != forge.ErrNotFound {
+		t.Fatalf("deleting again = %v", err)
+	}
+}

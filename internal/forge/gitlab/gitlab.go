@@ -351,6 +351,12 @@ func (c *Client) PostComment(ctx context.Context, ref forge.IssueRef, body strin
 	return &forge.Comment{ID: n.ID, Body: n.Body, Author: n.Author.user(), CreatedAt: n.CreatedAt}, nil
 }
 
+// DeleteComment implements forge.Forge.
+func (c *Client) DeleteComment(ctx context.Context, ref forge.IssueRef, id int64) error {
+	_, err := c.do(ctx, http.MethodDelete, c.url(project(ref.Owner, ref.Repo)+"/issues/"+strconv.Itoa(ref.Number)+"/notes/"+strconv.FormatInt(id, 10), nil), nil, nil)
+	return err
+}
+
 // EnsureLabel implements forge.Forge. color is a hex color without the leading "#", as on GitHub.
 func (c *Client) EnsureLabel(ctx context.Context, owner, repo, name, color, description string) (bool, error) {
 	_, err := c.do(ctx, http.MethodGet, c.url(project(owner, repo)+"/labels/"+url.PathEscape(name), nil), nil, nil)

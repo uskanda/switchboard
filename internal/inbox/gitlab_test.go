@@ -147,3 +147,24 @@ func TestResolveAcceptsSubgroups(t *testing.T) {
 		t.Fatalf("Resolve = %+v, %v", ref, err)
 	}
 }
+
+// A claim left after the question (a host that lost and failed to remove it) does not hide the question.
+func TestAClaimAfterTheQuestionDoesNotHideIt(t *testing.T) {
+	w := newWorld(t)
+	w.f.PostAs = "bot"
+	w.f.PostComment(ctx, w.a, "Started on host desk.\n\n"+marker.Marker{Host: "desk", Run: "r9", State: "running", At: w.now}.Format())
+	w.f.PostAs = "me"
+	items, err := w.b.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range items {
+		if it.Ref == "gh:o/r#12" && (it.Question != "Which default should --dry-run have?" || it.Host != "laptop") {
+			t.Fatalf("item = %+v", it)
+		}
+	}
+	var out bytes.Buffer
+	if err := w.b.Show(ctx, w.a, &out); err != nil || !strings.Contains(out.String(), "Which default") {
+		t.Fatalf("show = %q, %v", out.String(), err)
+	}
+}
