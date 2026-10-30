@@ -12,6 +12,26 @@ import (
 // ErrNotFound reports that the forge has no such object.
 var ErrNotFound = errors.New("not found")
 
+// ErrForbidden reports that the token may not do what was asked (HTTP 403).
+var ErrForbidden = errors.New("forbidden")
+
+// Hook is a webhook to register: where it is sent, and the secret it is signed with. On GitLab the secret is a
+// signing token (whsec_...) unless SecretToken is set, which sends it as X-Gitlab-Token instead.
+type Hook struct {
+	URL         string
+	Secret      string
+	SecretToken bool
+}
+
+// Hooks registers and removes the relay's webhooks. It is kept apart from Forge: the agent never manages webhooks,
+// and `relay hook add` calls it with the inbox token.
+type Hooks interface {
+	// CreateHook registers h for the issue and comment events of owner/repo and returns its ID.
+	CreateHook(ctx context.Context, owner, repo string, h Hook) (int64, error)
+	// DeleteHook removes the webhook of owner/repo sent to url, and reports whether there was one.
+	DeleteHook(ctx context.Context, owner, repo, url string) (bool, error)
+}
+
 // The forge kinds, as written before the colon of a project reference.
 const (
 	GitHub = "gh"

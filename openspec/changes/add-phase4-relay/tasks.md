@@ -28,7 +28,7 @@
 
 ## 6. webhookとトークンの管理（`forge`、`relay`）
 
-- [ ] 6.1 `<forge.Hooks>`（`CreateHook`、`DeleteHook`）を、GitHub、GitLab、偽物に実装する。送る項目（URL、イベント、シークレット）を、記録したHTTPのやり取りで確かめる
+- [x] 6.1 `<forge.Hooks>`（`CreateHook`、`DeleteHook`）を、GitHub、GitLab、偽物に実装する。送る項目（URL、イベント、シークレット）を、記録したHTTPのやり取りで確かめる
 - [ ] 6.2 `relay hook add` と `relay hook remove` を作る。権限のあるトークンでは登録してシークレットの値を出さないこと、403か404では画面での手順（GitLabでは許可リストのアドレスを含む）を出すこと、設定に足す項目を表示することをテストする
 - [ ] 6.3 `relay token add` を作る。トークンの値がSecret Serviceにだけ置かれ、表示されるのがハッシュだけであることをテストで確かめる
 
