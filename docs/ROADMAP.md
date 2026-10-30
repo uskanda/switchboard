@@ -81,6 +81,7 @@
 | V21 | GitLabで、issue本文とノートの最後の編集者が取れるか | 取れる。`gl.uskan.dev`（CE 19.5.1）で確かめた。本文を編集すると、編集した人を作成者とするシステムノート（本文は `changed the description`）が付く。ノートは、GraphQLの `lastEditedBy` に、編集したときだけ編集者が入る。`lastEditedAt` は編集していなくても入るため、編集の有無には使えない。issueのGraphQLには `lastEditedBy` が無い | 2026-10-30 |
 | V22 | GitLabで、ラベルを付けた人と更新を取れるか | 取れる。`resource_label_events` の `add` の `user` に、ラベルを付けた人が入る。`updated_after` で更新を取れる。ただし、ノートを足してもissueの `updated_at` は変わらない。ラベルを変えると変わる。そのため、返答の検知には、待ちのissueの `user_notes_count` を毎回見る | 2026-10-30 |
 | V23 | GitLabで、draftのMRを作れるか | 作れる。タイトルの先頭に `Draft: ` を付けて `POST /projects/:id/merge_requests` を呼ぶと、`draft` が真のMRになる。`add_labels` に無いラベルを渡すと、そのラベルはプロジェクトに作られる | 2026-10-30 |
+| V24 | Phase 2の完了条件（両フォージの待ちが1つの一覧に出て、どちらにも返答できるか）を、実物で満たすか | 満たす。usknasで、GitHubの `uskanda/switchboard-sandbox` とGitLab（`gl.uskan.dev`、CE 19.5.1）の `nas/switchboard-sandbox` に1つずつissueを立てた。claude 2.1.314で、両方が質問を残して待ちになった。`switchboard inbox` の1つの一覧に両方が出て、`--forge gitlab` でGitLabだけに絞れた。受信箱から両方に返答すると、2分以内に両方が完了し、GitHubにdraftのPR、GitLabにdraftのMRができた。GitLabの返答は、ノートの数で検知された。どちらのmainも変わらなかった。GitLabのissueを閉じると、次のポーリングでworktreeとローカルのブランチが消え、リモートのブランチは残った。GitLabのトークンは `api` スコープの従来のPATで、HTTPSのクローンに資格情報ヘルパーは無い。fetchとpushは、エージェントが渡したトークンで通った | 2026-10-30 |
 
 ### 検証で分かった、設計に関わる点
 
