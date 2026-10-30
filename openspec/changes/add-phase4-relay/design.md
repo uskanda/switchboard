@@ -63,7 +63,7 @@ agent:
 処理の順は、ボディの上限（5 MiB、`http.MaxBytesReader`）、`hook-key` の照合、署名の検証、配信IDでの重複の除去、対象のイベントの抽出である。
 
 - GitHubは、`X-Hub-Signature-256` の `sha256=<16進>` を、ボディのHMAC-SHA256と `hmac.Equal` で比べる
-- GitLabの署名トークンは、Standard Webhooksの形である。`webhook-id.webhook-timestamp.ボディ` のHMAC-SHA256をbase64にし、`webhook-signature` の `v1,<base64>` のどれかと比べる。タイムスタンプが±5分を外れたら破棄する。署名の鍵の形（`whsec_` 接頭辞の有無など）は、V16で実物から確かめ、そのとおりに実装する
+- GitLabの署名トークンは、Standard Webhooksの形である。`webhook-id.webhook-timestamp.ボディ` のHMAC-SHA256をbase64にし、`webhook-signature` の `v1,<base64>` のどれかと比べる。タイムスタンプが±5分を外れたら破棄する。鍵は、`whsec_` を除いた残りをbase64で解いた32バイトである（V16で確かめた）
 - `gitlab_token: true` のプロジェクトだけは、`X-Gitlab-Token` をシークレットと `subtle.ConstantTimeCompare` で比べる
 - 重複の除去は、配信IDから受信時刻への表と、72時間を超えたものを消す処理で行う。件数の上限（10万件）を超えたら古いものから消す
 - 抽出は、ペイロードを、必要な項目だけを持つ構造体へデコードする。GitHubで読むのは、`action`、`issue.number`、`repository.full_name` である。GitLabで読むのは、`object_kind` と `project.path_with_namespace` である。issueの番号は、Issue Hookでは `object_attributes.iid` から読む。Note Hookでは `issue.iid` から読み、`object_attributes.noteable_type` でissueへのものかを見る。本文などは構造体に入れないので、デコードの段階で捨てられる
@@ -102,7 +102,7 @@ data: {"forge":"gl","project":"nas/switchboard-sandbox","issue":4,"kind":"note",
 1. `hook-key` とシークレットを作り、シークレットを `switchboard/relay-hook-<hook-key>` としてSecret Serviceに置く
 2. 受信箱のトークンで、`<webhook_url>/webhook/<forge>/<hook-key>` を登録する
    - GitHub：`POST /repos/{o}/{r}/hooks`。`events` は `issues` と `issue_comment`、`content_type` は `json`、`secret` にシークレットを入れる
-   - GitLab：`POST /projects/:id/hooks`。`issues_events` と `note_events` を有効にし、署名トークンを設定する。APIで署名トークンを設定できなければ、画面での登録を案内する（V16の結果で決める）
+   - GitLab：`POST /projects/:id/hooks`。`issues_events` と `note_events` を有効にし、`signing_token` に署名トークン（`whsec_<base64>`）を設定する（V16で確かめた）
 3. 403か404なら、画面での登録の手順を表示する。手順には、URL、対象のイベント、シークレットの値（ここで1回だけ）を含める。GitLabでは、許可リストに足す `<127.0.0.1:8781>` も示す
 4. 設定の `<relay.hooks>` に足す項目を表示する
 
@@ -126,6 +126,7 @@ data: {"forge":"gl","project":"nas/switchboard-sandbox","issue":4,"kind":"note",
 - ［中継を起動し直すと、イベントの番号が戻る］→エージェントは、つながるたびに照合する
 - ［署名トークンの鍵の形が、文書と違う］→V16で実物から確かめてから、検証を実装する
 - ［同じ端末の他のユーザーが、受け口にwebhookを偽って送る］→署名がなければ破棄する。配信口はbearerトークンで守る
+- ［GitLabは、許可リストを変えてから数分の間、Sidekiqから送るイベントを `BlockedUrlError` で止める（V16）］→許可リストを足したら、数分待ってから試す。READMEに書く
 - ［プロジェクト単位の取り直しは、issue単位より問い合わせが多い］→3秒のまとめと、個人の規模のプロジェクト数なら問題にならない
 
 ## Migration Plan

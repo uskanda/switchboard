@@ -2,7 +2,7 @@
 
 ## 1. 前提の確認
 
-- [ ] 1.1 V16を確かめる。`gl.uskan.dev` の `nas/switchboard-sandbox` で、APIと画面のそれぞれで署名トークンを設定できるかを調べる。届くヘッダー（`webhook-id`、`webhook-timestamp`、`webhook-signature`、`Idempotency-Key`）と、署名の鍵の形と計算方法を記録する。結果をROADMAP.mdのV16に書き、design.mdの3節と6節を実物に合わせる
+- [x] 1.1 V16を確かめる。`gl.uskan.dev` の `nas/switchboard-sandbox` で、APIと画面のそれぞれで署名トークンを設定できるかを調べる。届くヘッダー（`webhook-id`、`webhook-timestamp`、`webhook-signature`、`Idempotency-Key`）と、署名の鍵の形と計算方法を記録する。結果をROADMAP.mdのV16に書き、design.mdの3節と6節を実物に合わせる
 
 ## 2. 設定（`config`）
 
