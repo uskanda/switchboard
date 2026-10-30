@@ -17,10 +17,10 @@
 
 ## 4. サービス（`service`）
 
-- [ ] 4.1 `internal/service` に、unitの生成を作る。`User=`、`HOME`、`PATH`、`ExecStart`、`LoadCredentialEncrypted=`、`Restart=on-failure` が入ることをテストで確かめる。`ExecStart` には、バイナリと設定ファイルの絶対パスが入る
-- [ ] 4.2 設置と撤去のときにsudoで実行する、コマンドの組み立てを作る。クレデンシャルにするのがエージェント用のトークンだけで、受信箱のトークンが入らないことと、トークンの値がコマンドの引数に出ないことをテストで確かめる
-- [ ] 4.3 確認の流れ（全部の表示、`[y/N]`、`--dry-run`、端末でないときの `--yes`）を、実行を差し替えた関数でテストする。断ったときにsudoが1回も呼ばれないことを確かめる
-- [ ] 4.4 `switchboard service install`、`uninstall`、`status` を組み立てる。`status` がsudoを使わないことをテストで確かめる
+- [x] 4.1 `internal/service` に、unitの生成を作る。`User=`、`HOME`、`PATH`、`ExecStart`、`LoadCredentialEncrypted=`、`Restart=on-failure` が入ることをテストで確かめる。`ExecStart` には、バイナリと設定ファイルの絶対パスが入る
+- [x] 4.2 設置と撤去のときにsudoで実行する、コマンドの組み立てを作る。クレデンシャルにするのがエージェント用のトークンだけで、受信箱のトークンが入らないことと、トークンの値がコマンドの引数に出ないことをテストで確かめる
+- [x] 4.3 確認の流れ（全部の表示、`[y/N]`、`--dry-run`、端末でないときの `--yes`）を、実行を差し替えた関数でテストする。断ったときにsudoが1回も呼ばれないことを確かめる
+- [x] 4.4 `switchboard service install`、`uninstall`、`status` を組み立てる。`status` がsudoを使わないことをテストで確かめる
 
 ## 5. 文書
 
