@@ -32,8 +32,8 @@ func sudo(s service.Step) error {
 	return cmd.Run()
 }
 
-// setup describes the service for cfg loaded from cfgPath: this user, this binary, this PATH.
-func setup(cfg *config.Config, cfgPath string) (service.Setup, error) {
+// setup describes the agent's service, or the relay's, for cfg loaded from cfgPath: this user, this binary, this PATH.
+func setup(cfg *config.Config, cfgPath string, relay bool) (service.Setup, error) {
 	u, err := user.Current()
 	if err != nil {
 		return service.Setup{}, err
@@ -49,38 +49,48 @@ func setup(cfg *config.Config, cfgPath string) (service.Setup, error) {
 	if err != nil {
 		return service.Setup{}, err
 	}
-	return service.Setup{User: u.Username, Home: u.HomeDir, Path: os.Getenv("PATH"), Binary: bin, Config: abs, Creds: service.Credentials(cfg)}, nil
+	creds := service.Credentials(cfg)
+	if relay {
+		creds = service.RelayCredentials(cfg)
+	}
+	return service.Setup{User: u.Username, Home: u.HomeDir, Path: os.Getenv("PATH"), Binary: bin, Config: abs, Creds: creds, Relay: relay}, nil
 }
 
 // serviceFlags parses the options of install and uninstall, and returns the configuration and its path.
-func serviceFlags(name string, args []string, stderr io.Writer, c *service.Confirm) (*config.Config, string, int) {
-	var cfgPath string
+// It also reports whether --relay chose the relay's service.
+func serviceFlags(name string, args []string, stderr io.Writer, c *service.Confirm) (*config.Config, string, bool, int) {
+	var relay bool
 	cfg, fs, code := parse(name, args, stderr, func(fs *flag.FlagSet) {
 		fs.BoolVar(&c.DryRun, "dry-run", false, "show the commands that would run with sudo, and stop")
 		fs.BoolVar(&c.Yes, "yes", false, "run the commands without asking")
+		fs.BoolVar(&relay, "relay", false, "the relay's service (relay serve) instead of the agent's")
 	})
 	if code >= 0 {
-		return nil, "", code
+		return nil, "", false, code
 	}
 	if fs.NArg() != 0 {
-		fmt.Fprintf(stderr, "usage: switchboard %s [--dry-run] [--yes] [--config FILE]\n", name)
-		return nil, "", 2
+		fmt.Fprintf(stderr, "usage: switchboard %s [--relay] [--dry-run] [--yes] [--config FILE]\n", name)
+		return nil, "", false, 2
 	}
-	cfgPath = fs.Lookup("config").Value.String()
-	return cfg, cfgPath, -1
+	return cfg, fs.Lookup("config").Value.String(), relay, -1
 }
 
 func serviceInstall(args []string, stdout, stderr io.Writer) int {
 	c := service.Confirm{In: os.Stdin, Out: stdout, TTY: isTerminal(os.Stdin)}
-	cfg, cfgPath, code := serviceFlags("service install", args, stderr, &c)
+	cfg, cfgPath, relay, code := serviceFlags("service install", args, stderr, &c)
 	if code >= 0 {
 		return code
 	}
-	s, err := setup(cfg, cfgPath)
+	s, err := setup(cfg, cfgPath, relay)
 	if err != nil {
 		return fail(stderr, err)
 	}
-	if len(s.Creds) == 0 {
+	switch {
+	case relay && len(cfg.Relay.Hosts) == 0:
+		return fail(stderr, errors.New("relay.hosts is empty: no agent could subscribe; add one with `switchboard relay token add <host>`"))
+	case relay && len(s.Creds) == 0:
+		return fail(stderr, errors.New("relay.hooks is empty: the relay would take no webhook; add one with `switchboard relay hook add <project>`"))
+	case !relay && len(s.Creds) == 0:
 		return fail(stderr, fmt.Errorf("no project of this host (%s); nothing to run", cfg.Host.Name))
 	}
 	unit, err := os.CreateTemp("", "switchboard-agent-*.service")
@@ -100,7 +110,7 @@ func serviceInstall(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, err)
 	}
-	fmt.Fprintf(stdout, "The unit written to %s:\n\n%s\n", service.UnitPath, s.Unit())
+	fmt.Fprintf(stdout, "The unit written to %s:\n\n%s\n", s.UnitPath(), s.Unit())
 	if err := service.Apply(steps, c, sudo); err != nil {
 		if errors.Is(err, service.ErrDeclined) {
 			fmt.Fprintln(stderr, "switchboard: nothing was run")
@@ -109,18 +119,22 @@ func serviceInstall(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 	if !c.DryRun {
-		fmt.Fprintf(stdout, "installed %s; see it with: switchboard service status, journalctl -u %s\n", service.Name, service.Name)
+		status := "switchboard service status"
+		if relay {
+			status += " --relay"
+		}
+		fmt.Fprintf(stdout, "installed %s; see it with: %s, journalctl -u %s\n", s.UnitName(), status, s.UnitName())
 	}
 	return 0
 }
 
 func serviceUninstall(args []string, stdout, stderr io.Writer) int {
 	c := service.Confirm{In: os.Stdin, Out: stdout, TTY: isTerminal(os.Stdin)}
-	cfg, cfgPath, code := serviceFlags("service uninstall", args, stderr, &c)
+	cfg, cfgPath, relay, code := serviceFlags("service uninstall", args, stderr, &c)
 	if code >= 0 {
 		return code
 	}
-	s, err := setup(cfg, cfgPath)
+	s, err := setup(cfg, cfgPath, relay)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -132,16 +146,19 @@ func serviceUninstall(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 	if !c.DryRun {
-		fmt.Fprintf(stdout, "removed %s\n", service.Name)
+		fmt.Fprintf(stdout, "removed %s\n", s.UnitName())
 	}
 	return 0
 }
 
 func serviceStatus(args []string, stdout, stderr io.Writer) int {
-	if _, fs, code := parse("service status", args, stderr, nil); code >= 0 {
+	var relay bool
+	if _, fs, code := parse("service status", args, stderr, func(fs *flag.FlagSet) {
+		fs.BoolVar(&relay, "relay", false, "the relay's service instead of the agent's")
+	}); code >= 0 {
 		return code
 	} else if fs.NArg() != 0 {
-		fmt.Fprintln(stderr, "usage: switchboard service status [--config FILE]")
+		fmt.Fprintln(stderr, "usage: switchboard service status [--relay] [--config FILE]")
 		return 2
 	}
 	read := func(path string) (string, error) {
@@ -155,6 +172,6 @@ func serviceStatus(args []string, stdout, stderr io.Writer) int {
 		}
 		return "unknown"
 	}
-	service.Status(stdout, read, systemctl)
+	service.Status(stdout, service.Setup{Relay: relay}, read, systemctl)
 	return 0
 }

@@ -34,8 +34,8 @@
 
 ## 7. サービス（`service`）
 
-- [ ] 7.1 `service install --relay` と `service uninstall --relay` を作る。中継のunitに、webhookのシークレットだけがクレデンシャルとして入ることをテストで確かめる
-- [ ] 7.2 エージェントのサービスで、`<agent.relay>` の `token_ref` もクレデンシャルにする。受信箱のトークンが入らないままであることをテストで確かめる
+- [x] 7.1 `service install --relay` と `service uninstall --relay` を作る。中継のunitに、webhookのシークレットだけがクレデンシャルとして入ることをテストで確かめる
+- [x] 7.2 エージェントのサービスで、`<agent.relay>` の `token_ref` もクレデンシャルにする。受信箱のトークンが入らないままであることをテストで確かめる
 
 ## 8. 文書
 

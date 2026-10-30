@@ -199,7 +199,7 @@ func TestStatusNeedsNoSudo(t *testing.T) {
 		return setup().Unit(), nil
 	}
 	var out bytes.Buffer
-	Status(&out, read, systemctl)
+	Status(&out, Setup{}, read, systemctl)
 	s := out.String()
 	for _, want := range []string{"unit: " + UnitPath, "credentials: switchboard_github, switchboard_gitlab, switchboard_gitlab_bot", "enabled: enabled", "active: active"} {
 		if !strings.Contains(s, want) {
@@ -213,7 +213,7 @@ func TestStatusNeedsNoSudo(t *testing.T) {
 
 func TestStatusWithoutAUnit(t *testing.T) {
 	var out bytes.Buffer
-	Status(&out, func(string) (string, error) { return "", errors.New("no such file") }, func(...string) string { return "disabled" })
+	Status(&out, Setup{}, func(string) (string, error) { return "", errors.New("no such file") }, func(...string) string { return "disabled" })
 	if !strings.Contains(out.String(), "unit: not installed") {
 		t.Fatalf("status:\n%s", out.String())
 	}
