@@ -29,6 +29,7 @@ var commands = []*command{
 	{words: []string{"service", "install"}, summary: "run the agent as a systemd service, after showing what sudo will run"},
 	{words: []string{"service", "uninstall"}, summary: "stop the systemd service and remove its unit and credentials"},
 	{words: []string{"service", "status"}, summary: "show whether the systemd service is installed and running"},
+	{words: []string{"relay", "serve"}, summary: "take forge webhooks and pass their issue IDs to the agents over SSE"},
 }
 
 // Register sets the handler of the command named by words, such as "agent run". It panics on an unknown name,
