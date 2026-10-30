@@ -199,9 +199,12 @@ func (i ghIssue) summary(owner, repo string) forge.IssueSummary {
 // UpdatedIssues implements forge.Forge. While a repeated request returns 304, the cached list is returned, and
 // GitHub does not count the request against the rate limit.
 func (c *Client) UpdatedIssues(ctx context.Context, owner, repo string, since time.Time) ([]forge.IssueSummary, error) {
-	first := c.url(fmt.Sprintf("/repos/%s/%s/issues", owner, repo), url.Values{
-		"state": {"all"}, "since": {since.UTC().Format(time.RFC3339)}, "per_page": {"100"}, "sort": {"updated"},
-	})
+	q := url.Values{"state": {"all"}, "per_page": {"100"}, "sort": {"updated"}}
+	if !since.IsZero() {
+		// GitHub refuses the zero time with 422, so the first poll asks for every issue instead.
+		q.Set("since", since.UTC().Format(time.RFC3339))
+	}
+	first := c.url(fmt.Sprintf("/repos/%s/%s/issues", owner, repo), q)
 	c.mu.Lock()
 	prev, ok := c.etag[first]
 	c.mu.Unlock()
