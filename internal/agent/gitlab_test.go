@@ -11,6 +11,7 @@ import (
 	"github.com/uskanda/switchboard/internal/config"
 	"github.com/uskanda/switchboard/internal/forge"
 	"github.com/uskanda/switchboard/internal/forge/fake"
+	"github.com/uskanda/switchboard/internal/marker"
 	"github.com/uskanda/switchboard/internal/trust"
 )
 
@@ -86,10 +87,11 @@ func (x *gl) poll() {
 
 func (x *gl) glabels() string { return strings.Join(x.g.Labels(x.gref), ",") }
 
+// gposts returns the agent's GitLab comments, without the ones that claim a run.
 func (x *gl) gposts() []forge.Comment {
 	var out []forge.Comment
 	for _, c := range x.g.CommentsOf(x.gref) {
-		if c.Author.ID == x.bot.ID {
+		if m, ok := marker.Parse(c.Body); c.Author.ID == x.bot.ID && !(ok && m.State == "running") {
 			out = append(out, c)
 		}
 	}

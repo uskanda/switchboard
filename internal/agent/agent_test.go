@@ -15,16 +15,16 @@ func TestNoUpdateStartsNothing(t *testing.T) {
 	x := newH(t, "", nil)
 	x.poll()
 	x.poll()
-	if x.starts() != 0 || x.f.Comments != 0 || x.labels(x.ref) != "" {
-		t.Fatalf("starts=%d comments=%d labels=%q", x.starts(), x.f.Comments, x.labels(x.ref))
+	if x.starts() != 0 || len(x.posts(x.ref)) != 0 || x.labels(x.ref) != "" {
+		t.Fatalf("starts=%d comments=%d labels=%q", x.starts(), len(x.posts(x.ref)), x.labels(x.ref))
 	}
 	x.f.AddLabel(x.ref, "agent:ready", x.master)
 	x.poll()
 	x.settle()
 	x.poll()
 	x.settle()
-	if x.starts() != 1 || x.f.Comments != 1 {
-		t.Fatalf("an issue without new updates was evaluated again: starts=%d comments=%d", x.starts(), x.f.Comments)
+	if x.starts() != 1 || len(x.posts(x.ref)) != 1 {
+		t.Fatalf("an issue without new updates was evaluated again: starts=%d comments=%d", x.starts(), len(x.posts(x.ref)))
 	}
 }
 
@@ -99,8 +99,8 @@ func TestUntrustedReadyLabelStartsNothing(t *testing.T) {
 	x.f.AddLabel(x.ref, "agent:ready", x.mallory)
 	x.poll()
 	x.settle()
-	if x.starts() != 0 || x.f.Comments != 0 || x.labels(x.ref) != "agent:ready" {
-		t.Fatalf("starts=%d comments=%d labels=%q", x.starts(), x.f.Comments, x.labels(x.ref))
+	if x.starts() != 0 || len(x.posts(x.ref)) != 0 || x.labels(x.ref) != "agent:ready" {
+		t.Fatalf("starts=%d comments=%d labels=%q", x.starts(), len(x.posts(x.ref)), x.labels(x.ref))
 	}
 	if !x.audit.has("trust.label", func(e map[string]any) bool { return e["verdict"] == "reject" }) {
 		t.Fatal("the rejection is not in the audit log")
@@ -113,8 +113,8 @@ func TestUntrustedBodyEditStartsNothing(t *testing.T) {
 	x.f.AddLabel(x.ref, "agent:ready", x.master)
 	x.poll()
 	x.settle()
-	if x.starts() != 0 || x.f.Comments != 0 {
-		t.Fatalf("starts=%d comments=%d", x.starts(), x.f.Comments)
+	if x.starts() != 0 || len(x.posts(x.ref)) != 0 {
+		t.Fatalf("starts=%d comments=%d", x.starts(), len(x.posts(x.ref)))
 	}
 }
 
@@ -256,8 +256,8 @@ func TestRemovingTheRunningLabelCancelsTheRun(t *testing.T) {
 	x.f.RemoveLabel(x.ref, "agent:running")
 	x.poll()
 	x.settle()
-	if x.labels(x.ref) != "" || x.f.Comments != 0 {
-		t.Fatalf("a canceled run wrote back: labels=%q comments=%d", x.labels(x.ref), x.f.Comments)
+	if x.labels(x.ref) != "" || len(x.posts(x.ref)) != 0 {
+		t.Fatalf("a canceled run wrote back: labels=%q comments=%d", x.labels(x.ref), len(x.posts(x.ref)))
 	}
 }
 
@@ -270,8 +270,8 @@ func TestClosingTheIssueCancelsTheRun(t *testing.T) {
 	x.f.Close(x.ref)
 	x.poll()
 	x.settle()
-	if x.labels(x.ref) != "agent:running" || x.f.Comments != 0 {
-		t.Fatalf("a canceled run wrote back: labels=%q comments=%d", x.labels(x.ref), x.f.Comments)
+	if x.labels(x.ref) != "agent:running" || len(x.posts(x.ref)) != 0 {
+		t.Fatalf("a canceled run wrote back: labels=%q comments=%d", x.labels(x.ref), len(x.posts(x.ref)))
 	}
 }
 

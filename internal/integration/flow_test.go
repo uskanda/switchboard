@@ -188,7 +188,7 @@ projects:
 		t.Fatalf("main moved: %q", got)
 	}
 
-	// The thread: question, reply, done; every agent post carries its marker.
+	// The thread: claim, question, reply, claim, done; every agent post carries its marker.
 	var states []string
 	for _, c := range f.CommentsOf(ref) {
 		if m, ok := marker.Parse(c.Body); ok && c.Author.Login == "bot" {
@@ -197,7 +197,7 @@ projects:
 			states = append(states, "reply by "+c.Author.Login)
 		}
 	}
-	if got := strings.Join(states, " | "); got != "waiting | reply by me | done" {
+	if got := strings.Join(states, " | "); got != "running | waiting | reply by me | running | done" {
 		t.Fatalf("thread = %s", got)
 	}
 	if items, err := box.List(ctx); err != nil || len(items) != 0 {

@@ -274,7 +274,7 @@ func (x *h) file(name string) string {
 
 func (x *h) labels(ref forge.IssueRef) string { return strings.Join(x.f.Labels(ref), ",") }
 
-// posts returns the agent's comments with their markers.
+// posts returns the agent's comments with their markers, without the comments that claim a run (state=running).
 func (x *h) posts(ref forge.IssueRef) []post {
 	var out []post
 	for _, c := range x.f.CommentsOf(ref) {
@@ -282,7 +282,21 @@ func (x *h) posts(ref forge.IssueRef) []post {
 			continue
 		}
 		m, _ := marker.Parse(c.Body)
+		if m != nil && m.State == "running" {
+			continue
+		}
 		out = append(out, post{Body: c.Body, Marker: m})
+	}
+	return out
+}
+
+// claims returns the agent's comments that claim a run.
+func (x *h) claims(ref forge.IssueRef) []forge.Comment {
+	var out []forge.Comment
+	for _, c := range x.f.CommentsOf(ref) {
+		if m, ok := marker.Parse(c.Body); ok && c.Author.ID == x.bot.ID && m.State == "running" {
+			out = append(out, c)
+		}
 	}
 	return out
 }

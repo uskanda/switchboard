@@ -9,6 +9,7 @@ type texts struct {
 	timeout, interrupted, maxTurns, failed, noDeclaration, prepare, start  string
 	configChanged, verifyFailed, notPushed, pushFailed, prFailed, mrFailed string
 	pr, mr, verified, notVerified, prSummary, prVerification, withheld     string
+	claim                                                                  string
 }
 
 var english = texts{
@@ -40,6 +41,7 @@ var english = texts{
 	mrFailed:      "The branch was pushed, but the merge request could not be opened: %s",
 
 	pr:             "Pull request: %s",
+	claim:          "Started on host %s.",
 	mr:             "Merge request: %s",
 	verified:       "`%s` passed.",
 	notVerified:    "No verify_command is configured, so this change was not verified.",
@@ -77,6 +79,7 @@ var japanese = texts{
 	mrFailed:      "ブランチはpushしましたが、MRを作れませんでした：%s",
 
 	pr:             "PR：%s",
+	claim:          "端末%sで実行を始めます。",
 	mr:             "MR：%s",
 	verified:       "`%s` が通りました。",
 	notVerified:    "verify_commandが設定されていないため、この変更は検証していません。",

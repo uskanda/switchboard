@@ -414,7 +414,9 @@ func (pl *plan) hasReply() bool {
 	var m *marker.Marker
 	for i := len(pl.comments) - 1; i >= 0 && m == nil; i-- {
 		if pl.kinds[i] == trust.AgentPost {
-			m, _ = marker.Parse(pl.comments[i].Body)
+			if pm, _ := marker.Parse(pl.comments[i].Body); pm != nil && pm.State != "running" {
+				m = pm // a claim of a run is not the question the issue waits on
+			}
 		}
 	}
 	if m == nil || m.State != "waiting" {
@@ -473,6 +475,13 @@ func (a *Agent) launch(ctx context.Context, pl *plan) error {
 		a.mu.Lock()
 		delete(a.active, ref)
 		a.mu.Unlock()
+	}
+	// Claim first: a host that loses to another one leaves without touching the labels.
+	won, err := a.claim(ctx, pl, act)
+	if err != nil || !won {
+		finish()
+		a.wg.Done()
+		return err
 	}
 	if err := a.swapper(ref).Swap(ctx, ref, a.Config.Labels.Running); err != nil {
 		finish()
@@ -566,4 +575,43 @@ func (a *Agent) cleanUp(ctx context.Context, p config.Project, ref forge.IssueRe
 		a.logf("%s: removed the worktree and the local branch %s", ref, sp.IssueBranch())
 		a.Audit.Log("worktree.removed", map[string]any{"issue": ref.String(), "branch": sp.IssueBranch()})
 	}
+}
+
+// claim posts the comment that claims the run of pl for this host, then reads the issue again. Of the claims with
+// the same ack (the same trigger), the one with the smallest comment ID wins; IDs are given by the forge, so no
+// host clock is involved. A host that loses removes its own claim and reports false. An earlier claim of this host,
+// left by an agent that stopped before running, also counts as this host's.
+func (a *Agent) claim(ctx context.Context, pl *plan, act *active) (bool, error) {
+	ref, f, host := pl.issue.Ref, a.forgeOf(pl.issue.Ref), a.Config.Host.Name
+	m := marker.Marker{Host: host, Run: act.run, State: "running", Ack: pl.ack(), At: time.Now()}
+	mine, err := f.PostComment(ctx, ref, fmt.Sprintf(a.msg.claim, host)+"\n\n"+m.Format()+"\n")
+	if err != nil {
+		return false, fmt.Errorf("post the claim: %w", err)
+	}
+	_, comments, err := f.Thread(ctx, ref)
+	if err != nil {
+		return false, err
+	}
+	agentID := a.judgeOf(ref).AgentIDOf(ref)
+	var first *forge.Comment
+	var firstHost string
+	for i, c := range comments {
+		cm, ok := marker.Parse(c.Body)
+		if !ok || c.Author.ID != agentID || cm.State != "running" || cm.Ack != m.Ack {
+			continue
+		}
+		if first == nil || c.ID < first.ID {
+			first, firstHost = &comments[i], cm.Host
+		}
+	}
+	if first == nil || first.ID == mine.ID || firstHost == host {
+		a.Audit.Log("run.claimed", map[string]any{"issue": ref.String(), "run": act.run, "comment": mine.ID})
+		return true, nil
+	}
+	if err := f.DeleteComment(ctx, ref, mine.ID); err != nil && !errors.Is(err, forge.ErrNotFound) {
+		a.logf("%s: remove the claim %d: %v", ref, mine.ID, err)
+	}
+	a.logf("%s: host %s claimed the issue first; this host does not run it", ref, firstHost)
+	a.Audit.Log("run.yielded", map[string]any{"issue": ref.String(), "run": act.run, "winner": firstHost, "comment": first.ID})
+	return false, nil
 }
