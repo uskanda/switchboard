@@ -147,10 +147,10 @@ func TestRemoveHook(t *testing.T) {
 
 func TestAddTokenShowsOnlyTheHash(t *testing.T) {
 	store, out := memStore{}, &bytes.Buffer{}
-	if err := AddToken(adminConfig(), "usknas", store, out); err != nil {
+	if err := AddToken(adminConfig(), "ubuntu-b", store, out); err != nil {
 		t.Fatal(err)
 	}
-	tok := store["switchboard/relay-usknas"]
+	tok := store["switchboard/relay-ubuntu-b"]
 	if len(tok) < 40 {
 		t.Fatalf("token %q", tok)
 	}
@@ -158,7 +158,7 @@ func TestAddTokenShowsOnlyTheHash(t *testing.T) {
 	if strings.Contains(s, tok) {
 		t.Fatalf("the token is shown:\n%s", s)
 	}
-	for _, want := range []string{"- name: usknas", "token_hash: " + hashOf(tok), "url: http://127.0.0.1:8782/events", "token_ref: switchboard/relay-usknas"} {
+	for _, want := range []string{"- name: ubuntu-b", "token_hash: " + hashOf(tok), "url: http://127.0.0.1:8782/events", "token_ref: switchboard/relay-ubuntu-b"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("the output lacks %q:\n%s", want, s)
 		}
