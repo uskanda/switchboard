@@ -13,7 +13,7 @@
 
 ## 3. クレデンシャルからの読み出し（`secret`）
 
-- [ ] 3.1 `CREDENTIALS_DIRECTORY` からトークンを読む読み出し口を足す。クレデンシャルがあればSecret Serviceを読まず、無ければ今までどおり読むことを、specのシナリオに対応するテストで確かめる
+- [x] 3.1 `CREDENTIALS_DIRECTORY` からトークンを読む読み出し口を足す。クレデンシャルがあればSecret Serviceを読まず、無ければ今までどおり読むことを、specのシナリオに対応するテストで確かめる
 
 ## 4. サービス（`service`）
 
