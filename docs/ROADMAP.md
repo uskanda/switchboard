@@ -15,11 +15,11 @@
 
 ## Phase 1 — 最小構成（GitHub のみ・ポーリング・1 リポジトリ）
 
-- [ ] 設定ファイル読み込み（対象リポジトリ・端末対応・trusted_authors）
-- [ ] `switchboard labels sync`
-- [ ] エージェント：ポーリングで `agent:ready` / 信頼済みコメントを検知 → `claude -p` 実行
-- [ ] フック：待ち・完了時のコメントとラベル付け替え、隠しマーカー
-- [ ] `switchboard inbox` / `switchboard reply`
+- [x] 設定ファイル読み込み（対象リポジトリ・端末対応・trusted_authors）
+- [x] `switchboard labels sync`
+- [x] エージェント：ポーリングで `agent:ready` / 信頼済みコメントを検知 → `claude -p` 実行
+- [x] フック：待ち・完了時のコメントとラベル付け替え、隠しマーカー
+- [x] `switchboard inbox` / `switchboard reply`
 
 完了条件：issue に `agent:ready` を付けると、待ち→返答→PR 作成まで手でコマンドを打たずに回る
 
@@ -77,6 +77,7 @@
 | V17 | `--setting-sources` で対象リポジトリの `.claude/settings.json` を読み込ませずに済むか | 済む。`--setting-sources user` ではプロジェクトのフックが動かなかった。ただし、プロジェクトの `CLAUDE.md` も読み込まれなくなった | 2026-10-29 |
 | V18 | `--permission-mode dontAsk` の `-p` での挙動 | allowに無いツール呼び出しを、確認せずに拒否して続行する。PermissionRequestフックは発火しない。ただし `uname -a` のような読み取り専用のコマンドは、allowに無くても実行された | 2026-10-29 |
 | V19 | Phase 1の完了条件（`agent:ready` から待ち、返答、PRの作成まで手で操作せずに回るか）を、実物の `claude` で満たすか | 満たす。偽のフォージと実物のgitリポジトリに対し、claude 2.1.312（モデルは既定）で、質問、受信箱からの返答、完了、draftのPRの作成まで回った。1回目は5秒、2回目は11秒だった。`go test -tags realclaude ./internal/integration/` で再現できる。実物のGitHubに対する確認は、マスターの端末で行う | 2026-10-29 |
+| V20 | Phase 1の完了条件を、Ubuntuの端末と実物のGitHubで満たすか | 満たす。Ubuntu 24.04の端末で、非公開リポジトリ `uskanda/switchboard-sandbox`、Secret Service（gnome-keyring）のfine-grained PAT 2つ、claude 2.1.314（モデルは既定）を使った。issueに `agent:ready` を付けると、16秒で質問が付いて `agent:waiting` になった。`switchboard reply` で返答すると、16秒後に再び実行し、31秒で `switchboard/issue-1` からdraftのPRを作って `agent:done` になった。mainは変わらなかった。初回のポーリングで `since` にゼロ値の時刻を送り、GitHubが422で拒否する不具合が見つかった。偽のフォージでは再現しないため、結合テストでは分からなかった。ゼロ値のときは `since` を付けないよう直した | 2026-10-30 |
 
 ### 検証で分かった、設計に関わる点
 
