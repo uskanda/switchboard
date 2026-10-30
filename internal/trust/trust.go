@@ -16,22 +16,41 @@ import (
 	"github.com/uskanda/switchboard/internal/state"
 )
 
-// Judge holds the trusted user IDs and the agent's own user ID.
+// Judge holds one forge's trusted user IDs and the agent's own user ID on it. AgentIDs, keyed by "gl:group/project",
+// holds the agent's ID on projects that override agent_identity.
 type Judge struct {
-	Trusted map[int64]bool
-	AgentID int64
-	Audit   state.Auditor
+	Trusted  map[int64]bool
+	AgentID  int64
+	AgentIDs map[string]int64
+	Audit    state.Auditor
 }
 
-// Resolve turns the configured logins into user IDs, compares them with the IDs recorded in d, and records new
-// ones. A login whose ID changed (renamed and taken by someone else) is an error, so the agent does not start.
-// audit may be nil.
+// AgentIDOf is the agent's user ID on the issue's project.
+func (j *Judge) AgentIDOf(ref forge.IssueRef) int64 {
+	if id, ok := j.AgentIDs[ref.Kind()+":"+ref.Project()]; ok {
+		return id
+	}
+	return j.AgentID
+}
+
+// Resolve is ResolveFor on GitHub without project overrides, as Phase 1 configured it.
 func Resolve(ctx context.Context, f forge.Forge, d state.Dir, trusted []string, agent string, audit state.Auditor) (*Judge, error) {
+	return ResolveFor(ctx, f, d, forge.GitHub, trusted, agent, nil, audit)
+}
+
+// ResolveFor turns the logins configured for one forge (kind) into user IDs, compares them with the IDs recorded in
+// d, and records new ones. overrides maps a project ("gl:group/project") to the agent_identity it uses instead of
+// agent. A login whose ID changed (renamed and taken by someone else) is an error, so the agent does not start.
+// Records are keyed "gh:login" or "gl:login"; a key without a forge is a Phase 1 GitHub record. audit may be nil.
+func ResolveFor(ctx context.Context, f forge.Forge, d state.Dir, kind string, trusted []string, agent string, overrides map[string]string, audit state.Auditor) (*Judge, error) {
 	recorded, err := d.Identities()
 	if err != nil {
 		return nil, err
 	}
 	logins := append(append([]string(nil), trusted...), agent)
+	for _, l := range overrides {
+		logins = append(logins, l)
+	}
 	ids := map[string]int64{}
 	var changed []string
 	for _, login := range logins {
@@ -42,7 +61,11 @@ func Resolve(ctx context.Context, f forge.Forge, d state.Dir, trusted []string, 
 		if err != nil {
 			return nil, fmt.Errorf("resolve user %s: %w", login, err)
 		}
-		if old, ok := recorded[login]; ok && old != u.ID {
+		old, ok := recorded[kind+":"+login]
+		if !ok && kind == forge.GitHub {
+			old, ok = recorded[login]
+		}
+		if ok && old != u.ID {
 			changed = append(changed, fmt.Sprintf("%s (recorded %d, now %d)", login, old, u.ID))
 		}
 		ids[login] = u.ID
@@ -52,14 +75,20 @@ func Resolve(ctx context.Context, f forge.Forge, d state.Dir, trusted []string, 
 		return nil, fmt.Errorf("the user ID behind these logins changed: %s; check them, then remove them from identities.json in %s", strings.Join(changed, ", "), d.Path)
 	}
 	for k, v := range ids {
-		recorded[k] = v
+		recorded[kind+":"+k] = v
+		if kind == forge.GitHub {
+			delete(recorded, k)
+		}
 	}
 	if err := d.SaveIdentities(recorded); err != nil {
 		return nil, err
 	}
-	j := &Judge{Trusted: map[int64]bool{}, AgentID: ids[agent], Audit: audit}
+	j := &Judge{Trusted: map[int64]bool{}, AgentID: ids[agent], AgentIDs: map[string]int64{}, Audit: audit}
 	for _, login := range trusted {
 		j.Trusted[ids[login]] = true
+	}
+	for project, login := range overrides {
+		j.AgentIDs[project] = ids[login]
 	}
 	return j, nil
 }
@@ -85,12 +114,18 @@ func (j *Judge) log(ref forge.IssueRef, subject string, actor *forge.User, ok bo
 
 func (j *Judge) trusted(u *forge.User) bool { return u != nil && j.Trusted[u.ID] }
 
-// editOK reports whether an edit leaves the text trustworthy: unedited, or last edited by a trusted user.
-func (j *Judge) editOK(e forge.Edit) bool {
-	if !e.Edited {
-		return true
+// editOK reports whether an edit leaves the text trustworthy: unedited, or last edited by a trusted user. When it
+// does not, reason says why.
+func (j *Judge) editOK(e forge.Edit) (ok bool, reason string) {
+	switch {
+	case !e.Edited:
+		return true, ""
+	case e.Unknown:
+		return false, "the last editor is unknown"
+	case !j.trusted(e.Editor):
+		return false, "last edited by an untrusted user"
 	}
-	return !e.Unknown && j.trusted(e.Editor)
+	return true, ""
 }
 
 // ReadyLabel reports whether the user who last added the ready label (nil when unknown) is trusted.
@@ -111,10 +146,10 @@ func (j *Judge) Body(is *forge.Issue) bool {
 	switch {
 	case !j.trusted(&is.Author):
 		reason = "author is not trusted"
-	case !j.editOK(is.BodyEdit):
-		reason = "last edited by an untrusted or unknown user"
 	default:
-		ok, reason = true, "trusted author, no untrusted edit"
+		if ok, reason = j.editOK(is.BodyEdit); ok {
+			reason = "trusted author, no untrusted edit"
+		}
 	}
 	j.log(is.Ref, "body", &is.Author, ok, reason, is.Title+"\n"+is.Body)
 	return ok
@@ -139,7 +174,8 @@ func (k Kind) String() string {
 // Comment classifies c and records the decision.
 func (j *Judge) Comment(ref forge.IssueRef, c forge.Comment) Kind {
 	subject := fmt.Sprintf("comment:%d", c.ID)
-	if _, isMarked := marker.Parse(c.Body); isMarked && c.Author.ID == j.AgentID && j.editOK(c.Edit) {
+	editOK, why := j.editOK(c.Edit)
+	if _, isMarked := marker.Parse(c.Body); isMarked && c.Author.ID == j.AgentIDOf(ref) && editOK {
 		j.log(ref, subject, &c.Author, true, "agent post", c.Body)
 		return AgentPost
 	}
@@ -147,8 +183,8 @@ func (j *Judge) Comment(ref forge.IssueRef, c forge.Comment) Kind {
 		j.log(ref, subject, &c.Author, false, "author is not trusted", c.Body)
 		return Untrusted
 	}
-	if !j.editOK(c.Edit) {
-		j.log(ref, subject, &c.Author, false, "last edited by an untrusted or unknown user", c.Body)
+	if !editOK {
+		j.log(ref, subject, &c.Author, false, why, c.Body)
 		return Untrusted
 	}
 	j.log(ref, subject, &c.Author, true, "trusted author", c.Body)

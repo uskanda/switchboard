@@ -92,7 +92,7 @@ func TestHealthyHost(t *testing.T) {
 	w.expect(t, "ok", "2.1.312")
 	w.expect(t, "ok", "me")
 	ids, err := w.d.State.Identities()
-	if err != nil || ids["me"] != 1 || ids["bot"] != 2 {
+	if err != nil || ids["gh:me"] != 1 || ids["gh:bot"] != 2 {
 		t.Fatalf("identities = %v, %v", ids, err)
 	}
 }

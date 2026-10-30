@@ -92,7 +92,7 @@ func (a *Agent) writeBack(ctx context.Context, ref forge.IssueRef, o *outcome) e
 	}
 	posted := false
 	for _, c := range comments {
-		if m, ok := marker.Parse(c.Body); ok && c.Author.ID == a.Judge.AgentID && m.Run == o.Run {
+		if m, ok := marker.Parse(c.Body); ok && c.Author.ID == a.Judge.AgentIDOf(ref) && m.Run == o.Run {
 			posted = true
 		}
 	}
