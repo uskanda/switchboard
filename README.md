@@ -38,7 +38,7 @@ GitHub/GitLabのissueを起点に、複数端末・複数プロダクトにま�
 
 ## ステータス
 
-Phase 1まで完了した。Ubuntuの端末と実物のGitHubで、着手から待ち、返答、draftのPRの作成まで回ることを確かめている（[docs/ROADMAP.md](docs/ROADMAP.md) の検証項目V20）。対象は、Linux（Ubuntu）の1台の端末と、GitHubのリポジトリである。issueの更新はポーリングで検知する。GitLab、中継サーバー、常駐化は、[docs/ROADMAP.md](docs/ROADMAP.md) の後のフェーズで扱う。
+Phase 2の実装中。Phase 1は完了し、Ubuntuの端末と実物のGitHubで、着手から待ち、返答、draftのPRの作成まで回ることを確かめている（[docs/ROADMAP.md](docs/ROADMAP.md) の検証項目V20）。Phase 2では、GitLab（GitLab.comとセルフホスト）のプロジェクトも扱い、両フォージの待ちを1つの受信箱に出す。対象はLinux（Ubuntu）の1台の端末で、issueの更新はポーリングで検知する。中継サーバーと常駐化は、[docs/ROADMAP.md](docs/ROADMAP.md) の後のフェーズで扱う。
 
 ## 必要なもの
 
@@ -84,6 +84,16 @@ secret-tool store --label='switchboard github inbox' service switchboard/github-
 
 どちらのコマンドも、トークンを標準入力から読む。トークンは `claude` には渡さない。
 
+GitLabのプロジェクトを使うときは、GitLabのpersonal access tokenを `api` スコープで作り、同じように登録する。GitLabのPATは権限をプロジェクトに絞れないので、エージェント用と受信箱用に同じトークンを登録してもよい。
+
+```bash
+secret-tool store --label='switchboard gitlab' service switchboard/gitlab username token
+```
+
+```bash
+secret-tool store --label='switchboard gitlab inbox' service switchboard/gitlab-inbox username token
+```
+
 ## 設定
 
 例をコピーして、`YOUR_GITHUB_USER`、端末の名前、プロジェクトのパスを書き換える。
@@ -103,6 +113,25 @@ switchboard doctor
 ```
 
 Phase 1では、エージェントの投稿も自分のアカウントで行う。対象は非公開リポジトリとし、`trusted_authors` には自分だけを書く。`claude` は自分のOSユーザーで動くため、詳しくは [docs/SECURITY.md](docs/SECURITY.md) を読むこと。
+
+### GitLab
+
+設定例のうち、字下げしたコメントの行がGitLabの設定である。コメントを外し、`forges` の `gitlab` と、`trusted_authors` の `gitlab` を書く。`base_url` を省くと `https://gitlab.com` を使う。プロジェクトは `gl:group/project` の形で書き、サブグループを含む `gl:group/sub/project` も書ける。
+
+GitLabの `internal` のプロジェクトは、インスタンスの全ユーザーが見てコメントできるため、公開のプロジェクトとして扱う。`doctor` は警告を出し、`include_untrusted: true` を拒否する。
+
+### プロジェクトごとのエージェントの身元
+
+エージェントの投稿とpushを1つのプロジェクトに限りたいときは、そのプロジェクトにProject Access Token（GitLab）か、そのリポジトリだけのトークンを作る。プロジェクトの設定に `token_ref` と `agent_identity` を組で書くと、そのプロジェクトのエージェントだけがそのトークンとbotの身元を使う。受信箱は、上書きにかかわらず、フォージの `inbox_token_ref` を使う。
+
+```yaml
+projects:
+  - ref: gl:YOUR_GROUP/switchboard-sandbox
+    path: ~/repos/switchboard-sandbox-gl
+    host: ubuntu-a
+    token_ref: switchboard/gitlab-sandbox-bot
+    agent_identity: project_N_bot_XXXX   # the bot user of the project access token
+```
 
 ## 使い方
 
@@ -129,7 +158,7 @@ issueに `agent:ready` を付けると、次のポーリングで `agent:running
 switchboard agent status
 ```
 
-全プロジェクトの待ちのissueを一覧する。`--json` を付けると、JSONの配列で出る。
+全プロジェクトの待ちのissueを、GitHubとGitLabをまとめて、待ち始めた順に一覧する。`--json` を付けると、JSONの配列で出る。`--forge github` か `--forge gitlab` で、片方のフォージに絞れる。片方のフォージに届かないときは、届いた側の一覧を出したうえで、0以外の終了コードで終わる。
 
 ```bash
 switchboard inbox

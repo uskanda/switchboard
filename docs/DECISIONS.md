@@ -68,7 +68,7 @@
 - 理由：返答と実行が行き違っても、返答を取りこぼさない（grilling `add-phase1-minimal` 第6ラウンドQ4）
 
 ## ADR-017 GitLabのwebhookの検証方式（保留）
-- 論点：DESIGN.md 2章の案。GitLab対応のPhase 2で決める
+- 論点：DESIGN.md 2章の案。webhookを受けるのはPhase 4の中継なので、Phase 4で決める。Phase 2の検知はポーリングだけで行う（grilling `add-phase2-gitlab` 第1ラウンドQ4）
 
 ## ADR-018 worktreeのClaude Code設定の検査（採用、2026-10-29）
 - 決定：実行前に、worktreeの `.claude/`、`.mcp.json`、`CLAUDE.md`、`AGENTS.md` がベースブランチと一致するかを検査し、一致しなければ実行しない
@@ -120,3 +120,11 @@
 ## ADR-029 最初に対応するOS（採用、2026-10-29）
 - 決定：最初の実装はLinux（Ubuntu）向けとする。トークンはSecret Serviceに保管し、開発時に限り環境変数からも読めるようにする。Phase 1のエージェントもUbuntuの端末で動かす。macOSのキーチェーンと、systemdの暗号化クレデンシャルはPhase 3で扱う
 - 理由：マスターの指定による（grilling `add-phase1-minimal` 第6ラウンドQ6）
+
+## ADR-030 GitLabの扱い（採用、2026-10-30）
+- 決定：設定できるGitLabのインスタンスは1つとし、`forges.gitlab` の `base_url` で指定する。既定は `https://gitlab.com` とする。プロジェクトは `gl:group/project` のパスで書き、サブグループも書ける。GitLabの `internal` のプロジェクトは、公開のプロジェクトとして数える
+- 理由：公開したときに一番多い使い方はGitLab.comで、既定値があればそのまま使える。パスのほうが読んで分かる。`internal` は、インスタンスの全ユーザーが見てコメントできる。そのため、第三者の入力が入りうる（grilling `add-phase2-gitlab` 第3ラウンドQ12、第2ラウンドQ7、第5ラウンドQ18）
+
+## ADR-031 エージェントの身元の上書き（採用、2026-10-30）
+- 決定：エージェントのトークン（`token_ref`）と `agent_identity` は、組にしてプロジェクトの設定で上書きできる。片方だけの上書きは、設定の誤りとする。受信箱のトークン（`inbox_token_ref`）は、フォージに1つとし、上書きしない。上書きはGitHubとGitLabの両方で使える
+- 理由：GitLabのPATは、GitHubのfine-grained PATのようにリポジトリを絞れない。プロジェクトごとのProject Access Tokenを使えば、エージェントの影響を1つのプロジェクトに限れる。トークンの持ち主と `agent_identity` がずれると、エージェント自身の投稿を見分けられなくなる。受信箱は自分の身元で読み書きするので、上書きは要らない（grilling `add-phase2-gitlab` 第2ラウンドQ6、第3ラウンドQ11）

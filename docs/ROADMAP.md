@@ -73,7 +73,7 @@
 | V13 | `-p` 実行中にNotificationフックが発火するか | 発火しなかった。`dontAsk` と `default` の権限モードの両方で確かめた | 2026-10-29 |
 | V14 | GitHub GraphQL searchでissueと直近コメントを1リクエストで取れるか | 未確認。Phase 1の受信箱は、DESIGN.md 4.6節の想定と違い、RESTのSearch API（`/search/issues`）を1回呼び、待ちのissueごとにGraphQLでスレッドを取る。実物のGitHubで、この形で動くことはV20で確かめた。Search APIには30回/分の制限があるため、GraphQLの1リクエストで取る形に変えるかは、自動更新するPhase 5のWeb表示の前に決める | 2026-10-30 |
 | V15 | Workflows権限なしのfine-grained PATで、ワークフロー変更を含む `git push` が拒否されるか | 未確認。マスターの端末で、検証用リポジトリとPATを使って確かめる | |
-| V16 | 利用するGitLabでwebhookの署名トークンが使えるか | 未確認。Phase 2で確かめる | |
+| V16 | 利用するGitLabでwebhookの署名トークンが使えるか | 未確認。webhookを受けるのはPhase 4の中継なので、Phase 4で確かめる。`gl.uskan.dev` はCE 19.5.1で、署名トークンが入った19.0より新しい | |
 | V17 | `--setting-sources` で対象リポジトリの `.claude/settings.json` を読み込ませずに済むか | 済む。`--setting-sources user` ではプロジェクトのフックが動かなかった。ただし、プロジェクトの `CLAUDE.md` も読み込まれなくなった | 2026-10-29 |
 | V18 | `--permission-mode dontAsk` の `-p` での挙動 | allowに無いツール呼び出しを、確認せずに拒否して続行する。PermissionRequestフックは発火しない。ただし `uname -a` のような読み取り専用のコマンドは、allowに無くても実行された | 2026-10-29 |
 | V19 | Phase 1の完了条件（`agent:ready` から待ち、返答、PRの作成まで手で操作せずに回るか）を、実物の `claude` で満たすか | 満たす。偽のフォージと実物のgitリポジトリに対し、claude 2.1.312（モデルは既定）で、質問、受信箱からの返答、完了、draftのPRの作成まで回った。1回目は5秒、2回目は11秒だった。`go test -tags realclaude ./internal/integration/` で再現できる。実物のGitHubに対する確認は、マスターの端末で行う | 2026-10-29 |
