@@ -1,4 +1,4 @@
-// Package forge defines what switchboard needs from a forge (GitHub today). The domain packages depend on this
+// Package forge defines what switchboard needs from a forge (GitHub or GitLab). The domain packages depend on this
 // interface only; the GitHub implementation and the in-memory fake live in subpackages.
 package forge
 
@@ -12,15 +12,33 @@ import (
 // ErrNotFound reports that the forge has no such object.
 var ErrNotFound = errors.New("not found")
 
-// IssueRef names one issue.
+// The forge kinds, as written before the colon of a project reference.
+const (
+	GitHub = "gh"
+	GitLab = "gl"
+)
+
+// IssueRef names one issue. On GitLab, Owner is the namespace and may hold subgroups ("nas/tools").
 type IssueRef struct {
+	Forge  string // GitHub or GitLab; empty means GitHub, as in Phase 1
 	Owner  string
 	Repo   string
 	Number int
 }
 
-// String is "owner/repo#n".
-func (r IssueRef) String() string { return fmt.Sprintf("%s/%s#%d", r.Owner, r.Repo, r.Number) }
+// Kind is the forge of the issue, GitHub when Forge is empty.
+func (r IssueRef) Kind() string {
+	if r.Forge == "" {
+		return GitHub
+	}
+	return r.Forge
+}
+
+// Project is "owner/repo", the path of the project on its forge.
+func (r IssueRef) Project() string { return r.Owner + "/" + r.Repo }
+
+// String is "gh:owner/repo#n" or "gl:group/project#n", the form switchboard show and reply accept.
+func (r IssueRef) String() string { return fmt.Sprintf("%s:%s#%d", r.Kind(), r.Project(), r.Number) }
 
 // User is an account. ID is the forge's numeric user ID, which survives a rename; trust decisions use it.
 type User struct {

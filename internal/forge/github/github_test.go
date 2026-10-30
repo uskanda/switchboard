@@ -257,7 +257,7 @@ func TestReadsOfRepositoryUserAndSearch(t *testing.T) {
 		t.Fatalf("User = %+v, %v", u, err)
 	}
 	found, err := c.SearchOpenIssuesWithLabel(ctx, "user:alice", "agent:waiting")
-	if err != nil || len(found) != 1 || found[0].Ref != (forge.IssueRef{Owner: "o", Repo: "r", Number: 7}) {
+	if err != nil || len(found) != 1 || found[0].Ref != (forge.IssueRef{Forge: forge.GitHub, Owner: "o", Repo: "r", Number: 7}) {
 		t.Fatalf("Search = %+v, %v", found, err)
 	}
 }

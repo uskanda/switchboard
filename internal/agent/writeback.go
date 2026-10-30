@@ -198,7 +198,11 @@ type record struct {
 	Result  string    `json:"result,omitempty"`
 }
 
+// recordName keeps the Phase 1 place for GitHub and puts GitLab under "@gitlab", which no GitHub owner can be.
 func recordName(ref forge.IssueRef) string {
+	if ref.Kind() == forge.GitLab {
+		return filepath.Join("issues", "@gitlab", ref.Owner, ref.Repo, fmt.Sprintf("%d.json", ref.Number))
+	}
 	return filepath.Join("issues", ref.Owner, ref.Repo, fmt.Sprintf("%d.json", ref.Number))
 }
 

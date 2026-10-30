@@ -187,7 +187,7 @@ type ghIssue struct {
 
 func (i ghIssue) summary(owner, repo string) forge.IssueSummary {
 	s := forge.IssueSummary{
-		Ref:   forge.IssueRef{Owner: owner, Repo: repo, Number: i.Number},
+		Ref:   forge.IssueRef{Forge: forge.GitHub, Owner: owner, Repo: repo, Number: i.Number},
 		Title: i.Title, State: i.State, UpdatedAt: i.UpdatedAt,
 	}
 	for _, l := range i.Labels {

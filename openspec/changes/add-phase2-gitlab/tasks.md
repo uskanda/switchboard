@@ -7,7 +7,7 @@
 
 ## 2. フォージの種別（`forge`）
 
-- [ ] 2.1 `forge.IssueRef` に `Forge` を足し、`String()` を `gh:owner/repo#12` の形にする。GitHubと偽物の実装と呼び出し側を追従させ、`make verify` が通ることを確かめる
+- [x] 2.1 `forge.IssueRef` に `Forge` を足し、`String()` を `gh:owner/repo#12` の形にする。GitHubと偽物の実装と呼び出し側を追従させ、`make verify` が通ることを確かめる
 - [ ] 2.2 偽物を、GitLabのプロジェクト（サブグループを含むパス、`internal` の公開範囲、本文の編集者が分からない状態）も表せるように広げ、それを使うテストを1本通す
 
 ## 3. 設定（`config`）

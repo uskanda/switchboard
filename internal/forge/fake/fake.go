@@ -72,7 +72,7 @@ func (f *Forge) AddIssue(owner, name string, number int, title, body string, aut
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	r := f.repos[owner+"/"+name]
-	ref := forge.IssueRef{Owner: owner, Repo: name, Number: number}
+	ref := forge.IssueRef{Forge: forge.GitHub, Owner: owner, Repo: name, Number: number}
 	now := f.now()
 	r.issues[number] = &issue{
 		data: forge.Issue{

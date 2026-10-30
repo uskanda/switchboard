@@ -57,7 +57,7 @@ type Item struct {
 	Question     string     `json:"question"`
 }
 
-func refString(r forge.IssueRef) string { return fmt.Sprintf("gh:%s/%s#%d", r.Owner, r.Repo, r.Number) }
+func refString(r forge.IssueRef) string { return r.String() }
 
 func (b *Inbox) configured(owner, repo string) bool {
 	for _, p := range b.Config.Projects {
@@ -260,7 +260,7 @@ func (b *Inbox) Resolve(arg string) (forge.IssueRef, error) {
 	if !b.configured(m[1], m[2]) {
 		return forge.IssueRef{}, fmt.Errorf("%s/%s is not a configured project", m[1], m[2])
 	}
-	return forge.IssueRef{Owner: m[1], Repo: m[2], Number: num}, nil
+	return forge.IssueRef{Forge: forge.GitHub, Owner: m[1], Repo: m[2], Number: num}, nil
 }
 
 // Show writes the agent's latest post on the issue, without its marker.

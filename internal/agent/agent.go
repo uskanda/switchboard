@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -61,7 +62,12 @@ type active struct {
 // errQueued reports that an issue waits for a free slot; it is evaluated again when one frees up.
 var errQueued = errors.New("queued")
 
+// lockName keeps the Phase 1 name for GitHub. GitLab names start with "@", which no GitHub owner can, and replace the
+// slashes of subgroups so that the lock stays one file.
 func lockName(ref forge.IssueRef) string {
+	if ref.Kind() == forge.GitLab {
+		return fmt.Sprintf("@gitlab-%s-%s-%d", strings.ReplaceAll(ref.Owner, "/", "~"), ref.Repo, ref.Number)
+	}
 	return fmt.Sprintf("%s-%s-%d", ref.Owner, ref.Repo, ref.Number)
 }
 
