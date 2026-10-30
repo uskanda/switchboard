@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/uskanda/switchboard/internal/claudecode"
+	"github.com/uskanda/switchboard/internal/config"
 	"github.com/uskanda/switchboard/internal/forge"
 	"github.com/uskanda/switchboard/internal/prompt"
 	"github.com/uskanda/switchboard/internal/trust"
@@ -91,9 +92,21 @@ func settings(verifyCommand string) claudecode.Settings {
 
 func (a *Agent) space(pl *plan) *workspace.Space {
 	p, ref := pl.project, pl.issue.Ref
+	return a.spaceOf(p, ref)
+}
+
+// spaceOf is the worktree of ref. GitHub keeps the Phase 1 place; GitLab's sit under "@gitlab", which no GitHub
+// owner can be, and push with the user name GitLab expects for a token.
+func (a *Agent) spaceOf(p config.Project, ref forge.IssueRef) *workspace.Space {
+	root := filepath.Join(a.State.Path, "worktrees", ref.Owner, ref.Repo)
+	user := ""
+	if ref.Kind() == forge.GitLab {
+		root = filepath.Join(a.State.Path, "worktrees", "@gitlab", ref.Owner, ref.Repo)
+		user = "oauth2"
+	}
 	return &workspace.Space{
-		Repo: p.Path, Root: filepath.Join(a.State.Path, "worktrees", ref.Owner, ref.Repo),
-		Base: p.BaseBranch, Number: ref.Number, Env: a.Env, Token: a.GitToken,
+		Repo: p.Path, Root: root, Base: p.BaseBranch, Number: ref.Number, Env: a.Env,
+		Token: a.route(ref).GitToken, TokenUser: user,
 	}
 }
 
@@ -140,7 +153,7 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) *outcome {
 		}
 		return o.verify(fmt.Sprintf(a.msg.configChanged, err))
 	}
-	include := p.IncludeUntrusted && a.private[p.FullName()]
+	include := p.IncludeUntrusted && a.private[p.Ref]
 	in := prompt.Input{Ref: is.Ref, Title: is.Title, Body: is.Body, IncludeUntrusted: include, Nonce: newID()}
 	for i, c := range pl.comments {
 		var k prompt.Kind
@@ -218,7 +231,7 @@ func (a *Agent) finish(ctx context.Context, pl *plan, sp *workspace.Space, d *De
 		}
 		return o.fail(fmt.Sprintf(a.msg.pushFailed, err))
 	}
-	url, err := a.Forge.CreateChangeRequest(ctx, forge.ChangeRequest{
+	url, err := a.forgeOf(is.Ref).CreateChangeRequest(ctx, forge.ChangeRequest{
 		Owner: is.Ref.Owner, Repo: is.Ref.Repo, Title: is.Title, Body: body,
 		Head: sp.IssueBranch(), Base: p.BaseBranch, Draft: true,
 	})
@@ -226,9 +239,15 @@ func (a *Agent) finish(ctx context.Context, pl *plan, sp *workspace.Space, d *De
 		if ctx.Err() != nil {
 			return nil
 		}
+		if is.Ref.Kind() == forge.GitLab {
+			return o.fail(fmt.Sprintf(a.msg.mrFailed, err))
+		}
 		return o.fail(fmt.Sprintf(a.msg.prFailed, err))
 	}
-	return o.done(d, url)
+	if is.Ref.Kind() == forge.GitLab {
+		return o.done(d, url, fmt.Sprintf(a.msg.mr, url))
+	}
+	return o.done(d, url, fmt.Sprintf(a.msg.pr, url))
 }
 
 // shell runs cmd with sh in dir and env, within the run timeout, and returns its combined output.

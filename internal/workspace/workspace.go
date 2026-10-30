@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -26,6 +27,8 @@ type Space struct {
 	Env    []string
 	// Token, when set, is offered to git push through GIT_ASKPASS for https remotes. It never reaches claude.
 	Token string
+	// TokenUser is the user name offered with Token: x-access-token (GitHub) when empty, oauth2 for GitLab.
+	TokenUser string
 }
 
 // Dir is the worktree path.
@@ -111,7 +114,7 @@ func nonEmpty(xs []string) []string {
 }
 
 // protected are the paths a run must not change: directories end with a slash.
-var protected = []string{".github/workflows/", ".claude/", ".mcp.json", "CLAUDE.md", "AGENTS.md"}
+var protected = []string{".github/workflows/", ".gitlab-ci.yml", ".claude/", ".mcp.json", "CLAUDE.md", "AGENTS.md"}
 
 func isProtected(path string, extra []string) bool {
 	for _, p := range append(append([]string(nil), protected...), extra...) {
@@ -207,13 +210,14 @@ func addedLines(diff string) string {
 	return b.String()
 }
 
-// askpass answers git's credential prompts from SWITCHBOARD_GIT_TOKEN.
-const askpass = `#!/bin/sh
-case "$1" in
-Username*) echo x-access-token ;;
-*) printf '%s\n' "$SWITCHBOARD_GIT_TOKEN" ;;
-esac
-`
+// askpassScript answers git's credential prompts: user (x-access-token when empty) for the user name, and
+// SWITCHBOARD_GIT_TOKEN for the password.
+func askpassScript(user string) string {
+	if user == "" {
+		user = "x-access-token"
+	}
+	return "#!/bin/sh\ncase \"$1\" in\nUsername*) echo " + user + " ;;\n*) printf '%s\\n' \"$SWITCHBOARD_GIT_TOKEN\" ;;\nesac\n"
+}
 
 // Push pushes the issue branch, and only that branch, to origin. Pushing the base branch is refused.
 func (s *Space) Push(ctx context.Context) error {
@@ -229,11 +233,37 @@ func (s *Space) Push(ctx context.Context) error {
 		}
 		defer os.RemoveAll(tmp)
 		script := filepath.Join(tmp, "askpass")
-		if err := os.WriteFile(script, []byte(askpass), 0o700); err != nil {
+		if err := os.WriteFile(script, []byte(askpassScript(s.TokenUser)), 0o700); err != nil {
 			return err
 		}
 		env = []string{"GIT_ASKPASS=" + script, "SWITCHBOARD_GIT_TOKEN=" + s.Token, "GIT_TERMINAL_PROMPT=0"}
 	}
 	_, err := s.git(ctx, s.Dir(), env, "push", "-q", "origin", "refs/heads/"+b+":refs/heads/"+b)
 	return err
+}
+
+// ErrUncommitted reports a worktree with changes that are not committed; Remove leaves it alone.
+var ErrUncommitted = errors.New("the worktree has uncommitted changes")
+
+// Remove deletes the worktree and the local issue branch, and reports whether there was a worktree. A worktree with
+// uncommitted changes is kept (ErrUncommitted). The branch on origin is not touched.
+func (s *Space) Remove(ctx context.Context) (bool, error) {
+	dir := s.Dir()
+	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
+		return false, nil
+	}
+	out, err := s.git(ctx, dir, nil, "status", "--porcelain")
+	if err != nil {
+		return false, err
+	}
+	if out != "" {
+		return false, ErrUncommitted
+	}
+	if _, err := s.git(ctx, s.Repo, nil, "worktree", "remove", dir); err != nil {
+		return false, err
+	}
+	if _, err := s.git(ctx, s.Repo, nil, "branch", "-D", s.branch()); err != nil {
+		return true, err
+	}
+	return true, nil
 }

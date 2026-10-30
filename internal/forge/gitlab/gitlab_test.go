@@ -94,7 +94,7 @@ func TestUpdatedIssuesFollowsPagesAndUsesUpdatedAfter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 2 || got[0].Ref != ref || got[0].State != "open" || got[1].State != "closed" || got[0].Labels[0] != "agent:ready" {
+	if len(got) != 2 || got[0].Ref != ref || got[0].State != "open" || got[1].State != "closed" || got[0].Labels[0] != "agent:ready" || got[0].Notes != 4 {
 		t.Fatalf("got %+v", got)
 	}
 }

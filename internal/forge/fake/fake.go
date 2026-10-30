@@ -222,6 +222,16 @@ func (f *Forge) addComment(ref forge.IssueRef, body string, author forge.User) f
 	return c
 }
 
+// summary is what a listing returns for is. A GitLab fake counts the comments, as user_notes_count does.
+func (f *Forge) summary(is *issue) forge.IssueSummary {
+	s := is.data.IssueSummary
+	s.Labels = append([]string(nil), s.Labels...)
+	if f.kind == forge.GitLab {
+		s.Notes = len(is.comments)
+	}
+	return s
+}
+
 // UpdatedIssues implements forge.Forge.
 func (f *Forge) UpdatedIssues(_ context.Context, owner, name string, since time.Time) ([]forge.IssueSummary, error) {
 	f.mu.Lock()
@@ -233,9 +243,7 @@ func (f *Forge) UpdatedIssues(_ context.Context, owner, name string, since time.
 	var out []forge.IssueSummary
 	for _, is := range r.issues {
 		if !is.data.UpdatedAt.Before(since) {
-			s := is.data.IssueSummary
-			s.Labels = append([]string(nil), s.Labels...)
-			out = append(out, s)
+			out = append(out, f.summary(is))
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Ref.Number < out[j].Ref.Number })
@@ -381,7 +389,7 @@ func (f *Forge) SearchOpenIssuesWithLabel(_ context.Context, _ string, label str
 	for _, r := range f.repos {
 		for _, is := range r.issues {
 			if is.data.State == "open" && contains(is.data.Labels, label) {
-				out = append(out, is.data.IssueSummary)
+				out = append(out, f.summary(is))
 			}
 		}
 	}

@@ -169,7 +169,10 @@ projects:
 }
 
 // agent makes a fresh agent over the same world, as a restart does.
-func (x *h) agent() *Agent {
+func (x *h) agent() *Agent { return x.agentWith(nil) }
+
+// agentWith is agent with edit applied to the agent before it starts.
+func (x *h) agentWith(edit func(*Agent)) *Agent {
 	x.t.Helper()
 	if x.a != nil {
 		x.a.Wait()
@@ -183,6 +186,9 @@ func (x *h) agent() *Agent {
 		Config: x.cfg, Forge: x.f, Judge: j, State: x.dir, Audit: x.audit,
 		Env:      append(os.Environ(), x.envExtra...),
 		IntGrace: 200 * time.Millisecond, TermGrace: 200 * time.Millisecond,
+	}
+	if edit != nil {
+		edit(x.a)
 	}
 	if err := x.a.Start(x.ctx); err != nil {
 		x.t.Fatal(err)

@@ -74,9 +74,10 @@ func (o *outcome) wait(d *Declaration, denials []claudecode.Denial) *outcome {
 	return o.set("waiting", "question", o.msg.questionTitle, parts...)
 }
 
-func (o *outcome) done(d *Declaration, url string) *outcome {
+// done records the change request at url; link is the comment's line that names it ("Pull request: ...").
+func (o *outcome) done(d *Declaration, url, link string) *outcome {
 	o.PR = url
-	return o.set("done", "", o.msg.doneTitle, fmt.Sprintf(o.msg.pr, url), d.Summary)
+	return o.set("done", "", o.msg.doneTitle, link, d.Summary)
 }
 
 func (a *Agent) runDir(run string) string { return filepath.Join(a.State.Path, "runs", run) }
@@ -86,13 +87,13 @@ func (a *Agent) writeBack(ctx context.Context, ref forge.IssueRef, o *outcome) e
 	if err := a.State.WriteJSON(filepath.Join("runs", o.Run, "outcome.json"), o); err != nil {
 		return err
 	}
-	_, comments, err := a.Forge.Thread(ctx, ref)
+	_, comments, err := a.forgeOf(ref).Thread(ctx, ref)
 	if err != nil {
 		return err
 	}
 	posted := false
 	for _, c := range comments {
-		if m, ok := marker.Parse(c.Body); ok && c.Author.ID == a.Judge.AgentIDOf(ref) && m.Run == o.Run {
+		if m, ok := marker.Parse(c.Body); ok && c.Author.ID == a.judgeOf(ref).AgentIDOf(ref) && m.Run == o.Run {
 			posted = true
 		}
 	}
@@ -105,7 +106,7 @@ func (a *Agent) writeBack(ctx context.Context, ref forge.IssueRef, o *outcome) e
 		m := marker.Marker{Host: a.Config.Host.Name, Session: o.Session, Run: o.Run, State: o.State, Reason: o.Reason, Ack: o.Ack, At: time.Now()}
 		body += "\n\n" + m.Format() + "\n"
 		a.checkComment(ref, o.Run, body)
-		c, err := a.Forge.PostComment(ctx, ref, body)
+		c, err := a.forgeOf(ref).PostComment(ctx, ref, body)
 		if err != nil {
 			return fmt.Errorf("post comment: %w", err)
 		}
@@ -115,7 +116,7 @@ func (a *Agent) writeBack(ctx context.Context, ref forge.IssueRef, o *outcome) e
 	if o.State == "done" {
 		to = a.Config.Labels.Done
 	}
-	return a.swapper().Swap(ctx, ref, to)
+	return a.swapper(ref).Swap(ctx, ref, to)
 }
 
 // checkComment runs comments.check_command on the comment file. A failure is recorded; the comment is posted anyway.
@@ -143,13 +144,17 @@ func (a *Agent) checkComment(ref forge.IssueRef, run, body string) {
 func (a *Agent) recover(ctx context.Context) error {
 	var errs []error
 	for _, p := range a.projects {
-		list, err := a.Forge.SearchOpenIssuesWithLabel(ctx, "repo:"+p.FullName(), a.Config.Labels.Running)
+		scope := "repo:" + p.FullName()
+		if p.Forge == forge.GitLab {
+			scope = p.FullName() // GitLab searches one project, named by its path
+		}
+		list, err := a.routeOf(p).Forge.SearchOpenIssuesWithLabel(ctx, scope, a.Config.Labels.Running)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", p.FullName(), err))
 			continue
 		}
 		for _, s := range list {
-			if s.Ref.Owner != p.Owner || s.Ref.Repo != p.Repo {
+			if s.Ref.Kind() != p.Forge || s.Ref.Owner != p.Owner || s.Ref.Repo != p.Repo {
 				continue
 			}
 			if err := a.recoverOne(ctx, s.Ref); err != nil {

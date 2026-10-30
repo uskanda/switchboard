@@ -60,6 +60,9 @@ type IssueSummary struct {
 	State     string // "open" or "closed"
 	Labels    []string
 	UpdatedAt time.Time
+	// Notes is how many comments people wrote, as GitLab's user_notes_count. GitLab does not move UpdatedAt for a
+	// new comment (V22), so the agent watches this count on waiting issues. Zero on GitHub, which moves UpdatedAt.
+	Notes int
 }
 
 // Issue is one issue with its body.

@@ -168,6 +168,7 @@ func (i glIssue) summary(owner, repo string) forge.IssueSummary {
 	return forge.IssueSummary{
 		Ref:   forge.IssueRef{Forge: forge.GitLab, Owner: owner, Repo: repo, Number: i.IID},
 		Title: i.Title, State: state, Labels: append([]string(nil), i.Labels...), UpdatedAt: i.UpdatedAt,
+		Notes: i.UserNotesCount,
 	}
 }
 
