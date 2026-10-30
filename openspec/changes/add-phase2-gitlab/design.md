@@ -51,7 +51,7 @@
 
 | 処理 | 使うAPI |
 |---|---|
-| プロジェクトIDの解決、公開範囲 | `GET /projects/:path`（パスはURLエンコードする）。`visibility` が `private` のときだけ非公開とする |
+| プロジェクトの指定、公開範囲 | どのAPIでも、プロジェクトはURLエンコードしたパスで指定する。GitLabは、IDの代わりにパスを受け付ける。`doctor` は `GET /projects/:path` でIDを引き、パスが変わっていないかを確かめる。`visibility` が `private` のときだけ非公開とする |
 | 更新の検知 | `GET /projects/:id/issues?updated_after=…&order_by=updated_at`。初回は `updated_after` を付けない。ノートではissueの `updated_at` が変わらない（V22）ため、待ちのissueは別に一覧する（11節） |
 | issueとコメント、編集者 | GraphQLのissueの `notes` で、ノートの作成者、`lastEditedBy`、`system` を取る。本文の作成者と本文はRESTの `GET /projects/:id/issues/:iid` で取る |
 | 本文の最後の編集者 | 本文の変更を示すシステムノート（本文に `description` を含むもの）の、最後の作成者（V21）。ノートが取得の範囲を超えて、確かめきれないときは `Unknown` とする |
