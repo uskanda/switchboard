@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 
@@ -25,10 +26,15 @@ import (
 	"github.com/uskanda/switchboard/internal/marker"
 )
 
-// Inbox reads the forge for the configured projects.
+// Inbox reads the forges of the configured projects.
 type Inbox struct {
 	Config *config.Config
+	// Forge is the GitHub client; Forges, keyed by forge.GitHub or forge.GitLab, holds the others (and may hold
+	// GitHub's too). Each reads and writes with the forge's inbox_token_ref.
 	Forge  forge.Forge
+	Forges map[string]forge.Forge
+	// Only, when set to forge.GitHub or forge.GitLab, lists that forge's issues only.
+	Only string
 	// Cache is the file the row numbers of the last listing are kept in.
 	Cache string
 	Now   func() time.Time
@@ -59,19 +65,43 @@ type Item struct {
 
 func refString(r forge.IssueRef) string { return r.String() }
 
-func (b *Inbox) configured(owner, repo string) bool {
-	for _, p := range b.Config.Projects {
-		if p.Owner == owner && p.Repo == repo {
-			return true
-		}
+// kindOf is the project's forge; a project built without one (as Phase 1 code did) is on GitHub.
+func kindOf(p config.Project) string {
+	if p.Forge == "" {
+		return forge.GitHub
 	}
-	return false
+	return p.Forge
 }
 
-func (b *Inbox) agentID(ctx context.Context) (int64, error) {
-	u, err := b.Forge.User(ctx, b.Config.Forges.GitHub.AgentIdentity)
+// forgeOf is the inbox's client for a forge kind.
+func (b *Inbox) forgeOf(kind string) forge.Forge {
+	if f, ok := b.Forges[kind]; ok {
+		return f
+	}
+	if kind == forge.GitHub {
+		return b.Forge
+	}
+	return nil
+}
+
+// project returns the configured project of an issue.
+func (b *Inbox) project(kind, owner, repo string) (config.Project, bool) {
+	for _, p := range b.Config.Projects {
+		if kindOf(p) == kind && p.Owner == owner && p.Repo == repo {
+			return p, true
+		}
+	}
+	return config.Project{}, false
+}
+
+// agentID resolves the identity the agent posts as on the issue's project.
+func (b *Inbox) agentID(ctx context.Context, ref forge.IssueRef) (int64, error) {
+	p, _ := b.project(ref.Kind(), ref.Owner, ref.Repo)
+	p.Forge = ref.Kind()
+	login := b.Config.AgentIdentity(p)
+	u, err := b.forgeOf(ref.Kind()).User(ctx, login)
 	if err != nil {
-		return 0, fmt.Errorf("resolve agent_identity %s: %w", b.Config.Forges.GitHub.AgentIdentity, err)
+		return 0, fmt.Errorf("resolve agent_identity %s: %w", login, err)
 	}
 	return u.ID, nil
 }
@@ -89,34 +119,38 @@ func latestPost(comments []forge.Comment, agentID int64) (*forge.Comment, *marke
 	return nil, nil
 }
 
-// List collects the waiting issues of the configured projects, oldest wait first, and records the row numbers.
+// List collects the waiting issues of the configured projects on every forge (or on Only), oldest wait first, and
+// records the row numbers. When a forge cannot be read, List still returns the other forges' issues, with an error
+// naming the forge that failed.
 func (b *Inbox) List(ctx context.Context) ([]Item, error) {
-	agentID, err := b.agentID(ctx)
-	if err != nil {
-		return nil, err
+	var kinds []string
+	for _, k := range []string{forge.GitHub, forge.GitLab} {
+		if (b.Only == "" || b.Only == k) && b.uses(k) {
+			kinds = append(kinds, k)
+		}
 	}
-	found, err := b.Forge.SearchOpenIssuesWithLabel(ctx, b.Config.Forges.GitHub.SearchScope, b.Config.Labels.Waiting)
-	if err != nil {
-		return nil, err
+	type result struct {
+		items []Item
+		err   error
 	}
+	results := make([]result, len(kinds))
+	var wg sync.WaitGroup
+	for i, k := range kinds {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			items, err := b.list(ctx, k)
+			results[i] = result{items, err}
+		}()
+	}
+	wg.Wait()
 	var items []Item
-	for _, s := range found {
-		if !b.configured(s.Ref.Owner, s.Ref.Repo) {
-			continue
+	var errs []error
+	for i, r := range results {
+		items = append(items, r.items...)
+		if r.err != nil {
+			errs = append(errs, fmt.Errorf("%s could not be read: %w", forgeName(kinds[i]), r.err))
 		}
-		_, comments, err := b.Forge.Thread(ctx, s.Ref)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", s.Ref, err)
-		}
-		it := Item{Ref: refString(s.Ref), Project: s.Ref.Owner + "/" + s.Ref.Repo, Number: s.Ref.Number, Title: s.Title, Host: "?", Reason: "?", Question: "?"}
-		if c, m := latestPost(comments, agentID); c != nil {
-			it.Host, it.Reason, it.Question = orQ(m.Host), orQ(m.Reason), Excerpt(c.Body)
-			if !m.At.IsZero() {
-				at := m.At
-				it.WaitingSince = &at
-			}
-		}
-		items = append(items, it)
 	}
 	sort.SliceStable(items, func(i, j int) bool {
 		a, c := items[i].WaitingSince, items[j].WaitingSince
@@ -135,6 +169,79 @@ func (b *Inbox) List(ctx context.Context) ([]Item, error) {
 	}
 	if err := b.saveRows(rows); err != nil {
 		return nil, err
+	}
+	return items, errors.Join(errs...)
+}
+
+func forgeName(kind string) string {
+	if kind == forge.GitLab {
+		return "gitlab"
+	}
+	return "github"
+}
+
+func (b *Inbox) uses(kind string) bool {
+	for _, p := range b.Config.Projects {
+		if kindOf(p) == kind {
+			return true
+		}
+	}
+	return false
+}
+
+// list reads one forge's waiting issues. GitHub is searched once over search_scope; GitLab is read project by
+// project, since it has no search over the configured projects alone.
+func (b *Inbox) list(ctx context.Context, kind string) ([]Item, error) {
+	f := b.forgeOf(kind)
+	if f == nil {
+		return nil, errors.New("no client")
+	}
+	var found []forge.IssueSummary
+	if kind == forge.GitHub {
+		s, err := f.SearchOpenIssuesWithLabel(ctx, b.Config.Forges.GitHub.SearchScope, b.Config.Labels.Waiting)
+		if err != nil {
+			return nil, err
+		}
+		found = s
+	} else {
+		for _, p := range b.Config.Projects {
+			if kindOf(p) != kind {
+				continue
+			}
+			s, err := f.SearchOpenIssuesWithLabel(ctx, p.FullName(), b.Config.Labels.Waiting)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", p.Ref, err)
+			}
+			found = append(found, s...)
+		}
+	}
+	ids := map[string]int64{}
+	var items []Item
+	for _, s := range found {
+		if _, ok := b.project(s.Ref.Kind(), s.Ref.Owner, s.Ref.Repo); !ok {
+			continue
+		}
+		agentID, ok := ids[s.Ref.Project()]
+		if !ok {
+			id, err := b.agentID(ctx, s.Ref)
+			if err != nil {
+				return nil, err
+			}
+			agentID, ids[s.Ref.Project()] = id, id
+		}
+		_, comments, err := f.Thread(ctx, s.Ref)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", s.Ref, err)
+		}
+		it := Item{Ref: refString(s.Ref), Project: s.Ref.Project(), Number: s.Ref.Number, Title: s.Title, Host: "?", Reason: "?", Question: "?"}
+		if c, m := latestPost(comments, agentID); c != nil {
+			it.Host, it.Reason, it.Question = orQ(m.Host), orQ(m.Reason), Excerpt(c.Body)
+			if !m.At.IsZero() {
+				at := m.At
+				it.WaitingSince = &at
+			}
+		}
+		items = append(items, it)
 	}
 	return items, nil
 }
@@ -229,9 +336,10 @@ func (b *Inbox) saveRows(rows []string) error {
 	return os.WriteFile(b.Cache, append(data, '\n'), 0o600)
 }
 
-var issueRef = regexp.MustCompile(`^gh:([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)#([0-9]+)$`)
+var issueRef = regexp.MustCompile(`^(gh):([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)#([0-9]+)$|^(gl):((?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)#([0-9]+)$`)
 
-// Resolve turns a row number of the last listing, or gh:owner/repo#n, into an issue of a configured project.
+// Resolve turns a row number of the last listing, gh:owner/repo#n, or gl:group/project#n into an issue of a
+// configured project.
 func (b *Inbox) Resolve(arg string) (forge.IssueRef, error) {
 	if n, err := strconv.Atoi(arg); err == nil {
 		var saved struct {
@@ -254,22 +362,27 @@ func (b *Inbox) Resolve(arg string) (forge.IssueRef, error) {
 	}
 	m := issueRef.FindStringSubmatch(arg)
 	if m == nil {
-		return forge.IssueRef{}, fmt.Errorf("%q is neither a row number nor of the form gh:owner/repo#123", arg)
+		return forge.IssueRef{}, fmt.Errorf("%q is neither a row number nor of the form gh:owner/repo#123 or gl:group/project#123", arg)
 	}
-	num, _ := strconv.Atoi(m[3])
-	if !b.configured(m[1], m[2]) {
-		return forge.IssueRef{}, fmt.Errorf("%s/%s is not a configured project", m[1], m[2])
+	if m[1] == "" {
+		m = append([]string{m[0]}, m[5:]...)
+	} else {
+		m = m[:5]
 	}
-	return forge.IssueRef{Forge: forge.GitHub, Owner: m[1], Repo: m[2], Number: num}, nil
+	num, _ := strconv.Atoi(m[4])
+	if _, ok := b.project(m[1], m[2], m[3]); !ok {
+		return forge.IssueRef{}, fmt.Errorf("%s:%s/%s is not a configured project", m[1], m[2], m[3])
+	}
+	return forge.IssueRef{Forge: m[1], Owner: m[2], Repo: m[3], Number: num}, nil
 }
 
 // Show writes the agent's latest post on the issue, without its marker.
 func (b *Inbox) Show(ctx context.Context, ref forge.IssueRef, w io.Writer) error {
-	agentID, err := b.agentID(ctx)
+	agentID, err := b.agentID(ctx, ref)
 	if err != nil {
 		return err
 	}
-	is, comments, err := b.Forge.Thread(ctx, ref)
+	is, comments, err := b.forgeOf(ref.Kind()).Thread(ctx, ref)
 	if err != nil {
 		return err
 	}
@@ -295,7 +408,8 @@ func (b *Inbox) Reply(ctx context.Context, ref forge.IssueRef, text string, forc
 	if _, ok := marker.Parse(text); ok {
 		return errors.New("the reply ends in a switchboard marker line; remove it")
 	}
-	is, _, err := b.Forge.Thread(ctx, ref)
+	f := b.forgeOf(ref.Kind())
+	is, _, err := f.Thread(ctx, ref)
 	if err != nil {
 		return err
 	}
@@ -309,7 +423,7 @@ func (b *Inbox) Reply(ctx context.Context, ref forge.IssueRef, text string, forc
 		}
 		return fmt.Errorf("%s is not waiting (%s); nothing was posted. Use --force to post anyway", refString(ref), now)
 	}
-	_, err = b.Forge.PostComment(ctx, ref, text)
+	_, err = f.PostComment(ctx, ref, text)
 	return err
 }
 
