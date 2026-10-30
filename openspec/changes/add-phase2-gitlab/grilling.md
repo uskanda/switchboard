@@ -17,6 +17,7 @@
 | GitLabのインスタンスの数と既定のURL | `<forges.gitlab.base_url>` の既定値を `https://gitlab.com` にする。設定できるGitLabは1つだけ | 第3ラウンド Q12 |
 | 完了条件の確かめ方 | 偽のGitLabを使った結合テストをCIで回す。加えて、`gl.uskan.dev` とGitHubの検証用リポジトリで、1つの受信箱に両方の待ちが出て、両方に返答してMRとPRができるまでを実物で通し、ROADMAP.mdに記録する | 第3ラウンド Q13 |
 | 検証用のGitLabのユーザー名とプロジェクト | ユーザー名はglabから調べた（`uskanda`）。プロジェクトはglabで作れる `nas/switchboard-sandbox` に置く | 第3ラウンド Q10、第4ラウンド Q14 |
+| 検証で使うPATの種類 | fine-grainedのPATで、`nas/switchboard-sandbox` だけに絞って試す。従来の `api` スコープのPATを前提にしていたのは確認不足だった。拒否されるAPIがあれば記録し、legacyに戻すか回避策を考える | 会話中に確認 |
 | 検証で使うトークン | `uskanda` のPAT（`api`）を1つ作り、`switchboard/gitlab` と `switchboard/gitlab-inbox` の両方に登録する。設定のキーは分けたままにする | 第4ラウンド Q15 |
 | プロジェクト単位の上書きの確認 | 実物でも確かめる。`nas/switchboard-sandbox` のProject Access Tokenで、`token_ref` と `agent_identity` をbotに上書きし、botとして投稿するまで通す | 第4ラウンド Q16 |
 | 編集者が分からないときの扱い | 信頼済みでない人が編集したものとして扱う。本文なら実行を始めず、コメントなら指示に採用しない。理由を監査ログに残す | 第5ラウンド Q17 |

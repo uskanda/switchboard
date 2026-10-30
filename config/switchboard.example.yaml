@@ -18,7 +18,7 @@ forges:
     search_scope: "user:YOUR_GITHUB_USER"       # inbox search scope (org:NAME also works)
   # gitlab:                            # needed once a project is gl:
   #   base_url: https://gitlab.com      # the default; a self-managed GitLab goes here
-  #   token_ref: switchboard/gitlab     # agent token: a personal access token with the api scope
+  #   token_ref: switchboard/gitlab     # agent token: a fine-grained personal access token (GitLab 19.2+), else the api scope
   #   inbox_token_ref: switchboard/gitlab-inbox   # your own identity for the inbox and reply
   #   agent_identity: YOUR_GITLAB_USER
 

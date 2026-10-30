@@ -84,7 +84,15 @@ secret-tool store --label='switchboard github inbox' service switchboard/github-
 
 どちらのコマンドも、トークンを標準入力から読む。トークンは `claude` には渡さない。
 
-GitLabのプロジェクトを使うときは、GitLabのpersonal access tokenを `api` スコープで作り、同じように登録する。GitLabのPATは権限をプロジェクトに絞れないので、エージェント用と受信箱用に同じトークンを登録してもよい。
+GitLabのプロジェクトを使うときは、GitLabのpersonal access tokenを作り、同じように登録する。GitLab 19.2以降なら、fine-grainedのトークンで対象のプロジェクトと操作を絞れる。対象のプロジェクトを選び、次の権限を付ける。それより古いGitLabでは、`api` スコープの従来のトークンを使う。エージェント用と受信箱用に、同じトークンを登録してもよい。
+
+| リソース | 権限 |
+|---|---|
+| Project | Read |
+| Work Item | Read、Create、Update |
+| Label | Read、Create |
+| Merge Request | Read、Create |
+| Code | Download、Push |
 
 ```bash
 secret-tool store --label='switchboard gitlab' service switchboard/gitlab username token
