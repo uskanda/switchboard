@@ -28,6 +28,7 @@ Phase 1で、GitHubの1リポジトリについて、着手から待ち、返答
 - `config`: GitLabの設定（`base_url`、トークン、`agent_identity`）、`gl:` のプロジェクトの受け付け、プロジェクトごとのトークンと `agent_identity` の上書き
 - `trust`: フォージごとのユーザーIDの解決、プロジェクトごとの `agent_identity`、編集者が分からないときの扱い、`internal` の数え方
 - `run-outcome`: GitLabではdraftのMRを作る。issueを閉じる参照と保護パスを、フォージに合わせる
+- `agent-run`: GitLabでは、待ちのissueのノートの数も毎回見て、返答を検知する
 - `inbox`: 両フォージの待ちの一覧、`--forge` での絞り込み、届かないフォージの報告、`gl:` の形の `<ref>`
 
 ## Impact

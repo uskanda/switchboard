@@ -2,8 +2,8 @@
 
 ## 1. GitLabの挙動の確認
 
-- [ ] 1.1 glabで `gl.uskan.dev` に検証用の非公開プロジェクト `nas/switchboard-sandbox` を作る。そこでissueの本文を編集し、本文の変更を示すシステムノートの文言と作成者を確かめる。ノートを編集し、GraphQLの `lastEditedBy` が編集者を返すことも確かめる。結果をROADMAP.mdの検証項目に記録する
-- [ ] 1.2 同じプロジェクトで、次の3つを確かめ、ROADMAP.mdの検証項目に記録する。ラベルを付けた人が `resource_label_events` の `user` に入ること、`updated_after` で更新を取れること、`Draft: ` を付けたMRを作れること
+- [x] 1.1 glabで `gl.uskan.dev` に検証用の非公開プロジェクト `nas/switchboard-sandbox` を作る。そこでissueの本文を編集し、本文の変更を示すシステムノートの文言と作成者を確かめる。ノートを編集し、GraphQLの `lastEditedBy` が編集者を返すことも確かめる。結果をROADMAP.mdの検証項目に記録する
+- [x] 1.2 同じプロジェクトで、次の3つを確かめ、ROADMAP.mdの検証項目に記録する。ラベルを付けた人が `resource_label_events` の `user` に入ること、`updated_after` で更新を取れること、`Draft: ` を付けたMRを作れること
 
 ## 2. フォージの種別（`forge`）
 
@@ -33,9 +33,10 @@
 ## 6. エージェント（`agent`、`workspace`）
 
 - [ ] 6.1 エージェントが、プロジェクトの `ref` からフォージのクライアント、pushのトークン、エージェントのIDを引くようにする。GitHubとGitLabを混ぜた設定で、両方のプロジェクトをポーリングすることを偽物でテストする
-- [ ] 6.2 GitLabのプロジェクトで完了したら、draftのMRを作るようにする。保護パスに `.gitlab-ci.yml` を足し、specのシナリオをテストで確かめる
-- [ ] 6.3 GitLabのhttpsのリモートへのpushで、`GIT_ASKPASS` のユーザー名を `oauth2` にする。ローカルのbareリポジトリへのpushのテストで、渡すユーザー名を確かめる
-- [ ] 6.4 閉じられたissueのworktreeとローカルのブランチの片付けを実装する。コミットしていない変更があるときに残すことと、実行中のissueを片付けないことを、実物のgitリポジトリでテストする
+- [ ] 6.2 GitLabのプロジェクトで、ポーリングのたびに待ちのissueを一覧し、`user_notes_count` が変わったissueを評価する。issueの更新時刻が変わらない返答で再開することを、偽のGitLabでテストする
+- [ ] 6.3 GitLabのプロジェクトで完了したら、draftのMRを作るようにする。保護パスに `.gitlab-ci.yml` を足し、specのシナリオをテストで確かめる
+- [ ] 6.4 GitLabのhttpsのリモートへのpushで、`GIT_ASKPASS` のユーザー名を `oauth2` にする。ローカルのbareリポジトリへのpushのテストで、渡すユーザー名を確かめる
+- [ ] 6.5 閉じられたissueのworktreeとローカルのブランチの片付けを実装する。コミットしていない変更があるときに残すことと、実行中のissueを片付けないことを、実物のgitリポジトリでテストする
 
 ## 7. 受信箱（`inbox`）
 

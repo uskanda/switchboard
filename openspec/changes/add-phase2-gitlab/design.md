@@ -52,9 +52,9 @@
 | 処理 | 使うAPI |
 |---|---|
 | プロジェクトIDの解決、公開範囲 | `GET /projects/:path`（パスはURLエンコードする）。`visibility` が `private` のときだけ非公開とする |
-| 更新の検知 | `GET /projects/:id/issues?updated_after=…&order_by=updated_at`。初回は `updated_after` を付けない |
+| 更新の検知 | `GET /projects/:id/issues?updated_after=…&order_by=updated_at`。初回は `updated_after` を付けない。ノートではissueの `updated_at` が変わらない（V22）ため、待ちのissueは別に一覧する（11節） |
 | issueとコメント、編集者 | GraphQLのissueの `notes` で、ノートの作成者、`lastEditedBy`、`system` を取る。本文の作成者と本文はRESTの `GET /projects/:id/issues/:iid` で取る |
-| 本文の最後の編集者 | 本文の変更を示すシステムノート（`changed the description`）の作成者。issueの `updated_at` が作成時刻と違うのに、そのノートが無ければ `Unknown` とする |
+| 本文の最後の編集者 | 本文の変更を示すシステムノート（本文に `description` を含むもの）の、最後の作成者（V21）。ノートが取得の範囲を超えて、確かめきれないときは `Unknown` とする |
 | ラベルを付けた人 | `GET /projects/:id/issues/:iid/resource_label_events` の、そのラベルの最後の `add` の `user` |
 | ラベルの付け替え | `PUT /projects/:id/issues/:iid` に `labels` を全置換で渡す。GitHubと同じく、直後に取り直して確かめる |
 | コメントの投稿 | `POST /projects/:id/issues/:iid/notes` |
@@ -118,9 +118,17 @@ DECISIONS.mdに、次の2つを足す。
 
 ADR-017の論点は、「Phase 4の中継で決める」に書き直す。
 
+### 11. GitLabでの返答の検知
+
+GitLabでは、ノートを足してもissueの `updated_at` が変わらない（V22）。そのため、更新されたissueの一覧だけでは、待ちのissueへの返答を見落とす。
+
+GitLabのプロジェクトでは、ポーリングのたびに `GET /projects/:id/issues?labels=<待ちのラベル>&state=opened` も呼ぶ。返る `user_notes_count` が前回の値と違うissueだけを、更新されたissueと同じく評価する。前回の値は、エージェントのメモリに持つ。起動した直後は、待ちのissueをすべて評価する。
+
+ノートの一覧を毎回取る案もある。しかし、待ちのissueの数だけリクエストが増える。`user_notes_count` なら、1プロジェクトにつき1リクエストで済む。
+
 ## Risks / Trade-offs
 
-- ［本文の編集者を、システムノートの文言で見分ける］→GitLabの版で文言が変わると、編集者が分からなくなる。そのときは `Unknown` になり、実行は始まらない。誤って採用する方向には倒れない。文言は `gl.uskan.dev` で確かめ、検証項目に記録する
+- ［本文の編集者を、システムノートの文言で見分ける］→GitLabの版で文言が変わると、本文の編集を見落とし、編集されていない本文として扱う。対策として、本文に `description` を含むシステムノートを、すべて本文の変更として扱う。文言は偽のGitLabのテストに固定する。版を上げたら、V21を確かめ直す。非公開のプロジェクトで本文を編集できるのはメンバーだけなので、見落としの影響はメンバーの範囲に留まる
 - ［ラベルの全置換は、後から書いた側が残る］→GitHubと同じく、付け替えの後に取り直し、状態ラベルが2つ以上なら正規化する
 - ［GitLabのPATは、自分の全プロジェクトを操作できる］→自分の環境ではPATを使うと決めた（grilling第2ラウンドQ6）。公開した製品では、プロジェクトの上書きでProject Access Tokenを使えるようにし、READMEで勧める
 - ［`git branch -D` で、pushしていないコミットを消しうる］→消すのはissueが閉じられた後だけで、コミットしていない変更があれば消さない
@@ -132,7 +140,3 @@ ADR-017の論点は、「Phase 4の中継で決める」に書き直す。
 - 状態ディレクトリのユーザーIDの記録は、フォージの区別が無いものを `gh:` として読み込み、次に書くときにフォージ付きのキーで書き直す
 - 戻すときは、Phase 1の版のバイナリに入れ替える。フォージ付きのキーの記録は、Phase 1の版では別のログイン名として読まれる。そのため、GitHubの記録は書き直しになるが、起動は止まらない
 
-## Open Questions
-
-- 本文の変更を示すシステムノートの文言が、19.5.1で `changed the description` のままか。実装の最初に `gl.uskan.dev` で確かめる
-- `resource_label_events` が、CE 19.5.1でラベルを付けた人を返すか。同じく確かめる

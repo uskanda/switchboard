@@ -78,6 +78,9 @@
 | V18 | `--permission-mode dontAsk` の `-p` での挙動 | allowに無いツール呼び出しを、確認せずに拒否して続行する。PermissionRequestフックは発火しない。ただし `uname -a` のような読み取り専用のコマンドは、allowに無くても実行された | 2026-10-29 |
 | V19 | Phase 1の完了条件（`agent:ready` から待ち、返答、PRの作成まで手で操作せずに回るか）を、実物の `claude` で満たすか | 満たす。偽のフォージと実物のgitリポジトリに対し、claude 2.1.312（モデルは既定）で、質問、受信箱からの返答、完了、draftのPRの作成まで回った。1回目は5秒、2回目は11秒だった。`go test -tags realclaude ./internal/integration/` で再現できる。実物のGitHubに対する確認は、マスターの端末で行う | 2026-10-29 |
 | V20 | Phase 1の完了条件を、Ubuntuの端末と実物のGitHubで満たすか | 満たす。Ubuntu 24.04の端末で、非公開リポジトリ `uskanda/switchboard-sandbox`、Secret Service（gnome-keyring）のfine-grained PAT 2つ、claude 2.1.314（モデルは既定）を使った。issueに `agent:ready` を付けると、16秒で質問が付いて `agent:waiting` になった。`switchboard reply` で返答すると、16秒後に再び実行し、31秒で `switchboard/issue-1` からdraftのPRを作って `agent:done` になった。mainは変わらなかった。初回のポーリングで `since` にゼロ値の時刻を送り、GitHubが422で拒否する不具合が見つかった。偽のフォージでは再現しないため、結合テストでは分からなかった。ゼロ値のときは `since` を付けないよう直した | 2026-10-30 |
+| V21 | GitLabで、issue本文とノートの最後の編集者が取れるか | 取れる。`gl.uskan.dev`（CE 19.5.1）で確かめた。本文を編集すると、編集した人を作成者とするシステムノート（本文は `changed the description`）が付く。ノートは、GraphQLの `lastEditedBy` に、編集したときだけ編集者が入る。`lastEditedAt` は編集していなくても入るため、編集の有無には使えない。issueのGraphQLには `lastEditedBy` が無い | 2026-10-30 |
+| V22 | GitLabで、ラベルを付けた人と更新を取れるか | 取れる。`resource_label_events` の `add` の `user` に、ラベルを付けた人が入る。`updated_after` で更新を取れる。ただし、ノートを足してもissueの `updated_at` は変わらない。ラベルを変えると変わる。そのため、返答の検知には、待ちのissueの `user_notes_count` を毎回見る | 2026-10-30 |
+| V23 | GitLabで、draftのMRを作れるか | 作れる。タイトルの先頭に `Draft: ` を付けて `POST /projects/:id/merge_requests` を呼ぶと、`draft` が真のMRになる。`add_labels` に無いラベルを渡すと、そのラベルはプロジェクトに作られる | 2026-10-30 |
 
 ### 検証で分かった、設計に関わる点
 
