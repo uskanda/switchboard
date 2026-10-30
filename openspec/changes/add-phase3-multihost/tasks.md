@@ -30,4 +30,4 @@
 
 ## 6. 結合の確認
 
-- [ ] 6.1 usknasで `switchboard service install` を実行してもらい、サービスとしてGitHubとGitLabのissueを着手から完了まで処理できることを確かめる。`systemctl restart`、プロセスを止めたあとの自動の再起動、`systemctl is-enabled` を確かめ、結果をROADMAP.mdに記録する
+- [x] 6.1 usknasで `switchboard service install` を実行してもらい、サービスとしてGitHubとGitLabのissueを着手から完了まで処理できることを確かめる。`systemctl restart`、プロセスを止めたあとの自動の再起動、`systemctl is-enabled` を確かめ、結果をROADMAP.mdに記録する
