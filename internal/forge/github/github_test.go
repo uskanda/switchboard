@@ -85,6 +85,25 @@ func TestUpdatedIssuesSkipsPullRequestsAndFollowsPages(t *testing.T) {
 	}
 }
 
+// The first poll has no update seen yet. GitHub answers 422 to since=0001-01-01T00:00:00Z, so the zero time
+// sends no since at all.
+func TestUpdatedIssuesOmitsSinceForTheZeroTime(t *testing.T) {
+	s, c := newServer(t)
+	s.on("GET /repos/o/r/issues", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Has("since") {
+			t.Errorf("query = %s", r.URL.RawQuery)
+		}
+		jsonReply([]map[string]any{{"number": 1, "title": "a", "state": "open", "updated_at": "2026-10-29T01:00:00Z"}})(w, r)
+	})
+	got, err := c.UpdatedIssues(ctx, "o", "r", time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %+v", got)
+	}
+}
+
 func TestUpdatedIssuesUsesETag(t *testing.T) {
 	s, c := newServer(t)
 	calls := 0
@@ -238,7 +257,7 @@ func TestReadsOfRepositoryUserAndSearch(t *testing.T) {
 		t.Fatalf("User = %+v, %v", u, err)
 	}
 	found, err := c.SearchOpenIssuesWithLabel(ctx, "user:alice", "agent:waiting")
-	if err != nil || len(found) != 1 || found[0].Ref != (forge.IssueRef{Owner: "o", Repo: "r", Number: 7}) {
+	if err != nil || len(found) != 1 || found[0].Ref != (forge.IssueRef{Forge: forge.GitHub, Owner: "o", Repo: "r", Number: 7}) {
 		t.Fatalf("Search = %+v, %v", found, err)
 	}
 }

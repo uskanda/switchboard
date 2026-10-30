@@ -14,6 +14,7 @@ import (
 // Forge holds repositories, issues, comments, label events, users and pull requests in memory.
 type Forge struct {
 	mu       sync.Mutex
+	kind     string // forge.GitHub or forge.GitLab
 	now      func() time.Time
 	nextID   int64
 	repos    map[string]*repo
@@ -48,7 +49,15 @@ func New(now func() time.Time) *Forge {
 	if now == nil {
 		now = time.Now
 	}
-	return &Forge{now: now, nextID: 1000, repos: map[string]*repo{}, users: map[string]forge.User{}}
+	return &Forge{kind: forge.GitHub, now: now, nextID: 1000, repos: map[string]*repo{}, users: map[string]forge.User{}}
+}
+
+// NewGitLab returns an empty fake GitLab. Its issues are named gl:, and, as on GitLab (V22), adding a note does not
+// change an issue's update time.
+func NewGitLab(now func() time.Time) *Forge {
+	f := New(now)
+	f.kind = forge.GitLab
+	return f
 }
 
 // AddUser registers a login with its ID.
@@ -67,12 +76,18 @@ func (f *Forge) AddRepo(owner, name string, private bool) {
 	f.repos[owner+"/"+name] = &repo{private: private, labels: map[string]bool{}, issues: map[int]*issue{}}
 }
 
+// AddProject creates a GitLab project with a visibility of "private", "internal" or "public". Only a private one is
+// private: internal ones are readable by every user of the instance.
+func (f *Forge) AddProject(namespace, name, visibility string) {
+	f.AddRepo(namespace, name, visibility == "private")
+}
+
 // AddIssue creates an open issue authored by author and returns its reference.
 func (f *Forge) AddIssue(owner, name string, number int, title, body string, author forge.User) forge.IssueRef {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	r := f.repos[owner+"/"+name]
-	ref := forge.IssueRef{Owner: owner, Repo: name, Number: number}
+	ref := forge.IssueRef{Forge: f.kind, Owner: owner, Repo: name, Number: number}
 	now := f.now()
 	r.issues[number] = &issue{
 		data: forge.Issue{
@@ -121,6 +136,17 @@ func (f *Forge) EditBody(ref forge.IssueRef, body string, editor forge.User) {
 	is := f.issue(ref)
 	is.data.Body = body
 	is.data.BodyEdit = forge.Edit{Edited: true, Editor: &editor}
+	is.data.UpdatedAt = f.now()
+}
+
+// LoseBodyEditor replaces the issue body by someone the forge does not name, as when GitLab's system notes are beyond
+// what was fetched.
+func (f *Forge) LoseBodyEditor(ref forge.IssueRef, body string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	is := f.issue(ref)
+	is.data.Body = body
+	is.data.BodyEdit = forge.Edit{Edited: true, Unknown: true}
 	is.data.UpdatedAt = f.now()
 }
 
@@ -190,8 +216,20 @@ func (f *Forge) addComment(ref forge.IssueRef, body string, author forge.User) f
 	f.nextID++
 	c := forge.Comment{ID: f.nextID, Author: author, Body: body, CreatedAt: f.now()}
 	is.comments = append(is.comments, c)
-	is.data.UpdatedAt = f.now()
+	if f.kind != forge.GitLab {
+		is.data.UpdatedAt = f.now()
+	}
 	return c
+}
+
+// summary is what a listing returns for is. A GitLab fake counts the comments, as user_notes_count does.
+func (f *Forge) summary(is *issue) forge.IssueSummary {
+	s := is.data.IssueSummary
+	s.Labels = append([]string(nil), s.Labels...)
+	if f.kind == forge.GitLab {
+		s.Notes = len(is.comments)
+	}
+	return s
 }
 
 // UpdatedIssues implements forge.Forge.
@@ -205,9 +243,7 @@ func (f *Forge) UpdatedIssues(_ context.Context, owner, name string, since time.
 	var out []forge.IssueSummary
 	for _, is := range r.issues {
 		if !is.data.UpdatedAt.Before(since) {
-			s := is.data.IssueSummary
-			s.Labels = append([]string(nil), s.Labels...)
-			out = append(out, s)
+			out = append(out, f.summary(is))
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Ref.Number < out[j].Ref.Number })
@@ -345,15 +381,19 @@ func (f *Forge) User(_ context.Context, login string) (*forge.User, error) {
 	return &u, nil
 }
 
-// SearchOpenIssuesWithLabel implements forge.Forge. The scope is ignored: every repository is searched.
-func (f *Forge) SearchOpenIssuesWithLabel(_ context.Context, _ string, label string) ([]forge.IssueSummary, error) {
+// SearchOpenIssuesWithLabel implements forge.Forge. A GitHub fake ignores the scope and searches every repository;
+// a GitLab fake searches the one project the scope names, as GitLab does.
+func (f *Forge) SearchOpenIssuesWithLabel(_ context.Context, scope string, label string) ([]forge.IssueSummary, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var out []forge.IssueSummary
-	for _, r := range f.repos {
+	for name, r := range f.repos {
+		if f.kind == forge.GitLab && name != scope {
+			continue
+		}
 		for _, is := range r.issues {
 			if is.data.State == "open" && contains(is.data.Labels, label) {
-				out = append(out, is.data.IssueSummary)
+				out = append(out, f.summary(is))
 			}
 		}
 	}
@@ -378,6 +418,29 @@ func remove(xs []string, x string) []string {
 		}
 	}
 	return out
+}
+
+// Version is what a GitLab instance reports as its version.
+func (f *Forge) Version(context.Context) (string, error) { return "fake", nil }
+
+// ProjectID numbers the projects in the order of their names, as a stand-in for GitLab's project IDs.
+func (f *Forge) ProjectID(_ context.Context, owner, name string) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.repos[owner+"/"+name]; !ok {
+		return 0, forge.ErrNotFound
+	}
+	var names []string
+	for n := range f.repos {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for i, n := range names {
+		if n == owner+"/"+name {
+			return int64(i + 1), nil
+		}
+	}
+	return 0, forge.ErrNotFound
 }
 
 var _ forge.Forge = (*Forge)(nil)

@@ -3,6 +3,7 @@ package labels
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/uskanda/switchboard/internal/config"
@@ -99,3 +100,16 @@ func TestStateOf(t *testing.T) {
 type auditFunc func(event string)
 
 func (f auditFunc) Log(event string, _ map[string]any) { f(event) }
+
+func TestSyncCreatesTheLabelsOnGitLab(t *testing.T) {
+	g := fake.NewGitLab(nil)
+	g.AddProject("nas/tools", "sb", "private")
+	p := config.Project{Ref: "gl:nas/tools/sb", Forge: "gl", Owner: "nas/tools", Repo: "sb"}
+	n, err := Sync(context.Background(), g, []config.Project{p}, names)
+	if err != nil || n != 4 {
+		t.Fatalf("Sync = %d, %v", n, err)
+	}
+	if got := strings.Join(g.RepoLabels("nas/tools", "sb"), ","); got != "agent:done,agent:ready,agent:running,agent:waiting" {
+		t.Fatalf("labels = %s", got)
+	}
+}

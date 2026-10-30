@@ -5,3 +5,5 @@ CLAUDE.md
 .mcp.json
 .claude/
 settings.json
+gl.uskan.dev
+.gitlab-ci.yml

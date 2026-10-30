@@ -1,6 +1,6 @@
 # switchboard
 
-GitHub / GitLab の issue を起点に、複数端末・複数プロダクトにまたがる Claude Code の作業を
+GitHub/GitLabのissueを起点に、複数端末・複数プロダクトにまたがるClaude Codeの作業を
 「応答待ち」単位で一覧し、その場から返答できるようにする個人用ツール。
 
 電話交換台（switchboard）のように、散らばった回線（端末・リポジトリ・セッション）を
@@ -8,17 +8,19 @@ GitHub / GitLab の issue を起点に、複数端末・複数プロダクトに
 
 ## 何を解決するか
 
-- Claude Code のセッションが複数端末・複数リポジトリに散らばり、どれが自分の応答を待っているか分からない
-- 各プロダクトの issue を毎回巡回して状況を確認したくない
+- Claude Codeのセッションが複数端末・複数リポジトリに散らばり、どれが自分の応答を待っているか分からない
+- 各プロダクトのissueを毎回巡回して状況を確認したくない
 - 応答を返すために、その端末・そのターミナルまで行きたくない
 
 ## 基本方針（要約）
 
-- **issue 駆動**：作業単位・状態・応答経路はすべて issue に寄せる
-- **ローカルは外向き通信のみ**：端末側に受信ポートを開けない
-- **中継は呼び鈴だけ**：中継サーバーは「issue ID が更新された」ことだけを伝え、本文は必ずローカルがフォージから取り直す
-- **状態は issue とリポジトリに置く**：毎回まっさらな文脈で起動できる設計を基本とし、`--resume` は最適化扱い
-- **横断一覧はローカルで集約**：両フォージのラベル検索結果をマージして表示する
+| 方針 | 内容 |
+|---|---|
+| issue駆動 | 作業単位・状態・応答経路は、すべてissueで管理する |
+| ローカルは外向き通信のみ | 端末側に受信ポートを開けない |
+| 中継は呼び鈴だけ | 中継サーバーは「issue IDが更新された」ことだけを伝え、本文は必ずローカルがフォージから取り直す |
+| 状態はissueとリポジトリに置く | 毎回まっさらな文脈で起動できる設計を基本とし、`--resume` は最適化扱い |
+| 横断一覧はローカルで集約 | 両フォージのラベル検索結果をマージして表示する |
 
 ## ドキュメント
 
@@ -36,7 +38,7 @@ GitHub / GitLab の issue を起点に、複数端末・複数プロダクトに
 
 ## ステータス
 
-Phase 1の実装中。対象は、Linux（Ubuntu）の1台の端末と、GitHubのリポジトリである。issueの更新はポーリングで検知する。GitLab、中継サーバー、常駐化は、[docs/ROADMAP.md](docs/ROADMAP.md) の後のフェーズで扱う。
+Phase 2の実装中。Phase 1は完了し、Ubuntuの端末と実物のGitHubで、着手から待ち、返答、draftのPRの作成まで回ることを確かめている（[docs/ROADMAP.md](docs/ROADMAP.md) の検証項目V20）。Phase 2では、GitLab（GitLab.comとセルフホスト）のプロジェクトも扱い、両フォージの待ちを1つの受信箱に出す。対象はLinux（Ubuntu）の1台の端末で、issueの更新はポーリングで検知する。中継サーバーと常駐化は、[docs/ROADMAP.md](docs/ROADMAP.md) の後のフェーズで扱う。
 
 ## 必要なもの
 
@@ -82,6 +84,16 @@ secret-tool store --label='switchboard github inbox' service switchboard/github-
 
 どちらのコマンドも、トークンを標準入力から読む。トークンは `claude` には渡さない。
 
+GitLabのプロジェクトを使うときは、GitLabのpersonal access tokenを `api` スコープで作り、同じように登録する。エージェント用と受信箱用に、同じトークンを登録してもよい。このトークンは自分の全プロジェクトを操作できる。エージェントの影響を1つのプロジェクトに限りたいときは、後述のプロジェクトごとの上書きで、Project Access Tokenを使う。GitLab 19.2以降のfine-grainedのトークンでも絞れるが、switchboardが使うすべてのAPIで動くかは確かめていない。
+
+```bash
+secret-tool store --label='switchboard gitlab' service switchboard/gitlab username token
+```
+
+```bash
+secret-tool store --label='switchboard gitlab inbox' service switchboard/gitlab-inbox username token
+```
+
 ## 設定
 
 例をコピーして、`YOUR_GITHUB_USER`、端末の名前、プロジェクトのパスを書き換える。
@@ -101,6 +113,25 @@ switchboard doctor
 ```
 
 Phase 1では、エージェントの投稿も自分のアカウントで行う。対象は非公開リポジトリとし、`trusted_authors` には自分だけを書く。`claude` は自分のOSユーザーで動くため、詳しくは [docs/SECURITY.md](docs/SECURITY.md) を読むこと。
+
+### GitLab
+
+設定例のうち、字下げしたコメントの行がGitLabの設定である。コメントを外し、`forges` の `gitlab` と、`trusted_authors` の `gitlab` を書く。`base_url` を省くと `https://gitlab.com` を使う。プロジェクトは `gl:group/project` の形で書き、サブグループを含む `gl:group/sub/project` も書ける。
+
+GitLabの `internal` のプロジェクトは、インスタンスの全ユーザーが見てコメントできるため、公開のプロジェクトとして扱う。`doctor` は警告を出し、`include_untrusted: true` を拒否する。
+
+### プロジェクトごとのエージェントの身元
+
+エージェントの投稿とpushを1つのプロジェクトに限りたいときは、そのプロジェクトにProject Access Token（GitLab）か、そのリポジトリだけのトークンを作る。プロジェクトの設定に `token_ref` と `agent_identity` を組で書くと、そのプロジェクトのエージェントだけがそのトークンとbotの身元を使う。受信箱は、上書きにかかわらず、フォージの `inbox_token_ref` を使う。
+
+```yaml
+projects:
+  - ref: gl:YOUR_GROUP/switchboard-sandbox
+    path: ~/repos/switchboard-sandbox-gl
+    host: ubuntu-a
+    token_ref: switchboard/gitlab-sandbox-bot
+    agent_identity: project_N_bot_XXXX   # the bot user of the project access token
+```
 
 ## 使い方
 
@@ -127,7 +158,7 @@ issueに `agent:ready` を付けると、次のポーリングで `agent:running
 switchboard agent status
 ```
 
-全プロジェクトの待ちのissueを一覧する。`--json` を付けると、JSONの配列で出る。
+全プロジェクトの待ちのissueを、GitHubとGitLabをまとめて、待ち始めた順に一覧する。`--json` を付けると、JSONの配列で出る。`--forge github` か `--forge gitlab` で、片方のフォージに絞れる。片方のフォージに届かないときは、届いた側の一覧を出したうえで、0以外の終了コードで終わる。
 
 ```bash
 switchboard inbox

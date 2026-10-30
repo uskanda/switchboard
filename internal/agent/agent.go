@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,13 +21,18 @@ import (
 	"github.com/uskanda/switchboard/internal/marker"
 	"github.com/uskanda/switchboard/internal/state"
 	"github.com/uskanda/switchboard/internal/trust"
+	"github.com/uskanda/switchboard/internal/workspace"
 )
 
 // Agent runs claude on the issues of the projects assigned to this host.
 type Agent struct {
 	Config *config.Config
-	Forge  forge.Forge
-	Judge  *trust.Judge
+	// Forge, Judge and GitToken serve the projects without a route.
+	Forge forge.Forge
+	Judge *trust.Judge
+	// Routes gives a project, keyed by its ref ("gl:nas/sb"), its own forge client, judge and push token: another
+	// forge, or the token of an overridden agent_identity.
+	Routes map[string]Route
 	State  state.Dir
 	Audit  state.Auditor
 	// Env is the environment git and claude are started from; claude gets only its allowlisted part.
@@ -49,8 +55,32 @@ type Agent struct {
 	active  map[forge.IssueRef]*active
 	pending map[forge.IssueRef]config.Project
 	seen    map[forge.IssueRef]time.Time
+	notes   map[forge.IssueRef]int  // GitLab: the comment count of each waiting issue at its last evaluation
+	closed  map[forge.IssueRef]bool // closed issues whose worktree waits for their run to stop
 	wg      sync.WaitGroup
 }
+
+// Route is what one project uses to reach its forge.
+type Route struct {
+	Forge    forge.Forge
+	Judge    *trust.Judge
+	GitToken string // offered to git push for https remotes; never given to claude
+}
+
+// route is the issue's route: its project's, or the agent's defaults.
+func (a *Agent) route(ref forge.IssueRef) Route {
+	if r, ok := a.Routes[ref.Kind()+":"+ref.Project()]; ok {
+		return r
+	}
+	return Route{Forge: a.Forge, Judge: a.Judge, GitToken: a.GitToken}
+}
+
+func (a *Agent) routeOf(p config.Project) Route {
+	return a.route(forge.IssueRef{Forge: p.Forge, Owner: p.Owner, Repo: p.Repo})
+}
+
+func (a *Agent) forgeOf(ref forge.IssueRef) forge.Forge  { return a.route(ref).Forge }
+func (a *Agent) judgeOf(ref forge.IssueRef) *trust.Judge { return a.route(ref).Judge }
 
 type active struct {
 	cancel  context.CancelFunc
@@ -61,7 +91,12 @@ type active struct {
 // errQueued reports that an issue waits for a free slot; it is evaluated again when one frees up.
 var errQueued = errors.New("queued")
 
+// lockName keeps the Phase 1 name for GitHub. GitLab names start with "@", which no GitHub owner can, and replace the
+// slashes of subgroups so that the lock stays one file.
 func lockName(ref forge.IssueRef) string {
+	if ref.Kind() == forge.GitLab {
+		return fmt.Sprintf("@gitlab-%s-%s-%d", strings.ReplaceAll(ref.Owner, "/", "~"), ref.Repo, ref.Number)
+	}
 	return fmt.Sprintf("%s-%s-%d", ref.Owner, ref.Repo, ref.Number)
 }
 
@@ -69,8 +104,8 @@ func (a *Agent) logf(format string, args ...any) {
 	fmt.Fprintf(a.Log, "switchboard: "+format+"\n", args...)
 }
 
-func (a *Agent) swapper() labels.Swapper {
-	return labels.Swapper{Forge: a.Forge, Names: a.Config.Labels, Audit: a.Audit}
+func (a *Agent) swapper(ref forge.IssueRef) labels.Swapper {
+	return labels.Swapper{Forge: a.forgeOf(ref), Names: a.Config.Labels, Audit: a.Audit}
 }
 
 // Start takes the agent lock of the state directory, checks the projects of this host, and recovers the runs an
@@ -98,13 +133,15 @@ func (a *Agent) Start(ctx context.Context) error {
 	a.active = map[forge.IssueRef]*active{}
 	a.pending = map[forge.IssueRef]config.Project{}
 	a.seen = map[forge.IssueRef]time.Time{}
+	a.notes = map[forge.IssueRef]int{}
+	a.closed = map[forge.IssueRef]bool{}
 	a.private = map[string]bool{}
 	if err := a.State.WriteJSON("agent.json", agentInfo{PID: os.Getpid(), Host: a.Config.Host.Name, Started: time.Now().UTC()}); err != nil {
 		return err
 	}
 	a.projects = nil
 	for _, p := range a.Config.ProjectsFor(a.Config.Host.Name) {
-		private, err := a.Forge.RepoPrivate(ctx, p.Owner, p.Repo)
+		private, err := a.routeOf(p).Forge.RepoPrivate(ctx, p.Owner, p.Repo)
 		if err != nil {
 			return fmt.Errorf("%s: %w", p.FullName(), err)
 		}
@@ -113,7 +150,7 @@ func (a *Agent) Start(ctx context.Context) error {
 			a.Audit.Log("project.refused", map[string]any{"project": p.FullName(), "reason": err.Error()})
 			continue
 		}
-		a.private[p.FullName()] = private
+		a.private[p.Ref] = private
 		a.projects = append(a.projects, p)
 	}
 	return a.recover(ctx)
@@ -157,9 +194,10 @@ func (a *Agent) Run(ctx context.Context) error {
 func (a *Agent) Poll(ctx context.Context) error {
 	var errs []error
 	for _, p := range a.projects {
-		list, err := a.Forge.UpdatedIssues(ctx, p.Owner, p.Repo, a.since(p))
+		f := a.routeOf(p).Forge
+		list, err := f.UpdatedIssues(ctx, p.Owner, p.Repo, a.since(p))
 		if err != nil {
-			errs = append(errs, fmt.Errorf("%s: %w", p.FullName(), err))
+			errs = append(errs, fmt.Errorf("%s: %w", p.Ref, err))
 			continue
 		}
 		for _, s := range list {
@@ -169,21 +207,57 @@ func (a *Agent) Poll(ctx context.Context) error {
 			if ok && !s.UpdatedAt.After(last) {
 				continue
 			}
-			err := a.evaluate(ctx, p, s)
-			switch {
-			case err == nil:
-				a.mu.Lock()
-				a.seen[s.Ref] = s.UpdatedAt
-				a.mu.Unlock()
-			case errors.Is(err, errQueued), errors.Is(err, state.ErrLocked):
-				// evaluated again later
-			default:
-				errs = append(errs, fmt.Errorf("%s: %w", s.Ref, err))
+			if err := a.evaluate(ctx, p, s); err != nil {
+				errs = append(errs, err)
 			}
 		}
+		if p.Forge == forge.GitLab {
+			errs = append(errs, a.pollReplies(ctx, p, f)...)
+		}
 	}
+	a.cleanClosed(ctx)
 	a.drain(ctx)
 	return errors.Join(errs...)
+}
+
+// pollReplies evaluates the waiting issues of a GitLab project whose comment count changed. GitLab does not move an
+// issue's update time for a new comment (V22), so UpdatedIssues alone misses replies.
+func (a *Agent) pollReplies(ctx context.Context, p config.Project, f forge.Forge) []error {
+	waiting, err := f.SearchOpenIssuesWithLabel(ctx, p.FullName(), a.Config.Labels.Waiting)
+	if err != nil {
+		return []error{fmt.Errorf("%s: %w", p.Ref, err)}
+	}
+	var errs []error
+	for _, s := range waiting {
+		a.mu.Lock()
+		n, ok := a.notes[s.Ref]
+		a.mu.Unlock()
+		if ok && n == s.Notes {
+			continue
+		}
+		if err := a.evaluate(ctx, p, s); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errs
+}
+
+// evaluate decides what an updated issue needs and records it as seen, unless it has to be evaluated again later.
+func (a *Agent) evaluate(ctx context.Context, p config.Project, s forge.IssueSummary) error {
+	err := a.evaluateOnce(ctx, p, s)
+	switch {
+	case err == nil:
+		a.mu.Lock()
+		if prev, ok := a.seen[s.Ref]; !ok || s.UpdatedAt.After(prev) {
+			a.seen[s.Ref] = s.UpdatedAt
+		}
+		a.notes[s.Ref] = s.Notes
+		a.mu.Unlock()
+		return nil
+	case errors.Is(err, errQueued), errors.Is(err, state.ErrLocked):
+		return nil // evaluated again later
+	}
+	return fmt.Errorf("%s: %w", s.Ref, err)
 }
 
 // since is a minute before the latest update seen in the project, so that a clock skew between the forge and
@@ -193,7 +267,7 @@ func (a *Agent) since(p config.Project) time.Time {
 	defer a.mu.Unlock()
 	var latest time.Time
 	for ref, t := range a.seen {
-		if ref.Owner == p.Owner && ref.Repo == p.Repo && t.After(latest) {
+		if ref.Kind() == p.Forge && ref.Owner == p.Owner && ref.Repo == p.Repo && t.After(latest) {
 			latest = t
 		}
 	}
@@ -209,21 +283,27 @@ func (a *Agent) isActive(ref forge.IssueRef) bool {
 	return a.active[ref] != nil
 }
 
-// evaluate decides what an updated issue needs: cancel its run, start a run, or nothing.
-func (a *Agent) evaluate(ctx context.Context, p config.Project, s forge.IssueSummary) error {
+// evaluateOnce decides what an updated issue needs: cancel its run, start a run, clean up its worktree, or nothing.
+func (a *Agent) evaluateOnce(ctx context.Context, p config.Project, s forge.IssueSummary) error {
 	n := a.Config.Labels
 	st := labels.StateOf(s.Labels, n)
 	if a.isActive(s.Ref) {
 		if s.State == "open" && st == n.Running {
 			return nil
 		}
+		if s.State != "open" {
+			a.mu.Lock()
+			a.closed[s.Ref] = true
+			a.mu.Unlock()
+		}
 		return a.maybeCancel(ctx, s.Ref)
 	}
 	if s.State != "open" {
+		a.cleanUp(ctx, p, s.Ref)
 		return nil
 	}
 	if fixed, changed := labels.Normalize(s.Labels, n); changed {
-		if err := a.Forge.SetLabels(ctx, s.Ref, fixed); err != nil {
+		if err := a.forgeOf(s.Ref).SetLabels(ctx, s.Ref, fixed); err != nil {
 			return err
 		}
 		a.Audit.Log("labels.normalized", map[string]any{"issue": s.Ref.String(), "found": s.Labels, "kept": labels.StateOf(fixed, n)})
@@ -237,7 +317,7 @@ func (a *Agent) evaluate(ctx context.Context, p config.Project, s forge.IssueSum
 
 // maybeCancel stops the run of ref when the issue, read again, is closed or no longer carries the running label.
 func (a *Agent) maybeCancel(ctx context.Context, ref forge.IssueRef) error {
-	is, _, err := a.Forge.Thread(ctx, ref)
+	is, _, err := a.forgeOf(ref).Thread(ctx, ref)
 	if err != nil {
 		return err
 	}
@@ -291,7 +371,8 @@ func (pl *plan) ack() int64 {
 // trusted reply after the agent's question. The title and body must be trustworthy in both cases.
 func (a *Agent) decide(ctx context.Context, p config.Project, ref forge.IssueRef) (*plan, error) {
 	n := a.Config.Labels
-	is, comments, err := a.Forge.Thread(ctx, ref)
+	j := a.judgeOf(ref)
+	is, comments, err := a.forgeOf(ref).Thread(ctx, ref)
 	if err != nil {
 		return nil, err
 	}
@@ -301,13 +382,13 @@ func (a *Agent) decide(ctx context.Context, p config.Project, ref forge.IssueRef
 	st := labels.StateOf(is.Labels, n)
 	switch st {
 	case n.Ready:
-		actor, err := a.Forge.LabelActor(ctx, ref, n.Ready)
+		actor, err := a.forgeOf(ref).LabelActor(ctx, ref, n.Ready)
 		if errors.Is(err, forge.ErrNotFound) {
 			actor = nil
 		} else if err != nil {
 			return nil, err
 		}
-		if !a.Judge.ReadyLabel(ref, actor) {
+		if !j.ReadyLabel(ref, actor) {
 			return nil, nil
 		}
 	case n.Waiting:
@@ -316,12 +397,12 @@ func (a *Agent) decide(ctx context.Context, p config.Project, ref forge.IssueRef
 	}
 	pl := &plan{project: p, issue: is, comments: comments}
 	for _, c := range comments {
-		pl.kinds = append(pl.kinds, a.Judge.Comment(ref, c))
+		pl.kinds = append(pl.kinds, j.Comment(ref, c))
 	}
 	if st == n.Waiting && !pl.hasReply() {
 		return nil, nil
 	}
-	if !a.Judge.Body(is) {
+	if !j.Body(is) {
 		return nil, nil
 	}
 	return pl, nil
@@ -393,7 +474,7 @@ func (a *Agent) launch(ctx context.Context, pl *plan) error {
 		delete(a.active, ref)
 		a.mu.Unlock()
 	}
-	if err := a.swapper().Swap(ctx, ref, a.Config.Labels.Running); err != nil {
+	if err := a.swapper(ref).Swap(ctx, ref, a.Config.Labels.Running); err != nil {
 		finish()
 		a.wg.Done()
 		return err
@@ -440,5 +521,49 @@ func (a *Agent) drain(ctx context.Context) {
 		if err := a.consider(ctx, p, ref); err != nil && !errors.Is(err, errQueued) {
 			a.logf("%s: %v", ref, err)
 		}
+	}
+}
+
+// cleanClosed cleans up the closed issues whose run has stopped since they were found closed.
+func (a *Agent) cleanClosed(ctx context.Context) {
+	a.mu.Lock()
+	var refs []forge.IssueRef
+	for ref := range a.closed {
+		if a.active[ref] == nil {
+			refs = append(refs, ref)
+		}
+	}
+	a.mu.Unlock()
+	for _, ref := range refs {
+		for _, p := range a.projects {
+			if ref.Kind() == p.Forge && ref.Owner == p.Owner && ref.Repo == p.Repo {
+				a.cleanUp(ctx, p, ref)
+			}
+		}
+	}
+}
+
+// cleanUp removes the worktree and the local issue branch of a closed issue that is not running. A worktree with
+// uncommitted changes stays, and the log says so. The remote branch is never touched.
+func (a *Agent) cleanUp(ctx context.Context, p config.Project, ref forge.IssueRef) {
+	if a.isActive(ref) {
+		a.mu.Lock()
+		a.closed[ref] = true
+		a.mu.Unlock()
+		return
+	}
+	a.mu.Lock()
+	delete(a.closed, ref)
+	a.mu.Unlock()
+	sp := a.spaceOf(p, ref)
+	removed, err := sp.Remove(ctx)
+	switch {
+	case errors.Is(err, workspace.ErrUncommitted):
+		a.logf("%s: kept the worktree %s: it has uncommitted changes", ref, sp.Dir())
+	case err != nil:
+		a.logf("%s: remove the worktree %s: %v", ref, sp.Dir(), err)
+	case removed:
+		a.logf("%s: removed the worktree and the local branch %s", ref, sp.IssueBranch())
+		a.Audit.Log("worktree.removed", map[string]any{"issue": ref.String(), "branch": sp.IssueBranch()})
 	}
 }
