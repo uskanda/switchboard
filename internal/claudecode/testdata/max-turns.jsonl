@@ -1,0 +1,2 @@
+{"type":"system","subtype":"init","session_id":"__SESSION__","cwd":"__CWD__"}
+{"type":"result","subtype":"error_max_turns","is_error":true,"session_id":"__SESSION__","num_turns":2,"permission_denials":[],"errors":["Reached maximum number of turns (1)"],"terminal_reason":"max_turns","stop_reason":"tool_use"}

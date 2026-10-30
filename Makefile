@@ -1,15 +1,23 @@
-# Verification entry point. `make verify` is the convention the harness looks for: the Stop hook `verify-gate`
-# and the `verify` skill both call this target, and nothing is called done until it passes.
-# This repository is still in the design phase: it has no code, no tests, and no CI yet.
+# Verification entry point: `make verify` runs every check this repository has. CI runs the same target.
 SHELL := /usr/bin/env bash
 
-.PHONY: verify verify-lint verify-test
+GO ?= go
 
-verify: verify-lint verify-test ## Run every check that applies to this repository
+.PHONY: verify verify-fmt verify-vet verify-test build
+
+verify: verify-fmt verify-vet verify-test ## Run every check that applies to this repository
 	@echo "verify: ok"
 
-verify-lint:
-	@echo "[lint] skipped (no code yet; add the linter with the first code change)"
+verify-fmt: ## Fail when a Go file is not gofmt-formatted
+	@out="$$(gofmt -l $$(git ls-files --cached --others --exclude-standard '*.go'))"; \
+	if [ -n "$$out" ]; then echo "[fmt] not formatted:"; echo "$$out"; exit 1; fi; \
+	echo "[fmt] ok"
+
+verify-vet:
+	@$(GO) vet ./... && echo "[vet] ok"
 
 verify-test:
-	@echo "[test] skipped (no test suite yet; add tests with the first code change)"
+	@$(GO) test ./... && echo "[test] ok"
+
+build: ## Build bin/switchboard
+	@$(GO) build -o bin/switchboard ./cmd/switchboard
