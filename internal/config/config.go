@@ -26,6 +26,7 @@ type Config struct {
 	Claude         Claude         `yaml:"claude"`
 	Agent          Agent          `yaml:"agent"`
 	Projects       []Project      `yaml:"projects"`
+	Relay          Relay          `yaml:"relay"`
 }
 
 // Host names this machine; projects whose host matches run here.
@@ -87,12 +88,21 @@ type Claude struct {
 	Auth   string `yaml:"auth"`
 }
 
-// Agent controls the polling loop.
+// Agent controls the polling loop. With Relay set, the agent follows the relay's events and polls every
+// ReconcileInterval while connected, every PollInterval while not.
 type Agent struct {
-	PollInterval time.Duration `yaml:"poll_interval"`
-	Timeout      time.Duration `yaml:"timeout"`
-	MaxParallel  int           `yaml:"max_parallel"`
-	MaxTurns     int           `yaml:"max_turns"`
+	PollInterval      time.Duration `yaml:"poll_interval"`
+	ReconcileInterval time.Duration `yaml:"reconcile_interval"`
+	Timeout           time.Duration `yaml:"timeout"`
+	MaxParallel       int           `yaml:"max_parallel"`
+	MaxTurns          int           `yaml:"max_turns"`
+	Relay             *AgentRelay   `yaml:"relay"`
+}
+
+// AgentRelay is where the agent subscribes: the relay's SSE URL and the token_ref of this host's bearer token.
+type AgentRelay struct {
+	URL      string `yaml:"url"`
+	TokenRef string `yaml:"token_ref"`
 }
 
 // Project is one repository. Ref is the configured "gh:owner/repo" or "gl:group/project"; Forge ("gh" or "gl"),
@@ -262,6 +272,9 @@ func (c *Config) applyDefaults() {
 	if c.Agent.PollInterval == 0 {
 		c.Agent.PollInterval = 60 * time.Second
 	}
+	if c.Agent.ReconcileInterval == 0 {
+		c.Agent.ReconcileInterval = 10 * time.Minute
+	}
 	if c.Agent.Timeout == 0 {
 		c.Agent.Timeout = 45 * time.Minute
 	}
@@ -271,6 +284,10 @@ func (c *Config) applyDefaults() {
 	if c.Agent.MaxTurns == 0 {
 		c.Agent.MaxTurns = 80
 	}
+	set(&c.Relay.WebhookListen, "127.0.0.1:8781")
+	set(&c.Relay.SSEListen, "127.0.0.1:8782")
+	set(&c.Relay.WebhookURL, "http://"+c.Relay.WebhookListen)
+	c.Relay.WebhookURL = strings.TrimRight(c.Relay.WebhookURL, "/")
 	for i := range c.Projects {
 		set(&c.Projects[i].BaseBranch, "main")
 		c.Projects[i].Path = expandHome(c.Projects[i].Path)
@@ -327,6 +344,14 @@ func (c *Config) validate() error {
 			errs = append(errs, fmt.Errorf("%s: token_ref and agent_identity override the agent together; set both or neither", key))
 		}
 	}
+	if r := c.Agent.Relay; r != nil {
+		need(r.URL, "agent.relay.url")
+		need(r.TokenRef, "agent.relay.token_ref")
+		if c.Agent.ReconcileInterval < c.Agent.PollInterval {
+			errs = append(errs, errors.New("agent.reconcile_interval must not be shorter than poll_interval"))
+		}
+	}
+	errs = append(errs, c.validateRelay()...)
 	// A forge's settings are required once a project is on it.
 	if c.Uses("gh") {
 		need(c.Forges.GitHub.TokenRef, "forges.github.token_ref (a project is on GitHub)")

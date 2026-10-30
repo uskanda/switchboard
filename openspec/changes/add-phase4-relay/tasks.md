@@ -6,8 +6,8 @@
 
 ## 2. 設定（`config`）
 
-- [ ] 2.1 `<relay>` 節（受け口と配信口のアドレス、`<webhook_url>`、webhookの一覧、端末のトークンのハッシュの一覧）を読む。`hook-key` の重複、知らないプロジェクト、値と見える文字列を拒否することを、失敗するテストから確かめる
-- [ ] 2.2 `agent` の `<relay>`（URLと `token_ref`）と `<reconcile_interval>`（既定10分、`poll_interval` 以上）を読む。`<relay>` の無い設定を今までどおり読めることを、テストで確かめる
+- [x] 2.1 `<relay>` 節（受け口と配信口のアドレス、`<webhook_url>`、webhookの一覧、端末のトークンのハッシュの一覧）を読む。`hook-key` の重複、知らないプロジェクト、値と見える文字列を拒否することを、失敗するテストから確かめる
+- [x] 2.2 `agent` の `<relay>`（URLと `token_ref`）と `<reconcile_interval>`（既定10分、`poll_interval` 以上）を読む。`<relay>` の無い設定を今までどおり読めることを、テストで確かめる
 
 ## 3. 中継の受信（`relay`）
 
