@@ -14,6 +14,7 @@ import (
 // Forge holds repositories, issues, comments, label events, users and pull requests in memory.
 type Forge struct {
 	mu       sync.Mutex
+	kind     string // forge.GitHub or forge.GitLab
 	now      func() time.Time
 	nextID   int64
 	repos    map[string]*repo
@@ -48,7 +49,15 @@ func New(now func() time.Time) *Forge {
 	if now == nil {
 		now = time.Now
 	}
-	return &Forge{now: now, nextID: 1000, repos: map[string]*repo{}, users: map[string]forge.User{}}
+	return &Forge{kind: forge.GitHub, now: now, nextID: 1000, repos: map[string]*repo{}, users: map[string]forge.User{}}
+}
+
+// NewGitLab returns an empty fake GitLab. Its issues are named gl:, and, as on GitLab (V22), adding a note does not
+// change an issue's update time.
+func NewGitLab(now func() time.Time) *Forge {
+	f := New(now)
+	f.kind = forge.GitLab
+	return f
 }
 
 // AddUser registers a login with its ID.
@@ -67,12 +76,18 @@ func (f *Forge) AddRepo(owner, name string, private bool) {
 	f.repos[owner+"/"+name] = &repo{private: private, labels: map[string]bool{}, issues: map[int]*issue{}}
 }
 
+// AddProject creates a GitLab project with a visibility of "private", "internal" or "public". Only a private one is
+// private: internal ones are readable by every user of the instance.
+func (f *Forge) AddProject(namespace, name, visibility string) {
+	f.AddRepo(namespace, name, visibility == "private")
+}
+
 // AddIssue creates an open issue authored by author and returns its reference.
 func (f *Forge) AddIssue(owner, name string, number int, title, body string, author forge.User) forge.IssueRef {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	r := f.repos[owner+"/"+name]
-	ref := forge.IssueRef{Forge: forge.GitHub, Owner: owner, Repo: name, Number: number}
+	ref := forge.IssueRef{Forge: f.kind, Owner: owner, Repo: name, Number: number}
 	now := f.now()
 	r.issues[number] = &issue{
 		data: forge.Issue{
@@ -121,6 +136,17 @@ func (f *Forge) EditBody(ref forge.IssueRef, body string, editor forge.User) {
 	is := f.issue(ref)
 	is.data.Body = body
 	is.data.BodyEdit = forge.Edit{Edited: true, Editor: &editor}
+	is.data.UpdatedAt = f.now()
+}
+
+// LoseBodyEditor replaces the issue body by someone the forge does not name, as when GitLab's system notes are beyond
+// what was fetched.
+func (f *Forge) LoseBodyEditor(ref forge.IssueRef, body string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	is := f.issue(ref)
+	is.data.Body = body
+	is.data.BodyEdit = forge.Edit{Edited: true, Unknown: true}
 	is.data.UpdatedAt = f.now()
 }
 
@@ -190,7 +216,9 @@ func (f *Forge) addComment(ref forge.IssueRef, body string, author forge.User) f
 	f.nextID++
 	c := forge.Comment{ID: f.nextID, Author: author, Body: body, CreatedAt: f.now()}
 	is.comments = append(is.comments, c)
-	is.data.UpdatedAt = f.now()
+	if f.kind != forge.GitLab {
+		is.data.UpdatedAt = f.now()
+	}
 	return c
 }
 
