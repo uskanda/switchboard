@@ -46,8 +46,6 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return (res.status === 204 ? undefined : await res.json()) as T;
 }
 
-export const getInbox = () => call<Inbox>("/api/inbox");
-
 export const getIssue = (ref: string) => call<Detail>(`/api/issue?ref=${encodeURIComponent(ref)}`);
 
 export const postReply = (ref: string, text: string) =>
