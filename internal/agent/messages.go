@@ -12,6 +12,10 @@ type texts struct {
 	configChanged, verifyFailed, notPushed, pushFailed, prFailed, mrFailed string
 	pr, mr, verified, notVerified, prSummary, prVerification, withheld     string
 	claim                                                                  string
+
+	// The progress comment of a run: its heading, the separators of a line, and a line withheld for a secret.
+	progressTitle, toolSep, purposeSep, noTools, progressWithheld string
+	hours, minutes                                                string // elapsed-time formats
 }
 
 var english = texts{
@@ -50,6 +54,14 @@ var english = texts{
 	prSummary:      "Summary",
 	prVerification: "Verification",
 	withheld:       "The text was withheld because it looks like it contains a secret. It is kept in the agent's run directory for run %s.",
+
+	progressTitle:    "Progress of the run",
+	toolSep:          ", ",
+	purposeSep:       " | ",
+	noTools:          "no tools",
+	progressWithheld: "(this line was withheld because it looks like it contains a secret)",
+	hours:            "%dh%dm",
+	minutes:          "%dm",
 }
 
 var japanese = texts{
@@ -88,6 +100,14 @@ var japanese = texts{
 	prSummary:      "概要",
 	prVerification: "検証",
 	withheld:       "秘密情報を含むように見えるため、本文を伏せました。本文は、エージェントの実行ディレクトリ（実行 %s）に残っています。",
+
+	progressTitle:    "実行の進捗",
+	toolSep:          "・",
+	purposeSep:       " ｜ ",
+	noTools:          "ツールなし",
+	progressWithheld: "（秘密情報を含むように見えるため、この行を伏せました）",
+	hours:            "%d時間%d分",
+	minutes:          "%d分",
 }
 
 func textsFor(lang string) texts {
