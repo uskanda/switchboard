@@ -49,6 +49,8 @@ type Agent struct {
 	Relay Subscriber
 	// Debounce is how long the events of one project are gathered before it is fetched; 3s when zero.
 	Debounce time.Duration
+	// ProgressEvery is how often the progress comment of a run is brought up to date; a minute when zero.
+	ProgressEvery time.Duration
 	// Notifier, when set, is told each time the agent posts a waiting or a done comment.
 	Notifier Notifier
 
