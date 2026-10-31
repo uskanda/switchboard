@@ -113,18 +113,18 @@ func TestListReportsTheUnreachableForge(t *testing.T) {
 	}
 }
 
-func TestListIsCachedForAMinuteAndDroppedByAReply(t *testing.T) {
+func TestListIsCachedForHalfAMinuteAndDroppedByAReply(t *testing.T) {
 	w := newWorld(t)
 	w.c.List(ctx)
-	w.now = w.now.Add(59 * time.Second)
+	w.now = w.now.Add(29 * time.Second)
 	w.c.List(ctx)
 	if n := w.gh.searches.Load(); n != 1 {
-		t.Fatalf("searches within a minute = %d", n)
+		t.Fatalf("searches within 30 seconds = %d", n)
 	}
 	w.now = w.now.Add(2 * time.Second)
 	w.c.List(ctx)
 	if n := w.gh.searches.Load(); n != 2 {
-		t.Fatalf("searches after a minute = %d", n)
+		t.Fatalf("searches after 30 seconds = %d", n)
 	}
 	if err := w.c.Reply(ctx, "gh:o/r#12", "Go with B.", false); err != nil {
 		t.Fatal(err)

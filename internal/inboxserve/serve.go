@@ -23,8 +23,9 @@ type Inbox interface {
 	Reply(ctx context.Context, ref forge.IssueRef, text string, force bool) error
 }
 
-// TTL is how long a listing is served without asking the forges again.
-const TTL = time.Minute
+// TTL is how long a listing is served without asking the forges again. It bounds how late an open web inbox shows a
+// change, and keeps a GitHub inbox at two searches a minute, well under the Search API's 30.
+const TTL = 30 * time.Second
 
 // Server is the http.Handler of the API.
 type Server struct {
