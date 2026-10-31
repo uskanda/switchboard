@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -21,6 +20,7 @@ import (
 
 	"github.com/uskanda/switchboard/internal/agent"
 	"github.com/uskanda/switchboard/internal/config"
+	editorpkg "github.com/uskanda/switchboard/internal/editor"
 	"github.com/uskanda/switchboard/internal/forge"
 	"github.com/uskanda/switchboard/internal/labels"
 	"github.com/uskanda/switchboard/internal/marker"
@@ -513,6 +513,8 @@ type Detail struct {
 	Reason  string     `json:"reason"`
 	Since   *time.Time `json:"since"`
 	Post    string     `json:"post"` // the agent's latest post, without its marker
+	// ApproveWord is the word that approves a plan (plan.approve_word), for a page to say how to approve one.
+	ApproveWord string `json:"approve_word,omitempty"`
 }
 
 // Detail reads the issue and the agent's latest post on it.
@@ -538,6 +540,7 @@ func (b *Inbox) Detail(ctx context.Context, ref forge.IssueRef) (*Detail, error)
 		Ref: refString(ref), Title: is.Title, URL: is.URL,
 		Waiting: is.State == "open" && labels.StateOf(is.Labels, b.Config.Labels) == b.Config.Labels.Waiting,
 		Host:    orQ(m.Host), State: orQ(m.State), Reason: orQ(m.Reason), Post: body(c.Body),
+		ApproveWord: b.Config.Plan.ApproveWord,
 	}
 	if !m.At.IsZero() {
 		at := m.At
@@ -625,10 +628,8 @@ func EditorText(editor, ref, question string) (string, error) {
 	if err := f.Close(); err != nil {
 		return "", err
 	}
-	cmd := exec.Command("sh", "-c", editor+` "$1"`, "sh", path)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("editor %s: %w", editor, err)
+	if err := editorpkg.Run(editor, path); err != nil {
+		return "", err
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {

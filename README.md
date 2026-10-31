@@ -142,7 +142,7 @@ projects:
 
 ## 使い方
 
-対象のリポジトリに、状態ラベル（`agent:ready`、`agent:running`、`agent:waiting`、`agent:done`）を作る。
+対象のリポジトリに、状態ラベル（`agent:ready`、`agent:plan`、`agent:go`、`agent:running`、`agent:waiting`、`agent:done`）を作る。既にあるラベルは作り直さない。
 
 ```bash
 switchboard labels sync
@@ -184,6 +184,41 @@ switchboard reply 1 "Bで進めてください"
 ```
 
 すべてのコマンドは `--config` で設定ファイルを指定できる。指定が無いときは `~/.config/switchboard/config.yaml` を読む。
+
+### 計画を先に立てる
+
+実装の前に、エージェントにissueのコメントで質問させ、計画を承認してから実装させられる。始めるときに付けるラベルは、いつも1つである。
+
+- `agent:ready`：プロジェクトの `plan_first` に従う。`plan_first: true` なら計画から始め、無いか `false` ならすぐ実装する
+- `agent:plan`：計画から始める
+- `agent:go`：すぐ実装する
+
+計画の段階の実行は、ファイルを1つも変えない。使えるのは、読み取りのツールと `git status`、`git diff`、`git log` だけである。終わったあとにworktreeの変更があれば捨てる。pushもPRの作成もしない。実行は、決まっていない判断を推奨の答えとともに1回のコメントでまとめて聞く。決めることが無くなったら、計画をコメントする。どちらも `agent:waiting` になり、待ちの理由は `plan-questions` と `plan` である。
+
+返答は、承認の語（既定は `/ok`）で始める。
+
+- 質問に `/ok` と返すと、推奨どおりの答えとして次のラウンドに進む。`/ok q2はB` のように続けると、その問いだけを変えられる。質問の番号は、ラウンドをまたいで続く
+- 計画に `/ok` と返すと承認になり、次の実行で実装に入る。`/ok` 以外の返答は、計画の直しの依頼として、計画を出し直す
+- 承認の語は、信頼済みの人のコメントの最初の行の最初の語だけを見る。`/okay` や、信頼済みでない人に編集されたコメントは承認にならない
+
+承認の語は設定で変えられる。
+
+```yaml
+plan:
+  approve_word: /ok
+projects:
+  - ref: gh:YOUR_GITHUB_USER/switchboard
+    plan_first: true
+```
+
+計画の段階の実行には、利用者の追加の指示を渡せる。全プロジェクトに1つと、プロジェクトごとに1つで、両方あれば全体、プロジェクトの順につなげる。実装の実行には渡らない。指示は、設定ファイルと同じディレクトリの `instructions/` の下にある、ただのファイルである。全体は `instructions/plan.md` である。GitHubのプロジェクトの指示は `instructions/gh/<owner>/<repo>/plan.md` に置く。GitLabなら `instructions/gl/<group>/<project>/plan.md` である。
+
+```bash
+switchboard instructions edit                 # 全プロジェクトの指示
+switchboard instructions edit gh:o/switchboard  # 1つのプロジェクトの指示
+```
+
+受信箱のWeb表示の「設定」の画面からも編集できる。保存は32 KiBまでで、秘密を含むように見えるものは拒まれる。保存のたびに、監査ログに内容のSHA-256が残る。ファイルは端末ごとにある。Web表示が変えるのは、Web表示の端末のファイルだけである。エージェントが別の端末で動くときは、その端末で編集するか、設定ファイルと一緒に同期する。
 
 ### 常駐させる
 

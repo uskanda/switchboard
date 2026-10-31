@@ -11,7 +11,10 @@ type texts struct {
 	timeout, interrupted, maxTurns, failed, noDeclaration, prepare, start  string
 	configChanged, verifyFailed, notPushed, pushFailed, prFailed, mrFailed string
 	pr, mr, verified, notVerified, prSummary, prVerification, withheld     string
-	claim                                                                  string
+	claim, multipleStarts                                                  string
+
+	// The comments of the plan stage: the titles, the hints on how to answer, and the note on discarded changes.
+	planQuestionsTitle, planTitle, planQuestionsHint, planHint, planDiscarded string
 
 	// The progress comment of a run: its heading, the separators of a line, and a line withheld for a secret.
 	progressTitle, toolSep, purposeSep, noTools, progressWithheld string
@@ -48,12 +51,19 @@ var english = texts{
 
 	pr:             "Pull request: %s",
 	claim:          "Started on host %s.",
-	mr:             "Merge request: %s",
-	verified:       "`%s` passed.",
-	notVerified:    "No verify_command is configured, so this change was not verified.",
-	prSummary:      "Summary",
-	prVerification: "Verification",
-	withheld:       "The text was withheld because it looks like it contains a secret. It is kept in the agent's run directory for run %s.",
+	multipleStarts: "More than one start label is on the issue (%s), so the agent cannot tell which run was asked for. Put exactly one of them on the issue to start again.",
+
+	planQuestionsTitle: "The agent has questions for the plan",
+	planTitle:          "The plan is ready for approval",
+	planQuestionsHint:  "Reply `%s` to accept the recommended answers, or `%s q2 is B` to change some of them.",
+	planHint:           "Reply `%s` to approve this plan and start the work. To change it, reply with what to change.",
+	planDiscarded:      "The run changed the worktree although the plan stage changes nothing; those changes were discarded.",
+	mr:                 "Merge request: %s",
+	verified:           "`%s` passed.",
+	notVerified:        "No verify_command is configured, so this change was not verified.",
+	prSummary:          "Summary",
+	prVerification:     "Verification",
+	withheld:           "The text was withheld because it looks like it contains a secret. It is kept in the agent's run directory for run %s.",
 
 	progressTitle:    "Progress of the run",
 	toolSep:          ", ",
@@ -94,12 +104,19 @@ var japanese = texts{
 
 	pr:             "PR：%s",
 	claim:          "端末%sで実行を始めます。",
-	mr:             "MR：%s",
-	verified:       "`%s` が通りました。",
-	notVerified:    "verify_commandが設定されていないため、この変更は検証していません。",
-	prSummary:      "概要",
-	prVerification: "検証",
-	withheld:       "秘密情報を含むように見えるため、本文を伏せました。本文は、エージェントの実行ディレクトリ（実行 %s）に残っています。",
+	multipleStarts: "始めるラベルが2つ以上付いているため（%s）、どの実行を求められたのか分かりません。どれか1つだけを付け直すと、もう一度始めます。",
+
+	planQuestionsTitle: "計画についての質問",
+	planTitle:          "計画の承認のお願い",
+	planQuestionsHint:  "推奨どおりでよければ `%s`、変えたい問いがあれば `%s q2はB` のように返答してください。",
+	planHint:           "この計画で進めるなら `%s` と返答してください。直してほしいところがあれば、そのまま返答してください。",
+	planDiscarded:      "計画の段階では何も変えないはずの実行がworktreeを変えたため、その変更を捨てました。",
+	mr:                 "MR：%s",
+	verified:           "`%s` が通りました。",
+	notVerified:        "verify_commandが設定されていないため、この変更は検証していません。",
+	prSummary:          "概要",
+	prVerification:     "検証",
+	withheld:           "秘密情報を含むように見えるため、本文を伏せました。本文は、エージェントの実行ディレクトリ（実行 %s）に残っています。",
 
 	progressTitle:    "実行の進捗",
 	toolSep:          "・",

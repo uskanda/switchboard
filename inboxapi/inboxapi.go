@@ -54,6 +54,8 @@ type Detail struct {
 	Reason  string     `json:"reason"`
 	Since   *time.Time `json:"since"`
 	Post    string     `json:"post"`
+	// ApproveWord is the word whose reply approves a plan, such as /ok.
+	ApproveWord string `json:"approve_word,omitempty"`
 }
 
 // ReplyRequest is the body of POST /v1/reply.
@@ -63,12 +65,35 @@ type ReplyRequest struct {
 	Force bool   `json:"force,omitempty"`
 }
 
+// Instruction is one file of the additional instructions of the plan runs. Target is "" for the instructions of
+// every project, else a project as gh:owner/repo or gl:group/project. Content is "" when there is no file.
+type Instruction struct {
+	Target  string `json:"target"`
+	Content string `json:"content"`
+}
+
+// Instructions is the answer to GET /v1/instructions: the global instructions, then one item per configured
+// project, all read on Host, the machine of the inbox service.
+type Instructions struct {
+	Host  string        `json:"host"`
+	Items []Instruction `json:"items"`
+}
+
+// SaveInstructionsRequest is the body of PUT /v1/instructions.
+type SaveInstructionsRequest struct {
+	Target  string `json:"target"`
+	Content string `json:"content"`
+}
+
 // The codes of Error.
 const (
-	CodeInvalid    = "invalid"     // 400
-	CodeNotFound   = "not_found"   // 404
-	CodeNotWaiting = "not_waiting" // 409
-	CodeForge      = "forge"       // 502
+	CodeInvalid        = "invalid"         // 400
+	CodeNotFound       = "not_found"       // 404
+	CodeNotWaiting     = "not_waiting"     // 409
+	CodeTooLarge       = "too_large"       // 413
+	CodeSecret         = "secret"          // 422
+	CodeUnknownProject = "unknown_project" // 422
+	CodeForge          = "forge"           // 502
 )
 
 // Error is how the API answers a request it could not serve.
@@ -88,6 +113,12 @@ func (e *Error) Is(target error) bool {
 		return e.Code == CodeNotFound
 	case ErrNotWaiting:
 		return e.Code == CodeNotWaiting
+	case ErrTooLarge:
+		return e.Code == CodeTooLarge
+	case ErrSecret:
+		return e.Code == CodeSecret
+	case ErrUnknownProject:
+		return e.Code == CodeUnknownProject
 	}
 	return false
 }
@@ -96,6 +127,10 @@ var (
 	ErrInvalid    = errors.New("invalid request")
 	ErrNotFound   = errors.New("not found")
 	ErrNotWaiting = errors.New("the issue is not waiting")
+	// ErrTooLarge, ErrSecret and ErrUnknownProject are the refusals of a save of instructions.
+	ErrTooLarge       = errors.New("the instructions are too large")
+	ErrSecret         = errors.New("the instructions look like they hold a secret")
+	ErrUnknownProject = errors.New("the project is not in the configuration")
 	// ErrUnavailable is returned when the inbox service cannot be reached at all.
 	ErrUnavailable = errors.New("the inbox service is not reachable")
 )

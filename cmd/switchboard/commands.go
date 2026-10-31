@@ -16,6 +16,7 @@ import (
 	"github.com/uskanda/switchboard/internal/cli"
 	"github.com/uskanda/switchboard/internal/config"
 	"github.com/uskanda/switchboard/internal/doctor"
+	"github.com/uskanda/switchboard/internal/editor"
 	"github.com/uskanda/switchboard/internal/forge"
 	"github.com/uskanda/switchboard/internal/forge/github"
 	"github.com/uskanda/switchboard/internal/forge/gitlab"
@@ -276,15 +277,11 @@ func inboxReply(args []string, stdout, stderr io.Writer) int {
 	ctx := context.Background()
 	text := strings.Join(fs.Args()[1:], " ")
 	if useEditor {
-		editor := os.Getenv("EDITOR")
-		if editor == "" {
-			editor = "vi"
-		}
 		var q strings.Builder
 		if err := b.Show(ctx, ref, &q); err != nil {
 			return fail(stderr, err)
 		}
-		if text, err = inbox.EditorText(editor, fs.Arg(0), q.String()); err != nil {
+		if text, err = inbox.EditorText(editor.Default(), fs.Arg(0), q.String()); err != nil {
 			return fail(stderr, err)
 		}
 	}

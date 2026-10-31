@@ -63,3 +63,26 @@ func TestProgressMarker(t *testing.T) {
 		}
 	}
 }
+
+func TestModeAndQuestionNumberRoundTrip(t *testing.T) {
+	claim := Marker{Host: "ubuntu-a", Run: "r-1", State: Running, Mode: ModePlan, Ack: 7, At: at}
+	got, ok := Parse(claim.Format())
+	if !ok || got.Mode != ModePlan || got.Q != 0 {
+		t.Fatalf("claim = %+v, %v", got, ok)
+	}
+	asked := Marker{Host: "ubuntu-a", Run: "r-2", State: Waiting, Reason: PlanQuestions, Q: 5, At: at}
+	got, ok = Parse(asked.Format())
+	if !ok || got.Reason != PlanQuestions || got.Q != 5 || got.Mode != "" {
+		t.Fatalf("questions = %+v, %v", got, ok)
+	}
+	if line := (Marker{State: Waiting, Reason: "question"}).Format(); strings.Contains(line, "mode=") || strings.Contains(line, " q=") {
+		t.Fatalf("a marker without mode or q writes them: %q", line)
+	}
+}
+
+func TestOldMarkerHasNoMode(t *testing.T) {
+	got, ok := Parse("<!-- switchboard v=1 host=a run=r state=running ack=3 -->")
+	if !ok || got.Mode != "" || got.Q != 0 {
+		t.Fatalf("Parse = %+v, %v", got, ok)
+	}
+}

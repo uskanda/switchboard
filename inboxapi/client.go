@@ -49,6 +49,18 @@ func (c *Client) Reply(ctx context.Context, ref, text string, force bool) error 
 	return c.do(ctx, http.MethodPost, "/v1/reply", ReplyRequest{Ref: ref, Text: text, Force: force}, nil)
 }
 
+// Instructions returns the additional instructions of the plan runs, as the inbox service's machine has them.
+func (c *Client) Instructions(ctx context.Context) (*Instructions, error) {
+	var out Instructions
+	return &out, c.do(ctx, http.MethodGet, "/v1/instructions", nil, &out)
+}
+
+// SaveInstructions replaces the instructions of target ("" for every project) with content. It is refused with
+// ErrTooLarge, ErrSecret or ErrUnknownProject.
+func (c *Client) SaveInstructions(ctx context.Context, target, content string) error {
+	return c.do(ctx, http.MethodPut, "/v1/instructions", SaveInstructionsRequest{Target: target, Content: content}, nil)
+}
+
 func (c *Client) do(ctx context.Context, method, path string, in, out any) error {
 	var body io.Reader
 	if in != nil {
