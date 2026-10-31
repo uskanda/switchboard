@@ -7,5 +7,5 @@
 
 ## 2. 文書と確認
 
-- [ ] 2.1 README.mdの中継の節で、照合の間隔を使うのは `relay.hooks` に載ったプロジェクトだけだと書き直す
+- [x] 2.1 README.mdの中継の節で、照合の間隔を使うのは `relay.hooks` に載ったプロジェクトだけだと書き直す
 - [ ] 2.2 usknasに新しい版を置き、中継につながった状態で、`gh:uskanda/switchboard` のissueが `poll_interval` のうちに評価されることを確かめる。結果はROADMAP.mdに記録する
