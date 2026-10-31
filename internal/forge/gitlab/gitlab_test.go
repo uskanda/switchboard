@@ -338,3 +338,17 @@ func TestDeleteComment(t *testing.T) {
 		t.Fatalf("DeleteComment = %v, deleted %v", err, deleted)
 	}
 }
+
+func TestEditComment(t *testing.T) {
+	s, c := newServer(t)
+	s.on("PUT "+proj+"/issues/3/notes/90", jsonReply(map[string]any{"id": 90, "body": "new"}))
+	if err := c.EditComment(ctx, ref, 90, "new"); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.log) != 1 || s.log[0].Method != http.MethodPut || s.body(0)["body"] != "new" {
+		t.Fatalf("requests = %d, body %v", len(s.log), s.bodies)
+	}
+	if err := c.EditComment(ctx, ref, 91, "x"); !errors.Is(err, forge.ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound", err)
+	}
+}

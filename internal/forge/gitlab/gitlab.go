@@ -355,6 +355,13 @@ func (c *Client) PostComment(ctx context.Context, ref forge.IssueRef, body strin
 	return &forge.Comment{ID: n.ID, Body: n.Body, Author: n.Author.user(), CreatedAt: n.CreatedAt}, nil
 }
 
+// EditComment implements forge.Forge.
+func (c *Client) EditComment(ctx context.Context, ref forge.IssueRef, id int64, body string) error {
+	_, err := c.do(ctx, http.MethodPut, c.url(project(ref.Owner, ref.Repo)+"/issues/"+strconv.Itoa(ref.Number)+"/notes/"+strconv.FormatInt(id, 10), nil),
+		map[string]any{"body": body}, nil)
+	return err
+}
+
 // DeleteComment implements forge.Forge.
 func (c *Client) DeleteComment(ctx context.Context, ref forge.IssueRef, id int64) error {
 	_, err := c.do(ctx, http.MethodDelete, c.url(project(ref.Owner, ref.Repo)+"/issues/"+strconv.Itoa(ref.Number)+"/notes/"+strconv.FormatInt(id, 10), nil), nil, nil)

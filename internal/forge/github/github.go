@@ -398,6 +398,13 @@ func (c *Client) PostComment(ctx context.Context, ref forge.IssueRef, body strin
 	return &forge.Comment{ID: gc.ID, Body: gc.Body, Author: gc.User.user(), CreatedAt: gc.CreatedAt}, nil
 }
 
+// EditComment implements forge.Forge.
+func (c *Client) EditComment(ctx context.Context, ref forge.IssueRef, id int64, body string) error {
+	_, err := c.do(ctx, http.MethodPatch, c.url(fmt.Sprintf("/repos/%s/%s/issues/comments/%d", ref.Owner, ref.Repo, id), nil),
+		map[string]any{"body": body}, nil, nil)
+	return err
+}
+
 // DeleteComment implements forge.Forge.
 func (c *Client) DeleteComment(ctx context.Context, ref forge.IssueRef, id int64) error {
 	_, err := c.do(ctx, http.MethodDelete, c.url(fmt.Sprintf("/repos/%s/%s/issues/comments/%d", ref.Owner, ref.Repo, id), nil), nil, nil, nil)

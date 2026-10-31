@@ -290,3 +290,17 @@ func TestDeleteComment(t *testing.T) {
 		t.Fatalf("DeleteComment = %v, deleted %v", err, deleted)
 	}
 }
+
+func TestEditComment(t *testing.T) {
+	s, c := newServer(t)
+	s.on("PATCH /repos/o/r/issues/comments/55", jsonReply(map[string]any{"id": 55, "body": "new"}))
+	if err := c.EditComment(ctx, forge.IssueRef{Forge: forge.GitHub, Owner: "o", Repo: "r", Number: 1}, 55, "new"); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.log) != 1 || s.log[0].Method != http.MethodPatch || s.bodies[0] != `{"body":"new"}` {
+		t.Fatalf("requests = %d, body %q", len(s.log), s.bodies)
+	}
+	if err := c.EditComment(ctx, forge.IssueRef{Owner: "o", Repo: "r", Number: 1}, 56, "x"); !errors.Is(err, forge.ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound", err)
+	}
+}

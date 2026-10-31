@@ -124,6 +124,8 @@ type Forge interface {
 	SetLabels(ctx context.Context, ref IssueRef, labels []string) error
 	// PostComment adds a comment and returns it.
 	PostComment(ctx context.Context, ref IssueRef, body string) (*Comment, error)
+	// EditComment replaces the body of a comment of the issue; ErrNotFound when there is none with that ID.
+	EditComment(ctx context.Context, ref IssueRef, id int64, body string) error
 	// DeleteComment removes a comment of the issue; ErrNotFound when there is none with that ID.
 	DeleteComment(ctx context.Context, ref IssueRef, id int64) error
 	// EnsureLabel creates the label unless one with that name exists; it reports whether it created one.

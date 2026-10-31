@@ -60,3 +60,20 @@ func TestDeleteComment(t *testing.T) {
 		t.Fatalf("deleting again = %v", err)
 	}
 }
+
+func TestEditComment(t *testing.T) {
+	f := New(nil)
+	me := f.AddUser("me", 1)
+	f.AddRepo("o", "r", true)
+	ref := f.AddIssue("o", "r", 1, "t", "b", me)
+	a := f.AddComment(ref, "old", me)
+	if err := f.EditComment(context.Background(), ref, a.ID, "new"); err != nil {
+		t.Fatal(err)
+	}
+	if cs := f.CommentsOf(ref); len(cs) != 1 || cs[0].Body != "new" || cs[0].ID != a.ID {
+		t.Fatalf("comments = %+v", cs)
+	}
+	if err := f.EditComment(context.Background(), ref, a.ID+1, "x"); err != forge.ErrNotFound {
+		t.Fatalf("editing a missing comment = %v", err)
+	}
+}
