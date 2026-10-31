@@ -51,3 +51,15 @@ func TestFormatReplacesSpacesInValues(t *testing.T) {
 		t.Fatalf("Parse = %+v", got)
 	}
 }
+
+func TestProgressMarker(t *testing.T) {
+	m, ok := Parse("progress\n\n" + Marker{Host: "desk", Run: "r-1", State: Progress, At: at}.Format())
+	if !ok || m.State != "progress" || m.Run != "r-1" || !m.Transient() {
+		t.Fatalf("Parse = %+v, %v", m, ok)
+	}
+	for state, want := range map[string]bool{"running": true, "progress": true, "waiting": false, "done": false} {
+		if got := (&Marker{State: state}).Transient(); got != want {
+			t.Errorf("Transient(%s) = %v", state, got)
+		}
+	}
+}

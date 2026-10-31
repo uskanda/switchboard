@@ -3,7 +3,7 @@
 ## 1. フォージとマーカー（`forge`、`marker`）
 
 - [x] 1.1 `forge.Forge` に `EditComment` を足し、GitHub、GitLab、偽物に実装する。送るメソッド、パス、本文を、記録したHTTPのやり取りで確かめる
-- [ ] 1.2 マーカーの状態に `progress` を足す。読み書きと、受信箱の `latestPost` が `progress` を飛ばすことを、失敗するテストから確かめる
+- [x] 1.2 マーカーの状態に `progress` を足す。読み書きと、受信箱の `latestPost` が `progress` を飛ばすことを、失敗するテストから確かめる
 
 ## 2. 進み具合を読む（`claudecode`）
 

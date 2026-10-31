@@ -168,3 +168,20 @@ func TestAClaimAfterTheQuestionDoesNotHideIt(t *testing.T) {
 		t.Fatalf("show = %q, %v", out.String(), err)
 	}
 }
+
+// A progress comment of a run says nothing about why the issue waits, as a claim does not.
+func TestAProgressCommentDoesNotHideTheQuestion(t *testing.T) {
+	w := newWorld(t)
+	w.f.PostAs = "bot"
+	w.f.PostComment(ctx, w.a, "Progress\n\n- 12:00 1m\n\n"+marker.Marker{Host: "desk", Run: "r9", State: "progress"}.Format())
+	w.f.PostAs = "me"
+	items, err := w.b.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range items {
+		if it.Ref == "gh:o/r#12" && (it.Question != "Which default should --dry-run have?" || it.Host != "laptop") {
+			t.Fatalf("item = %+v", it)
+		}
+	}
+}

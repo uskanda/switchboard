@@ -23,11 +23,23 @@ type Marker struct {
 	Host    string
 	Session string
 	Run     string
-	State   string // running, waiting, done
+	State   string // running (the claim of a run), progress (its progress comment), waiting, done
 	Reason  string // for waiting: question, permission, error, verify, limit
 	Ack     int64  // the last comment ID the run took in
 	At      time.Time
 }
+
+// The states a marker names.
+const (
+	Running  = "running"
+	Progress = "progress"
+	Waiting  = "waiting"
+	Done     = "done"
+)
+
+// Transient reports whether m marks a post made while a run goes on: its claim or its progress comment. Such a
+// post says nothing about why an issue waits or how a run ended.
+func (m *Marker) Transient() bool { return m.State == Running || m.State == Progress }
 
 // clean keeps a value on one token: spaces become underscores and the comment terminator cannot appear.
 func clean(s string) string {

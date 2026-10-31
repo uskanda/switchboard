@@ -108,13 +108,14 @@ func (b *Inbox) agentID(ctx context.Context, ref forge.IssueRef) (int64, error) 
 }
 
 // latestPost returns the agent's latest post: authored by the agent and ending in a marker. Claims of a run
-// (state=running) say nothing about why the issue waits, so they are passed over.
+// (state=running) and its progress comments (state=progress) say nothing about why the issue waits, so they are
+// passed over.
 func latestPost(comments []forge.Comment, agentID int64) (*forge.Comment, *marker.Marker) {
 	for i := len(comments) - 1; i >= 0; i-- {
 		if comments[i].Author.ID != agentID {
 			continue
 		}
-		if m, ok := marker.Parse(comments[i].Body); ok && m.State != "running" {
+		if m, ok := marker.Parse(comments[i].Body); ok && !m.Transient() {
 			return &comments[i], m
 		}
 	}
