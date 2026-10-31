@@ -26,6 +26,6 @@
 
 ## 6. 文書と確認
 
-- [ ] 6.1 README.mdに、進捗のコメントと、受信箱の実行中の欄を書く
+- [x] 6.1 README.mdに、進捗のコメントと、受信箱の実行中の欄を書く
 - [x] 6.2 V28を確かめる。GitHubの検索で `label:"agent:waiting","agent:running"` がラベルのORになるかを実物で調べ、ROADMAP.mdに記録する。ならなければ、検索を2回に分ける
 - [ ] 6.3 usknasに新しい版を置き、`uskanda/switchboard` のissueで確かめる。進捗のコメントが1分ごとに足されて完了で消えることと、Web表示の実行中の欄に出ることを見る。結果はROADMAP.mdに記録する
