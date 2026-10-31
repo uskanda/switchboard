@@ -16,3 +16,6 @@ project.path_with_namespace
 object_attributes.iid
 issue.iid
 object_attributes.noteable_type
+outcome.PR
+inbox.Excerpt
+index.html
