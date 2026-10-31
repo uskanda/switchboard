@@ -23,8 +23,11 @@ type Inbox interface {
 	Reply(ctx context.Context, ref forge.IssueRef, text string, force bool) error
 }
 
-// TTL is how long a listing is served without asking the forges again.
+// TTL is how long a complete listing is served without asking the forges again.
 const TTL = time.Minute
+
+// FetchTimeout bounds one listing from the forges.
+const FetchTimeout = 30 * time.Second
 
 // Server is the http.Handler of the API.
 type Server struct {
@@ -65,18 +68,28 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.cached == nil || s.now().Sub(s.cached.FetchedAt) >= TTL {
-		items, errs := s.Inbox.Collect(r.Context())
-		out := &inboxapi.Inbox{Items: []inboxapi.Item{}, Errors: []inboxapi.ForgeError{}, FetchedAt: s.now()}
-		for _, it := range items {
-			out.Items = append(out.Items, inboxapi.Item(it))
-		}
-		for _, e := range errs {
-			out.Errors = append(out.Errors, inboxapi.ForgeError{Forge: e.Forge, Message: e.Err.Error()})
-		}
+	if s.cached != nil && s.now().Sub(s.cached.FetchedAt) < TTL {
+		send(w, http.StatusOK, s.cached)
+		return
+	}
+	// The forges are asked apart from the request: a caller that gives up (a browser reloading the page) must not
+	// cut the answers short, or the listing would hold its own cancellation.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), FetchTimeout)
+	defer cancel()
+	items, errs := s.Inbox.Collect(ctx)
+	out := &inboxapi.Inbox{Items: []inboxapi.Item{}, Errors: []inboxapi.ForgeError{}, FetchedAt: s.now()}
+	for _, it := range items {
+		out.Items = append(out.Items, inboxapi.Item(it))
+	}
+	for _, e := range errs {
+		out.Errors = append(out.Errors, inboxapi.ForgeError{Forge: e.Forge, Message: e.Err.Error()})
+	}
+	// A listing missing a forge is shown once, not kept: the next request asks again.
+	s.cached = nil
+	if len(errs) == 0 {
 		s.cached = out
 	}
-	send(w, http.StatusOK, s.cached)
+	send(w, http.StatusOK, out)
 }
 
 func (s *Server) issue(w http.ResponseWriter, r *http.Request) {
