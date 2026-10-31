@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router";
 import { ReasonBadge } from "@/components/ReasonBadge";
 import { Thread } from "@/components/Thread";
@@ -65,9 +65,13 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
     setError(null);
   }, [issueRef]);
 
+  const lastKey = useRef(key);
   useEffect(() => {
-    // An issue that left the list is not read again: what was last shown stays.
-    if (key === "gone" && detail?.ref === issueRef) return;
+    const prev = lastKey.current;
+    lastKey.current = key;
+    // An issue that left the list is not read again: what was last shown stays. Nor is one whose first listing just
+    // arrived: the read made before it is as new.
+    if (detail?.ref === issueRef && (key === "gone" || prev === "first")) return;
     let stale = false;
     getIssue(issueRef).then(
       (d) => {

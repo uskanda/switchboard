@@ -123,6 +123,15 @@ describe("the list", () => {
 });
 
 describe("the issue", () => {
+  it("is read once when it opens, though the first listing comes after", async () => {
+    const reads = serve({ "gh:o/r#12": detail() }, listing(item()));
+    at("/issue/gh%3Ao%2Fr%2312");
+    await screen.findByRole("heading", { level: 2, name: "Add a flag" });
+    FakeEventSource.last!.emit("inbox", listing(item()));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(reads).toEqual(["gh:o/r#12"]);
+  });
+
   it("is read again when its row moves, and not when another row does", async () => {
     const reads = serve({ "gh:o/r#12": detail() }, listing(item()));
     at("/issue/gh%3Ao%2Fr%2312");
