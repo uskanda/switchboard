@@ -45,4 +45,4 @@
 
 ## 9. 結合の確認
 
-- [ ] 9.1 usknasで、利用者に設置してもらう。手順は、`relay token add` と `relay hook add gl:nas/switchboard-sandbox` の実行、GitLabの許可リストの設定である。続けて、`service install --relay` と `service install` を実行する。受信箱から返答して、実行の開始までが10秒以内であることを監査ログの時刻で確かめる。中継を止めたら30秒のポーリングで処理が続くことと、起動し直したら再接続することも確かめる。結果はROADMAP.mdに記録する
+- [x] 9.1 usknasで、利用者に設置してもらう。手順は、`relay token add` と `relay hook add gl:nas/switchboard-sandbox` の実行、GitLabの許可リストの設定である。続けて、`service install --relay` と `service install` を実行する。受信箱から返答して、実行の開始までが10秒以内であることを監査ログの時刻で確かめる。中継を止めたら30秒のポーリングで処理が続くことと、起動し直したら再接続することも確かめる。結果はROADMAP.mdに記録する
