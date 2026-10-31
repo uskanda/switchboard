@@ -22,6 +22,7 @@ var commands = []*command{
 	{words: []string{"labels", "sync"}, summary: "create the state labels in every configured project"},
 	{words: []string{"agent", "run"}, summary: "poll the projects assigned to this host and run claude on their issues"},
 	{words: []string{"agent", "status"}, summary: "show the projects of this host and the issues being run"},
+	{words: []string{"inbox", "serve"}, summary: "serve the inbox to the web inbox on a Unix socket, with the inbox tokens"},
 	{words: []string{"inbox"}, summary: "list the waiting issues of every configured project"},
 	{words: []string{"show"}, summary: "show the last question of one waiting issue"},
 	{words: []string{"reply"}, summary: "post a reply to one waiting issue"},

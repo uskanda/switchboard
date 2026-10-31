@@ -1,0 +1,32 @@
+@import "tailwindcss";
+@import "./tokens.css";
+
+/* tokens.css is exported from DESIGN.md (pnpm tokens). The font stacks are written here because the export keeps
+   each one as a single quoted family. */
+@theme {
+  --font-sans: system-ui, "Hiragino Sans", "Noto Sans JP", sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+
+/* Dark: the same roles, from DESIGN.md's dark- colors, when the OS asks for it. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-primary: var(--color-dark-primary);
+    --color-on-primary: var(--color-dark-on-primary);
+    --color-surface: var(--color-dark-surface);
+    --color-on-surface: var(--color-dark-on-surface);
+    --color-surface-raised: var(--color-dark-surface-raised);
+    --color-outline: var(--color-dark-outline);
+    --color-muted: var(--color-dark-muted);
+    --color-attention: var(--color-dark-attention);
+    --color-attention-container: var(--color-dark-attention-container);
+    --color-error-container: var(--color-dark-error-container);
+    --color-on-error-container: var(--color-dark-error);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
+
+html { background: var(--color-surface); color: var(--color-on-surface); font-family: var(--font-sans); font-size: var(--text-body-md); line-height: 1.6; }

@@ -42,7 +42,7 @@ func TestRelayCredentialsAreTheWebhookSecrets(t *testing.T) {
 
 func relaySetup() Setup {
 	s := setup()
-	s.Relay = true
+	s.Kind = KindRelay
 	s.Creds = RelayCredentials(relayCfg())
 	return s
 }

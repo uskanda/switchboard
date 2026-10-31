@@ -161,6 +161,7 @@ type glIssue struct {
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 	UserNotesCount int       `json:"user_notes_count"`
+	WebURL         string    `json:"web_url"`
 }
 
 func (i glIssue) summary(owner, repo string) forge.IssueSummary {
@@ -170,7 +171,7 @@ func (i glIssue) summary(owner, repo string) forge.IssueSummary {
 	}
 	return forge.IssueSummary{
 		Ref:   forge.IssueRef{Forge: forge.GitLab, Owner: owner, Repo: repo, Number: i.IID},
-		Title: i.Title, State: state, Labels: append([]string(nil), i.Labels...), UpdatedAt: i.UpdatedAt,
+		Title: i.Title, State: state, URL: i.WebURL, Labels: append([]string(nil), i.Labels...), UpdatedAt: i.UpdatedAt,
 		Notes: i.UserNotesCount,
 	}
 }

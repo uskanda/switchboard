@@ -57,6 +57,7 @@ type Item struct {
 	Project      string     `json:"project"`
 	Number       int        `json:"number"`
 	Title        string     `json:"title"`
+	URL          string     `json:"url"`
 	Host         string     `json:"host"`
 	WaitingSince *time.Time `json:"waiting_since"`
 	Reason       string     `json:"reason"`
@@ -124,6 +125,33 @@ func latestPost(comments []forge.Comment, agentID int64) (*forge.Comment, *marke
 // records the row numbers. When a forge cannot be read, List still returns the other forges' issues, with an error
 // naming the forge that failed.
 func (b *Inbox) List(ctx context.Context) ([]Item, error) {
+	items, ferrs := b.Collect(ctx)
+	rows := make([]string, len(items))
+	for i := range items {
+		rows[i] = items[i].Ref
+	}
+	if err := b.saveRows(rows); err != nil {
+		return nil, err
+	}
+	var errs []error
+	for _, e := range ferrs {
+		errs = append(errs, e)
+	}
+	return items, errors.Join(errs...)
+}
+
+// ForgeError is a forge that could not be read while listing.
+type ForgeError struct {
+	Forge string // "github" or "gitlab"
+	Err   error
+}
+
+func (e ForgeError) Error() string { return e.Forge + " could not be read: " + e.Err.Error() }
+func (e ForgeError) Unwrap() error { return e.Err }
+
+// Collect lists the waiting issues as List does, numbered, without recording the rows. The forges that could not
+// be read are returned beside what the others listed.
+func (b *Inbox) Collect(ctx context.Context) ([]Item, []ForgeError) {
 	var kinds []string
 	for _, k := range []string{forge.GitHub, forge.GitLab} {
 		if (b.Only == "" || b.Only == k) && b.uses(k) {
@@ -146,11 +174,11 @@ func (b *Inbox) List(ctx context.Context) ([]Item, error) {
 	}
 	wg.Wait()
 	var items []Item
-	var errs []error
+	var errs []ForgeError
 	for i, r := range results {
 		items = append(items, r.items...)
 		if r.err != nil {
-			errs = append(errs, fmt.Errorf("%s could not be read: %w", forgeName(kinds[i]), r.err))
+			errs = append(errs, ForgeError{Forge: forgeName(kinds[i]), Err: r.err})
 		}
 	}
 	sort.SliceStable(items, func(i, j int) bool {
@@ -163,15 +191,10 @@ func (b *Inbox) List(ctx context.Context) ([]Item, error) {
 		}
 		return items[i].Ref < items[j].Ref
 	})
-	rows := make([]string, len(items))
 	for i := range items {
 		items[i].N = i + 1
-		rows[i] = items[i].Ref
 	}
-	if err := b.saveRows(rows); err != nil {
-		return nil, err
-	}
-	return items, errors.Join(errs...)
+	return items, errs
 }
 
 func forgeName(kind string) string {
@@ -234,7 +257,7 @@ func (b *Inbox) list(ctx context.Context, kind string) ([]Item, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", s.Ref, err)
 		}
-		it := Item{Ref: refString(s.Ref), Project: s.Ref.Project(), Number: s.Ref.Number, Title: s.Title, Host: "?", Reason: "?", Question: "?"}
+		it := Item{Ref: refString(s.Ref), Project: s.Ref.Project(), Number: s.Ref.Number, Title: s.Title, URL: s.URL, Host: "?", Reason: "?", Question: "?"}
 		if c, m := latestPost(comments, agentID); c != nil {
 			it.Host, it.Reason, it.Question = orQ(m.Host), orQ(m.Reason), Excerpt(c.Body)
 			if !m.At.IsZero() {
@@ -263,19 +286,8 @@ func body(post string) string {
 // Excerpt is the start of the question in an agent post, on one line: the paragraph after the question label, or
 // else the first paragraph after the heading.
 func Excerpt(post string) string {
-	text := body(post)
-	for _, l := range agent.QuestionLabels() {
-		if i := strings.LastIndex(text, l+"\n"); i >= 0 {
-			text = text[i+len(l):]
-			break
-		}
-	}
-	for _, para := range strings.Split(text, "\n\n") {
-		p := strings.TrimSpace(para)
-		if p == "" || strings.HasPrefix(p, "#") || (strings.HasPrefix(p, "**") && strings.HasSuffix(p, "**")) {
-			continue
-		}
-		return clip(strings.Join(strings.Fields(p), " "), 72)
+	if q := agent.Question(body(post)); q != "" {
+		return clip(q, 72)
 	}
 	return "?"
 }
@@ -337,6 +349,22 @@ func (b *Inbox) saveRows(rows []string) error {
 	return os.WriteFile(b.Cache, append(data, '\n'), 0o600)
 }
 
+// The errors of Resolve, Detail and Reply can be told apart with errors.Is.
+var (
+	ErrInvalid    = errors.New("invalid")     // the request itself is wrong: a malformed ref, an empty reply
+	ErrNotFound   = errors.New("not found")   // the issue is not of a configured project, or has no agent post
+	ErrNotWaiting = errors.New("not waiting") // the issue no longer waits, so the reply was not posted
+)
+
+// wrap marks err with kind for errors.Is and keeps its message.
+func wrap(kind, err error) error { return kindError{kind, err} }
+
+type kindError struct{ kind, err error }
+
+func (e kindError) Error() string        { return e.err.Error() }
+func (e kindError) Is(target error) bool { return target == e.kind }
+func (e kindError) Unwrap() error        { return e.err }
+
 var issueRef = regexp.MustCompile(`^(gh):([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)#([0-9]+)$|^(gl):((?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)#([0-9]+)$`)
 
 // Resolve turns a row number of the last listing, gh:owner/repo#n, or gl:group/project#n into an issue of a
@@ -360,10 +388,18 @@ func (b *Inbox) Resolve(arg string) (forge.IssueRef, error) {
 			return forge.IssueRef{}, fmt.Errorf("the last listing has no row %d; run switchboard inbox again", n)
 		}
 		arg = saved.Rows[n-1]
+	} else if !issueRef.MatchString(arg) {
+		return forge.IssueRef{}, wrap(ErrInvalid, fmt.Errorf("%q is neither a row number nor of the form gh:owner/repo#123 or gl:group/project#123", arg))
 	}
+	return b.ParseRef(arg)
+}
+
+// ParseRef turns gh:owner/repo#n or gl:group/project#n into an issue of a configured project. Row numbers are not
+// accepted.
+func (b *Inbox) ParseRef(arg string) (forge.IssueRef, error) {
 	m := issueRef.FindStringSubmatch(arg)
 	if m == nil {
-		return forge.IssueRef{}, fmt.Errorf("%q is neither a row number nor of the form gh:owner/repo#123 or gl:group/project#123", arg)
+		return forge.IssueRef{}, wrap(ErrInvalid, fmt.Errorf("%q is not of the form gh:owner/repo#123 or gl:group/project#123", arg))
 	}
 	if m[1] == "" {
 		m = append([]string{m[0]}, m[5:]...)
@@ -372,42 +408,78 @@ func (b *Inbox) Resolve(arg string) (forge.IssueRef, error) {
 	}
 	num, _ := strconv.Atoi(m[4])
 	if _, ok := b.project(m[1], m[2], m[3]); !ok {
-		return forge.IssueRef{}, fmt.Errorf("%s:%s/%s is not a configured project", m[1], m[2], m[3])
+		return forge.IssueRef{}, wrap(ErrNotFound, fmt.Errorf("%s:%s/%s is not a configured project", m[1], m[2], m[3]))
 	}
 	return forge.IssueRef{Forge: m[1], Owner: m[2], Repo: m[3], Number: num}, nil
 }
 
-// Show writes the agent's latest post on the issue, without its marker.
-func (b *Inbox) Show(ctx context.Context, ref forge.IssueRef, w io.Writer) error {
+// Detail is one issue as show presents it: the agent's latest post, which holds the question and the refused
+// operations, with what its marker says.
+type Detail struct {
+	Ref     string     `json:"ref"`
+	Title   string     `json:"title"`
+	URL     string     `json:"url"`
+	Waiting bool       `json:"waiting"` // open and labeled waiting
+	Host    string     `json:"host"`
+	State   string     `json:"state"`
+	Reason  string     `json:"reason"`
+	Since   *time.Time `json:"since"`
+	Post    string     `json:"post"` // the agent's latest post, without its marker
+}
+
+// Detail reads the issue and the agent's latest post on it.
+func (b *Inbox) Detail(ctx context.Context, ref forge.IssueRef) (*Detail, error) {
 	agentID, err := b.agentID(ctx, ref)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	is, comments, err := b.forgeOf(ref.Kind()).Thread(ctx, ref)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	fmt.Fprintf(w, "%s  %s\n", refString(ref), is.Title)
 	c, m := latestPost(comments, agentID)
 	if c == nil {
-		return fmt.Errorf("%s has no post from the agent", refString(ref))
+		return nil, wrap(ErrNotFound, fmt.Errorf("%s has no post from the agent", refString(ref)))
 	}
-	since := "?"
+	d := &Detail{
+		Ref: refString(ref), Title: is.Title, URL: is.URL,
+		Waiting: is.State == "open" && labels.StateOf(is.Labels, b.Config.Labels) == b.Config.Labels.Waiting,
+		Host:    orQ(m.Host), State: orQ(m.State), Reason: orQ(m.Reason), Post: body(c.Body),
+	}
 	if !m.At.IsZero() {
-		since = m.At.Local().Format(time.RFC3339)
+		at := m.At
+		d.Since = &at
 	}
-	fmt.Fprintf(w, "host %s, %s (%s), since %s\n\n%s\n", orQ(m.Host), orQ(m.State), orQ(m.Reason), since, body(c.Body))
+	return d, nil
+}
+
+// Show writes the agent's latest post on the issue, without its marker.
+func (b *Inbox) Show(ctx context.Context, ref forge.IssueRef, w io.Writer) error {
+	d, err := b.Detail(ctx, ref)
+	if err != nil {
+		return err
+	}
+	PrintDetail(w, d)
 	return nil
+}
+
+// PrintDetail writes d for a person to read.
+func PrintDetail(w io.Writer, d *Detail) {
+	since := "?"
+	if d.Since != nil {
+		since = d.Since.Local().Format(time.RFC3339)
+	}
+	fmt.Fprintf(w, "%s  %s\nhost %s, %s (%s), since %s\n\n%s\n", d.Ref, d.Title, d.Host, d.State, d.Reason, since, d.Post)
 }
 
 // Reply posts text on the issue. Unless force is set, the issue must still be waiting.
 func (b *Inbox) Reply(ctx context.Context, ref forge.IssueRef, text string, force bool) error {
 	text = strings.TrimSpace(text)
 	if text == "" {
-		return errors.New("the reply is empty")
+		return wrap(ErrInvalid, errors.New("the reply is empty"))
 	}
 	if _, ok := marker.Parse(text); ok {
-		return errors.New("the reply ends in a switchboard marker line; remove it")
+		return wrap(ErrInvalid, errors.New("the reply ends in a switchboard marker line; remove it"))
 	}
 	f := b.forgeOf(ref.Kind())
 	is, _, err := f.Thread(ctx, ref)
@@ -422,7 +494,7 @@ func (b *Inbox) Reply(ctx context.Context, ref forge.IssueRef, text string, forc
 		if now == "" {
 			now = "no state label"
 		}
-		return fmt.Errorf("%s is not waiting (%s); nothing was posted. Use --force to post anyway", refString(ref), now)
+		return wrap(ErrNotWaiting, fmt.Errorf("%s is not waiting (%s); nothing was posted. Use --force to post anyway", refString(ref), now))
 	}
 	_, err = f.PostComment(ctx, ref, text)
 	return err

@@ -20,7 +20,19 @@ const (
 	UnitPath      = "/etc/systemd/system/" + Name
 	RelayName     = "switchboard-relay.service"
 	RelayUnitPath = "/etc/systemd/system/" + RelayName
+	InboxName     = "switchboard-inbox.service"
+	WebName       = "switchboard-web.service"
 	CredDir       = "/etc/credstore.encrypted"
+)
+
+// Kind is which service a Setup describes.
+type Kind string
+
+const (
+	KindAgent Kind = ""      // agent run
+	KindRelay Kind = "relay" // relay serve
+	KindInbox Kind = "inbox" // inbox serve, with the inbox tokens
+	KindWeb   Kind = "web"   // switchboard-web serve, with no credential
 )
 
 // Credential is one agent token, by its token_ref and its credential name.
@@ -33,8 +45,8 @@ type Credential struct {
 func (c Credential) Path() string { return CredDir + "/switchboard." + c.Name }
 
 // Credentials lists the agent tokens of this host's projects: the forges' token_ref and the projects' overrides, and
-// the relay bearer token when the agent follows a relay. The inbox tokens are left out; the service never reads or
-// replies as the user.
+// the relay bearer token when the agent follows a relay, and the Telegram bot token when it notifies. The inbox
+// tokens are left out; the agent's service never reads or replies as the user.
 func Credentials(cfg *config.Config) []Credential {
 	var refs []string
 	for _, p := range cfg.ProjectsFor(cfg.Host.Name) {
@@ -42,6 +54,21 @@ func Credentials(cfg *config.Config) []Credential {
 	}
 	if r := cfg.Agent.Relay; r != nil {
 		refs = append(refs, r.TokenRef)
+	}
+	if t := cfg.Notify.Telegram; t != nil {
+		refs = append(refs, t.TokenRef)
+	}
+	return credentials(refs)
+}
+
+// InboxCredentials lists the inbox tokens of the forges the configuration uses: the inbox service reads and
+// replies as the user, and needs no agent token.
+func InboxCredentials(cfg *config.Config) []Credential {
+	var refs []string
+	for _, kind := range []string{"gh", "gl"} {
+		if cfg.Uses(kind) {
+			refs = append(refs, cfg.InboxTokenRef(kind))
+		}
 	}
 	return credentials(refs)
 }
@@ -70,16 +97,23 @@ func credentials(refs []string) []Credential {
 
 // Setup is what the unit is made from.
 type Setup struct {
-	User, Home, Path string // the account the agent runs as, its home, and the PATH that finds claude and git
-	Binary, Config   string // absolute paths of switchboard and of the configuration
-	Creds            []Credential
-	Relay            bool // the relay's service (relay serve) instead of the agent's
+	User, Home, Path string // the account the service runs as, its home, and the PATH that finds claude and git
+	// Binary and Config are absolute paths: of switchboard and config.yaml, or for KindWeb of switchboard-web and
+	// web.yaml.
+	Binary, Config string
+	Creds          []Credential
+	Kind           Kind
 }
 
 // UnitName is the name of the service's unit.
 func (s Setup) UnitName() string {
-	if s.Relay {
+	switch s.Kind {
+	case KindRelay:
 		return RelayName
+	case KindInbox:
+		return InboxName
+	case KindWeb:
+		return WebName
 	}
 	return Name
 }
@@ -90,13 +124,23 @@ func (s Setup) UnitPath() string { return "/etc/systemd/system/" + s.UnitName() 
 // Unit is the systemd unit of the service.
 func (s Setup) Unit() string {
 	var b strings.Builder
-	what, command := "agent", "agent run"
-	if s.Relay {
+	what, command, after := "agent", "agent run", "network-online.target"
+	switch s.Kind {
+	case KindRelay:
 		what, command = "relay", "relay serve"
+	case KindInbox:
+		what, command = "inbox", "inbox serve"
+	case KindWeb:
+		what, command, after = "web inbox", "serve", after+" "+InboxName
 	}
-	fmt.Fprintf(&b, "[Unit]\nDescription=switchboard %s\nAfter=network-online.target\nWants=network-online.target\n\n", what)
+	fmt.Fprintf(&b, "[Unit]\nDescription=switchboard %s\nAfter=%s\nWants=%s\n\n", what, after, after)
 	fmt.Fprintf(&b, "[Service]\nUser=%s\nEnvironment=HOME=%s\nEnvironment=PATH=%s\n", s.User, s.Home, s.Path)
 	fmt.Fprintf(&b, "ExecStart=%s %s --config %s\n", s.Binary, command, s.Config)
+	if s.Kind == KindInbox {
+		// Only the inbox's unit owns the directory: systemd removes a unit's RuntimeDirectory when the unit stops,
+		// and the web inbox, running as the same user, opens the socket in it.
+		fmt.Fprintf(&b, "RuntimeDirectory=switchboard\nRuntimeDirectoryMode=0700\n")
+	}
 	for _, c := range s.Creds {
 		fmt.Fprintf(&b, "LoadCredentialEncrypted=%s:%s\n", c.Name, c.Path())
 	}

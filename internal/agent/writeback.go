@@ -12,6 +12,7 @@ import (
 	"github.com/uskanda/switchboard/internal/claudecode"
 	"github.com/uskanda/switchboard/internal/forge"
 	"github.com/uskanda/switchboard/internal/marker"
+	"github.com/uskanda/switchboard/internal/notify"
 	"github.com/uskanda/switchboard/internal/workspace"
 )
 
@@ -87,7 +88,7 @@ func (a *Agent) writeBack(ctx context.Context, ref forge.IssueRef, o *outcome) e
 	if err := a.State.WriteJSON(filepath.Join("runs", o.Run, "outcome.json"), o); err != nil {
 		return err
 	}
-	_, comments, err := a.forgeOf(ref).Thread(ctx, ref)
+	is, comments, err := a.forgeOf(ref).Thread(ctx, ref)
 	if err != nil {
 		return err
 	}
@@ -104,6 +105,7 @@ func (a *Agent) writeBack(ctx context.Context, ref forge.IssueRef, o *outcome) e
 			body = fmt.Sprintf(o.msg.withheld, o.Run)
 			a.Audit.Log("comment.withheld", map[string]any{"issue": ref.String(), "run": o.Run})
 		}
+		posting := body
 		m := marker.Marker{Host: a.Config.Host.Name, Session: o.Session, Run: o.Run, State: o.State, Reason: o.Reason, Ack: o.Ack, At: time.Now()}
 		body += "\n\n" + m.Format() + "\n"
 		a.checkComment(ref, o.Run, body)
@@ -112,6 +114,9 @@ func (a *Agent) writeBack(ctx context.Context, ref forge.IssueRef, o *outcome) e
 			return fmt.Errorf("post comment: %w", err)
 		}
 		a.Audit.Log("comment.posted", map[string]any{"issue": ref.String(), "run": o.Run, "comment": c.ID, "state": o.State, "reason": o.Reason})
+		// The recovery of a write-back finds this comment and posts nothing, so the notification goes out now,
+		// after the label, even when setting the label fails.
+		defer a.notify(ctx, &is.IssueSummary, o, posting)
 	}
 	to := a.Config.Labels.Waiting
 	if o.State == "done" {
@@ -224,4 +229,31 @@ func (a *Agent) loadRecord(ref forge.IssueRef) (*record, error) {
 		return nil, err
 	}
 	return &rec, nil
+}
+
+// Notifier tells the user about an issue outside the forge.
+type Notifier interface {
+	Send(ctx context.Context, text string) error
+}
+
+// notify sends the notification of a comment just posted with body (without its marker). A failure is recorded and
+// changes nothing else.
+func (a *Agent) notify(ctx context.Context, is *forge.IssueSummary, o *outcome, body string) {
+	if a.Notifier == nil {
+		return
+	}
+	ref, lang := is.Ref.String(), a.Config.Comments.Language
+	var text string
+	if o.State == "done" {
+		text = notify.Done{Ref: ref, ChangeURL: o.PR, IssueURL: is.URL}.Text(lang)
+	} else {
+		text = notify.Waiting{
+			Ref: ref, Title: is.Title, Reason: o.Reason, Question: Question(body),
+			IssueURL: is.URL, WebURL: a.Config.Notify.WebURL,
+		}.Text(lang)
+	}
+	if err := a.Notifier.Send(ctx, text); err != nil {
+		a.Audit.Log("notify.failed", map[string]any{"issue": ref, "kind": o.State, "reason": err.Error()})
+		a.logf("%s: the notification could not be sent: %v", ref, err)
+	}
 }

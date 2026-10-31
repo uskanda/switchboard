@@ -17,7 +17,7 @@ GitHub/GitLabのissueを起点に、複数端末・複数プロダクトにま�
 | 方針 | 内容 |
 |---|---|
 | issue駆動 | 作業単位・状態・応答経路は、すべてissueで管理する |
-| ローカルは外向き通信のみ | 端末側に受信ポートを開けない |
+| ローカルは外向き通信のみ | 端末側に受信ポートを開けない。例外は受信箱のWeb表示で、LANのアドレスに限る |
 | 中継は呼び鈴だけ | 中継サーバーは「issue IDが更新された」ことだけを伝え、本文は必ずローカルがフォージから取り直す |
 | 状態はissueとリポジトリに置く | 毎回まっさらな文脈で起動できる設計を基本とし、`--resume` は最適化扱い |
 | 横断一覧はローカルで集約 | 両フォージのラベル検索結果をマージして表示する |
@@ -38,12 +38,13 @@ GitHub/GitLabのissueを起点に、複数端末・複数プロダクトにま�
 
 ## ステータス
 
-Phase 4の実装中。Phase 1からPhase 3までの実装を終えた。Phase 3の2台での実物の確認は、後回しにしている。GitHubとGitLab（GitLab.comとセルフホスト）のプロジェクトを扱い、両フォージの待ちを1つの受信箱に出せることを、実物で確かめた（[docs/ROADMAP.md](docs/ROADMAP.md) の検証項目V20、V24）。エージェントはsystemdのサービスとして常駐でき、複数の端末が同じissueを重ねて実行しない。Phase 4では、webhookを受ける中継を足し、返答から実行の開始までをポーリングの間隔に依存させない。対象はLinux（Ubuntu）で、macOSは後のフェーズで扱う。
+Phase 5の実装中。Phase 1からPhase 4までの実装を終えた。Phase 3の2台での実物の確認は、後回しにしている。GitHubとGitLab（GitLab.comとセルフホスト）のプロジェクトを扱い、両フォージの待ちを1つの受信箱に出せることを、実物で確かめた（[docs/ROADMAP.md](docs/ROADMAP.md) の検証項目V20、V24）。エージェントはsystemdのサービスとして常駐でき、複数の端末が同じissueを重ねて実行しない。Phase 4で、webhookを受ける中継を足し、返答から実行の開始までをポーリングの間隔に依存させなくした。Phase 5では、待ちと完了をTelegramに知らせ、ブラウザから受信箱を見て返答できるようにする。対象はLinux（Ubuntu）で、macOSは後のフェーズで扱う。
 
 ## 必要なもの
 
 - Linux（Ubuntuで確認）
 - Go 1.24以上と、git
+- 受信箱のWeb表示（`switchboard-web`）を作るときは、Node.js 24とpnpm 12
 - Claude Code CLI（`claude`）。2.1.312で確認した
 - Secret Service（GNOME Keyringなど）と、`secret-tool`（Ubuntuでは `libsecret-tools` パッケージ）
 
@@ -57,6 +58,12 @@ git clone https://github.com/uskanda/switchboard.git && cd switchboard
 
 ```bash
 make build && install -D -m 0755 bin/switchboard ~/.local/bin/switchboard
+```
+
+`make build` は、受信箱のWeb表示の `bin/switchboard-web` も作る。使うときは、同じように置く。
+
+```bash
+install -D -m 0755 bin/switchboard-web ~/.local/bin/switchboard-web
 ```
 
 mainブランチに取り込まれた版は、`go install` でも入れられる。
@@ -271,11 +278,67 @@ GitLabは、4回続けて失敗したwebhookを一時的に止める。中継を
 
 署名トークンを使えないGitLabでは、`relay hook add --gitlab-token` で、`X-Gitlab-Token` を使って登録できる。このとき、設定の項目に `gitlab_token: true` が付く。`X-Gitlab-Token` は平文の共有シークレットなので、署名トークンが使えるならそちらを使う。
 
+### 待ちと完了をTelegramに知らせる
+
+issueが待ちになったときと完了したときに、エージェントがTelegramのbotから知らせる。待ちの通知には、プロジェクト、issue番号、タイトル、待ちの理由、質問の抜粋、issueのURLが載る。完了の通知には、作ったPRかMRのURLが載る。タイトルと質問の抜粋はTelegramのサーバーを通るので、載せたくないプロジェクトでは通知を使わない。
+
+1. @BotFatherでbotを作り、そのbotに一言送ってから、chat idを調べる。既にあるbotを使ってもよい
+2. botのトークンをSecret Serviceに置く。トークンは標準入力から読む
+
+   ```bash
+   secret-tool store --label='switchboard telegram' service switchboard/telegram username token
+   ```
+
+3. 設定に `notify` 節を足し、`switchboard service install` でエージェントを置き直す。botのトークンも、暗号化したクレデンシャルとしてサービスに渡る
+
+   ```yaml
+   notify:
+     telegram:
+       chat_id: "<chat id>"
+       token_ref: switchboard/telegram
+     web_url: http://192.168.0.82:8783   # 受信箱のWeb表示。あれば通知にリンクが付く
+   ```
+
+通知に失敗しても、エージェントの処理は止まらない。失敗は監査ログ（`~/.local/state/switchboard/audit.jsonl`）に `notify.failed` として残る。
+
+### ブラウザで受信箱を見る
+
+受信箱のWeb表示（`switchboard-web`）は、待ちの一覧と、1件の質問の全文を出し、そこから返答できる。デスクトップとスマホのどちらのブラウザでも使える。仕組みは次の2つのサービスに分かれる。
+
+- `switchboard inbox serve`：受信箱のトークンを持ち、Unixソケット（`/run/switchboard/inbox.sock`）で一覧、1件、返答のAPIを出す。一覧は60秒キャッシュする
+- `switchboard-web serve`：そのAPIを呼び、LANのアドレスで画面を出す。フォージのトークンは持たない
+
+Web表示は、端末で受信ポートを開く唯一の部品である（ADR-036）。LANの中だけに出す。今の版では、利用者を認証しない。そのため、LANの中の機器なら誰でも、自分の名前で返答できる。外のWebページからの返答は、`Origin` と `Host` の検査で拒む。
+
+1. `~/.config/switchboard/web.yaml` に、待ち受けのアドレスを書く。この端末のLANのIPアドレスとポートを明示する。`0.0.0.0` は拒まれる。ホスト名は書けない。`Host` の検査を、この1つの値との比較にするためである。ブラウザでも、このIPアドレスで開く
+
+   ```yaml
+   listen: 192.168.0.82:8783
+   ```
+
+2. 2つのサービスを置く。受信箱のサービスには、各フォージの `inbox_token_ref` だけがクレデンシャルとして渡る。Web表示のサービスは、`PATH` にある `switchboard-web` を動かし、クレデンシャルを持たない
+
+   ```bash
+   switchboard service install --inbox
+   switchboard service install --web
+   ```
+
+3. ブラウザで `http://192.168.0.82:8783` を開く。防火壁でポートを閉じているときは、LANからだけ開ける。firewalldなら、たとえば次のようにする
+
+   ```bash
+   sudo firewall-cmd --permanent --zone=public --add-rich-rule='rule family="ipv4" source address="192.168.0.0/24" port port="8783" protocol="tcp" accept'
+   sudo firewall-cmd --reload
+   ```
+
+状態は `switchboard service status --inbox` と `--web` で見る。手で試すときは、`switchboard inbox serve` を動かしてから `switchboard-web serve` を動かす。このときソケットは `$XDG_RUNTIME_DIR/switchboard/inbox.sock` にでき、`web.yaml` の `socket` で場所を指定できる。
+
 ## 開発
 
 ```bash
 make verify
 ```
+
+`make verify` は、`web/` の検査（型の検査、lint、テスト、ビルド）も実行するので、Node.jsとpnpmが要る。画面の見た目の基準は [DESIGN.md](DESIGN.md)、使う人と目的は [PRODUCT.md](PRODUCT.md) にある。
 
 実物の `claude` で、着手から質問、返答、完了までを通す確認もある。モデルを呼ぶため、`make verify` とCIでは動かない。
 

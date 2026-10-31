@@ -147,7 +147,8 @@ func threadServer(t *testing.T, edits []any) (*server, *Client) {
 	s, c := newServer(t)
 	s.on("GET "+proj+"/issues/3", jsonReply(map[string]any{
 		"iid": 3, "title": "t", "description": "the body", "state": "opened", "labels": []string{"agent:waiting"},
-		"author": user(1, "alice"), "created_at": "2026-10-30T09:00:00+09:00", "updated_at": "2026-10-30T09:05:00+09:00",
+		"web_url": "https://gl.test/nas/tools/sb/-/issues/3",
+		"author":  user(1, "alice"), "created_at": "2026-10-30T09:00:00+09:00", "updated_at": "2026-10-30T09:05:00+09:00",
 	}))
 	s.on("GET "+proj+"/issues/3/notes", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("sort") != "asc" {
@@ -174,6 +175,9 @@ func TestThreadTakesEditorsFromSystemNotesAndGraphQL(t *testing.T) {
 	is, cs, err := c.Thread(ctx, ref)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if is.URL != "https://gl.test/nas/tools/sb/-/issues/3" {
+		t.Fatalf("URL = %q", is.URL)
 	}
 	if is.Ref != ref || is.State != "open" || is.Body != "the body" || is.Author.ID != 1 {
 		t.Fatalf("issue = %+v", is)

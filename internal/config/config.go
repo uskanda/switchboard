@@ -27,6 +27,7 @@ type Config struct {
 	Agent          Agent          `yaml:"agent"`
 	Projects       []Project      `yaml:"projects"`
 	Relay          Relay          `yaml:"relay"`
+	Notify         Notify         `yaml:"notify"`
 }
 
 // Host names this machine; projects whose host matches run here.
@@ -137,8 +138,8 @@ func DefaultPath() string {
 	return filepath.Join(base, "switchboard", "config.yaml")
 }
 
-// tokenLike matches values that look like a forge token. Such a value never belongs in the file.
-var tokenLike = regexp.MustCompile(`^(ghp_|github_pat_|gho_|ghs_|ghu_|ghr_|glpat-)`)
+// tokenLike matches values that look like a forge token or a Telegram bot token. Such a value never belongs in the file.
+var tokenLike = regexp.MustCompile(`^(ghp_|github_pat_|gho_|ghs_|ghu_|ghr_|glpat-|[0-9]{6,}:[A-Za-z0-9_-]{30,}$)`)
 
 // Load reads, validates and completes the configuration at path.
 func Load(path string) (*Config, error) {
@@ -352,6 +353,7 @@ func (c *Config) validate() error {
 		}
 	}
 	errs = append(errs, c.validateRelay()...)
+	errs = append(errs, c.validateNotify()...)
 	// A forge's settings are required once a project is on it.
 	if c.Uses("gh") {
 		need(c.Forges.GitHub.TokenRef, "forges.github.token_ref (a project is on GitHub)")
