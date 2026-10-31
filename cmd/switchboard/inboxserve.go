@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/uskanda/switchboard/inboxapi"
+	"github.com/uskanda/switchboard/internal/config"
 	"github.com/uskanda/switchboard/internal/inbox"
 	"github.com/uskanda/switchboard/internal/inboxserve"
 	"github.com/uskanda/switchboard/internal/instructions"
@@ -33,6 +35,18 @@ func socketPath(flagValue string) string {
 		return flagValue
 	}
 	return inboxapi.ServerSocket()
+}
+
+// inboxAPI is the inbox service's handler for cfg: the inbox b, the instructions in store, and the interval the
+// forges are read at while a page listens.
+func inboxAPI(cfg *config.Config, b inboxserve.Inbox, store instructions.Store) *inboxserve.Server {
+	var projects []string
+	for _, p := range cfg.Projects {
+		projects = append(projects, p.Ref)
+	}
+	return &inboxserve.Server{Inbox: b, Interval: cfg.Inbox.RefreshInterval, Instructions: &inboxserve.Instructions{
+		Store: store, Projects: projects, Host: cfg.Host.Name,
+	}}
 }
 
 func inboxServe(args []string, stdout, stderr io.Writer) int {
@@ -61,14 +75,10 @@ func inboxServe(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, err)
 	}
-	var projects []string
-	for _, p := range cfg.Projects {
-		projects = append(projects, p.Ref)
-	}
-	api := &inboxserve.Server{Inbox: b, Instructions: &inboxserve.Instructions{
-		Store: instructions.For(cfg.Path, d.Audit()), Projects: projects, Host: cfg.Host.Name,
-	}}
-	srv := &http.Server{Handler: api, ReadHeaderTimeout: 10 * time.Second}
+	api := inboxAPI(cfg, b, instructions.For(cfg.Path, d.Audit()))
+	// Requests end with ctx, so the event streams, which never go idle, close on a signal instead of holding the
+	// shutdown.
+	srv := &http.Server{Handler: api, ReadHeaderTimeout: 10 * time.Second, BaseContext: func(net.Listener) context.Context { return ctx }}
 	go func() {
 		<-ctx.Done()
 		shut, cancel := context.WithTimeout(context.Background(), 5*time.Second)
