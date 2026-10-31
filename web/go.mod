@@ -5,3 +5,5 @@ go 1.24.7
 replace github.com/uskanda/switchboard => ../
 
 require gopkg.in/yaml.v3 v3.0.1
+
+require github.com/uskanda/switchboard v0.0.0

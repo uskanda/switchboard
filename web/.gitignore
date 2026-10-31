@@ -1,0 +1,3 @@
+/internal/assets/dist/*
+!/internal/assets/dist/.gitkeep
+/ui/node_modules/
