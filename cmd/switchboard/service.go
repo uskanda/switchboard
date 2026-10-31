@@ -32,8 +32,9 @@ func sudo(s service.Step) error {
 	return cmd.Run()
 }
 
-// setup describes the agent's service, or the relay's, for cfg loaded from cfgPath: this user, this binary, this PATH.
-func setup(cfg *config.Config, cfgPath string, relay bool) (service.Setup, error) {
+// setup describes the service of kind for cfg loaded from cfgPath: this user, this binary, this PATH. The web
+// inbox's service runs switchboard-web, found on PATH, with web.yaml beside config.yaml.
+func setup(cfg *config.Config, cfgPath string, kind service.Kind) (service.Setup, error) {
 	u, err := user.Current()
 	if err != nil {
 		return service.Setup{}, err
@@ -49,48 +50,94 @@ func setup(cfg *config.Config, cfgPath string, relay bool) (service.Setup, error
 	if err != nil {
 		return service.Setup{}, err
 	}
-	creds := service.Credentials(cfg)
-	if relay {
-		creds = service.RelayCredentials(cfg)
+	s := service.Setup{User: u.Username, Home: u.HomeDir, Path: os.Getenv("PATH"), Binary: bin, Config: abs, Kind: kind}
+	switch kind {
+	case service.KindAgent:
+		s.Creds = service.Credentials(cfg)
+	case service.KindRelay:
+		s.Creds = service.RelayCredentials(cfg)
+	case service.KindInbox:
+		s.Creds = service.InboxCredentials(cfg)
+	case service.KindWeb:
+		web, err := exec.LookPath("switchboard-web")
+		if err != nil {
+			return service.Setup{}, errors.New("switchboard-web is not on PATH: build it (make build) and put it beside switchboard first")
+		}
+		if web, err = filepath.Abs(web); err != nil {
+			return service.Setup{}, err
+		}
+		if web, err = filepath.EvalSymlinks(web); err != nil {
+			return service.Setup{}, err
+		}
+		s.Binary, s.Config = web, filepath.Join(filepath.Dir(abs), "web.yaml")
 	}
-	return service.Setup{User: u.Username, Home: u.HomeDir, Path: os.Getenv("PATH"), Binary: bin, Config: abs, Creds: creds, Relay: relay}, nil
+	return s, nil
 }
 
-// serviceFlags parses the options of install and uninstall, and returns the configuration and its path.
-// It also reports whether --relay chose the relay's service.
-func serviceFlags(name string, args []string, stderr io.Writer, c *service.Confirm) (*config.Config, string, bool, int) {
-	var relay bool
+// kindFlags adds --relay, --inbox and --web, which choose a service other than the agent's.
+func kindFlags(fs *flag.FlagSet) func() (service.Kind, bool) {
+	relay := fs.Bool("relay", false, "the relay's service (relay serve) instead of the agent's")
+	inbox := fs.Bool("inbox", false, "the inbox service (inbox serve) the web inbox calls, instead of the agent's")
+	web := fs.Bool("web", false, "the web inbox's service (switchboard-web serve) instead of the agent's")
+	return func() (service.Kind, bool) {
+		kind, n := service.KindAgent, 0
+		for _, k := range []struct {
+			on   bool
+			kind service.Kind
+		}{{*relay, service.KindRelay}, {*inbox, service.KindInbox}, {*web, service.KindWeb}} {
+			if k.on {
+				kind, n = k.kind, n+1
+			}
+		}
+		return kind, n <= 1
+	}
+}
+
+const kindUsage = "[--relay | --inbox | --web]"
+
+// serviceFlags parses the options of install and uninstall, and returns the configuration, its path, and the kind
+// of service chosen.
+func serviceFlags(name string, args []string, stderr io.Writer, c *service.Confirm) (*config.Config, string, service.Kind, int) {
+	var kind func() (service.Kind, bool)
 	cfg, fs, code := parse(name, args, stderr, func(fs *flag.FlagSet) {
 		fs.BoolVar(&c.DryRun, "dry-run", false, "show the commands that would run with sudo, and stop")
 		fs.BoolVar(&c.Yes, "yes", false, "run the commands without asking")
-		fs.BoolVar(&relay, "relay", false, "the relay's service (relay serve) instead of the agent's")
+		kind = kindFlags(fs)
 	})
 	if code >= 0 {
-		return nil, "", false, code
+		return nil, "", "", code
 	}
-	if fs.NArg() != 0 {
-		fmt.Fprintf(stderr, "usage: switchboard %s [--relay] [--dry-run] [--yes] [--config FILE]\n", name)
-		return nil, "", false, 2
+	k, ok := kind()
+	if fs.NArg() != 0 || !ok {
+		fmt.Fprintf(stderr, "usage: switchboard %s %s [--dry-run] [--yes] [--config FILE]\n", name, kindUsage)
+		return nil, "", "", 2
 	}
-	return cfg, fs.Lookup("config").Value.String(), relay, -1
+	return cfg, fs.Lookup("config").Value.String(), k, -1
 }
 
 func serviceInstall(args []string, stdout, stderr io.Writer) int {
 	c := service.Confirm{In: os.Stdin, Out: stdout, TTY: isTerminal(os.Stdin)}
-	cfg, cfgPath, relay, code := serviceFlags("service install", args, stderr, &c)
+	cfg, cfgPath, kind, code := serviceFlags("service install", args, stderr, &c)
 	if code >= 0 {
 		return code
 	}
-	s, err := setup(cfg, cfgPath, relay)
+	s, err := setup(cfg, cfgPath, kind)
 	if err != nil {
 		return fail(stderr, err)
 	}
+	relay := kind == service.KindRelay
 	switch {
+	case kind == service.KindInbox && len(s.Creds) == 0:
+		return fail(stderr, errors.New("no forge has an inbox_token_ref; the inbox service reads and replies with your own token"))
+	case kind == service.KindWeb:
+		if _, err := os.Stat(s.Config); err != nil {
+			return fail(stderr, fmt.Errorf("%s: write it first (listen: <LAN address>:<port>); see the README", s.Config))
+		}
 	case relay && len(cfg.Relay.Hosts) == 0:
 		return fail(stderr, errors.New("relay.hosts is empty: no agent could subscribe; add one with `switchboard relay token add <host>`"))
 	case relay && len(s.Creds) == 0:
 		return fail(stderr, errors.New("relay.hooks is empty: the relay would take no webhook; add one with `switchboard relay hook add <project>`"))
-	case !relay && len(s.Creds) == 0:
+	case kind == service.KindAgent && len(s.Creds) == 0:
 		return fail(stderr, fmt.Errorf("no project of this host (%s); nothing to run", cfg.Host.Name))
 	}
 	unit, err := os.CreateTemp("", strings.TrimSuffix(s.UnitName(), ".service")+"-*.service")
@@ -120,8 +167,8 @@ func serviceInstall(args []string, stdout, stderr io.Writer) int {
 	}
 	if !c.DryRun {
 		status := "switchboard service status"
-		if relay {
-			status += " --relay"
+		if kind != service.KindAgent {
+			status += " --" + string(kind)
 		}
 		fmt.Fprintf(stdout, "installed %s; see it with: %s, journalctl -u %s\n", s.UnitName(), status, s.UnitName())
 	}
@@ -130,11 +177,15 @@ func serviceInstall(args []string, stdout, stderr io.Writer) int {
 
 func serviceUninstall(args []string, stdout, stderr io.Writer) int {
 	c := service.Confirm{In: os.Stdin, Out: stdout, TTY: isTerminal(os.Stdin)}
-	cfg, cfgPath, relay, code := serviceFlags("service uninstall", args, stderr, &c)
+	cfg, cfgPath, kind, code := serviceFlags("service uninstall", args, stderr, &c)
 	if code >= 0 {
 		return code
 	}
-	s, err := setup(cfg, cfgPath, relay)
+	s, err := setup(cfg, cfgPath, kind)
+	if err != nil && kind == service.KindWeb {
+		// Removing the web inbox's service needs neither its binary nor web.yaml.
+		s, err = service.Setup{Kind: service.KindWeb}, nil
+	}
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -152,13 +203,14 @@ func serviceUninstall(args []string, stdout, stderr io.Writer) int {
 }
 
 func serviceStatus(args []string, stdout, stderr io.Writer) int {
-	var relay bool
-	if _, fs, code := parse("service status", args, stderr, func(fs *flag.FlagSet) {
-		fs.BoolVar(&relay, "relay", false, "the relay's service instead of the agent's")
-	}); code >= 0 {
+	var kind func() (service.Kind, bool)
+	_, fs, code := parse("service status", args, stderr, func(fs *flag.FlagSet) { kind = kindFlags(fs) })
+	if code >= 0 {
 		return code
-	} else if fs.NArg() != 0 {
-		fmt.Fprintln(stderr, "usage: switchboard service status [--relay] [--config FILE]")
+	}
+	k, ok := kind()
+	if fs.NArg() != 0 || !ok {
+		fmt.Fprintf(stderr, "usage: switchboard service status %s [--config FILE]\n", kindUsage)
 		return 2
 	}
 	read := func(path string) (string, error) {
@@ -172,6 +224,6 @@ func serviceStatus(args []string, stdout, stderr io.Writer) int {
 		}
 		return "unknown"
 	}
-	service.Status(stdout, service.Setup{Relay: relay}, read, systemctl)
+	service.Status(stdout, service.Setup{Kind: k}, read, systemctl)
 	return 0
 }

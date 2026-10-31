@@ -28,9 +28,9 @@
 
 ## 5. サービス（`service`）
 
-- [ ] 5.1 `service install --inbox`、`uninstall --inbox`、`status --inbox` を作る。各フォージの `inbox_token_ref` だけがクレデンシャルになること、unitに `RuntimeDirectory=switchboard` が入ることをテストで確かめる
-- [ ] 5.2 `service install --web`、`uninstall --web`、`status --web` を作る。次をテストで確かめる。`PATH` から `<switchboard-web>` を探して絶対パスで書くこと、見つからなければsudoを呼ばないこと、クレデンシャルと `RuntimeDirectory=` が無いこと
-- [ ] 5.3 エージェントのサービスで、`<notify.telegram>` の `token_ref` もクレデンシャルにする。受信箱のトークンが入らないままであることをテストで確かめる
+- [x] 5.1 `service install --inbox`、`uninstall --inbox`、`status --inbox` を作る。各フォージの `inbox_token_ref` だけがクレデンシャルになること、unitに `RuntimeDirectory=switchboard` が入ることをテストで確かめる
+- [x] 5.2 `service install --web`、`uninstall --web`、`status --web` を作る。次をテストで確かめる。`PATH` から `<switchboard-web>` を探して絶対パスで書くこと、見つからなければsudoを呼ばないこと、クレデンシャルと `RuntimeDirectory=` が無いこと
+- [x] 5.3 エージェントのサービスで、`<notify.telegram>` の `token_ref` もクレデンシャルにする。受信箱のトークンが入らないままであることをテストで確かめる
 
 ## 6. 検証の入口と文書
 
