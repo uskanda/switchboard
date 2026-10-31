@@ -56,9 +56,9 @@ issueのURLを得るために、`forge.IssueSummary` に `URL` を足し、GitHu
 
 APIのサーバーから使えるように、次のように分ける。CLIの表示は今までどおりにする。
 
-- `List` は、`[]Item` と、フォージごとの誤り（`[]ForgeError{Forge, Err}`）を返す。行番号のキャッシュへの書き込みは、CLIの側（`inboxList`）に移す。APIは行番号を使わない
-- `Show` は、`Detail{Ref, Title, URL, Waiting, Question, Denials}` を返す `Detail` と、それを書く `PrintDetail` に分ける
-- `Reply` は今のままにし、待ちでないときの誤りを `ErrNotWaiting` として区別できるようにする
+- `Collect` を足す。`[]Item` と、フォージごとの誤り（`[]ForgeError{Forge, Err}`）を返し、行番号を記録しない。`List` は、`Collect` を呼んで行番号を記録する形にし、CLIから今までどおり使う。APIは行番号を使わない
+- `Show` は、`Detail` を返す `Detail` と、それを書く `PrintDetail` に分ける。`Detail` は、タイトル、URL、待ちかどうか、マーカーの項目、エージェントの最新の投稿（質問と拒否された操作を含む）を持つ
+- `Reply` は今のままにする。誤りは、`errors.Is` で `ErrInvalid`、`ErrNotFound`、`ErrNotWaiting` を区別できるようにする。行番号を受けない `ParseRef` も足す
 
 ### 3. 受信箱のAPI（`switchboard inbox serve`、`<inboxapi>`）
 
