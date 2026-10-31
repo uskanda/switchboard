@@ -23,7 +23,7 @@ export function InboxPage() {
   }, []);
 
   return (
-    <Shell>
+    <Shell home>
       {error && <Alert>{error}</Alert>}
       {inbox?.errors.map((e) => (
         <Alert key={e.forge}>

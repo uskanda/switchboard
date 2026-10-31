@@ -59,8 +59,8 @@ export function IssuePage() {
               <ReasonBadge reason={detail.reason} />
               <span>{detail.host}</span>
               <span>{age(detail.since)}</span>
-              <a href={detail.url} className="underline" target="_blank" rel="noreferrer">
-                フォージで開く
+              <a href={detail.url} className="inline-flex min-h-11 items-center underline" target="_blank" rel="noreferrer">
+                フォージで開く（新しいタブ）
               </a>
             </span>
           </div>

@@ -4,7 +4,9 @@
 
 ## Platform
 
-web。LANの中で、デスクトップとスマホのブラウザから開く。対象は、最新のChrome、Firefox、Safari（iOSを含む）である。
+web
+
+LANの中で、デスクトップとスマホのブラウザから開く。対象は、最新のChrome、Firefox、Safari（iOSを含む）である。
 
 ## Users
 

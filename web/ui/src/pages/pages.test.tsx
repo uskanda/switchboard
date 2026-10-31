@@ -47,6 +47,7 @@ describe("the inbox", () => {
     answer({ "GET /api/inbox": { status: 200, body: { items: [item, { ...item, n: 2, ref: "gl:nas/sb#6", reason: "error" }], errors: [], fetched_at: "" } } });
     at("/");
     expect(await screen.findAllByText("<script>alert(1)</script>")).not.toHaveLength(0);
+    expect(screen.getByRole("heading", { level: 1, name: "受信箱" })).toBeInTheDocument();
     expect(document.querySelector("script")).toBeNull();
     expect(screen.getAllByText("gh:o/r#12")[0].closest("a")).toHaveAttribute("href", "/issue/gh%3Ao%2Fr%2312");
     expect(screen.getAllByText("question")[0]).toBeInTheDocument();
