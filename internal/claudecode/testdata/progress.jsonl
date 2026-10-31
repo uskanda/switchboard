@@ -1,0 +1,4 @@
+{"type":"system","subtype":"init","session_id":"__SESSION__","cwd":"__CWD__"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"DESIGN.mdのバナーの記述を確かめる\n詳しくは後で"},{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"/secret/DESIGN.md"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"TOOL-OUTPUT-SECRET"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"echo TOOL-INPUT-SECRET"}},{"type":"tool_use","id":"t3","name":"Bash","input":{"command":"ls"}}]}}
