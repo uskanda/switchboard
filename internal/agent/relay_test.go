@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/uskanda/switchboard/internal/config"
 	"github.com/uskanda/switchboard/internal/forge"
 	"github.com/uskanda/switchboard/internal/relay"
 	"github.com/uskanda/switchboard/internal/trust"
@@ -115,6 +116,7 @@ func TestRelayStateSwitchesTheInterval(t *testing.T) {
 	x := newH(t, "", nil)
 	x.cfg.Agent.PollInterval = time.Hour
 	x.cfg.Agent.ReconcileInterval = 2 * time.Hour
+	x.cfg.Relay.Hooks = []config.Hook{{Project: "gh:o/r", Key: "k", SecretRef: "s"}} // the relay covers the project
 	c := &counting{Forge: x.f}
 	f := newFeed()
 	x.a = &Agent{Config: x.cfg, Forge: c, State: x.dir, Audit: x.audit, Relay: f, Debounce: 10 * time.Millisecond}

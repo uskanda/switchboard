@@ -66,11 +66,12 @@ type Agent struct {
 	closed  map[forge.IssueRef]bool // closed issues whose worktree waits for their run to stop
 	wg      sync.WaitGroup
 
-	pollMu    sync.Mutex // one poll or relay refresh at a time
-	rmu       sync.Mutex
-	connected bool                   // the relay stream is up
-	timers    map[string]*time.Timer // by project ref: the pending refresh of a project with events
-	wake      chan struct{}          // the relay connected or was lost
+	pollMu     sync.Mutex // one poll or relay refresh at a time
+	rmu        sync.Mutex
+	connected  bool                   // the relay stream is up
+	timers     map[string]*time.Timer // by project ref: the pending refresh of a project with events
+	wake       chan struct{}          // the relay connected or was lost
+	reconciled time.Time              // when every project was last fetched; guarded by rmu
 }
 
 // Route is what one project uses to reach its forge.
@@ -196,27 +197,38 @@ func (a *Agent) Run(ctx context.Context) error {
 	}
 	t := time.NewTicker(a.interval())
 	defer t.Stop()
+	ps := a.projects
 	for {
-		if err := a.Poll(ctx); err != nil && ctx.Err() == nil {
+		if err := a.poll(ctx, ps); err != nil && ctx.Err() == nil {
 			a.logf("poll: %v", err)
 		}
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-t.C:
-		case <-a.wake: // poll at once, then at the interval of the new state
+			ps = a.due(time.Now())
+		case <-a.wake: // poll every project at once, then at the interval of the new state
 			t.Reset(a.interval())
+			ps = a.projects
 		}
 	}
 }
 
 // Poll evaluates the issues updated since the last poll, then starts queued issues while slots are free.
-func (a *Agent) Poll(ctx context.Context) error {
+func (a *Agent) Poll(ctx context.Context) error { return a.poll(ctx, a.projects) }
+
+// poll is Poll for the projects ps. Fetching every project counts as a reconcile.
+func (a *Agent) poll(ctx context.Context, ps []config.Project) error {
 	a.pollMu.Lock()
 	defer a.pollMu.Unlock()
 	var errs []error
-	for _, p := range a.projects {
+	for _, p := range ps {
 		errs = append(errs, a.pollProject(ctx, p)...)
+	}
+	if len(ps) == len(a.projects) {
+		a.rmu.Lock()
+		a.reconciled = time.Now()
+		a.rmu.Unlock()
 	}
 	a.cleanClosed(ctx)
 	a.drain(ctx)

@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"regexp"
+	"strings"
 )
 
 // Relay is the relay's setting: where it listens, the webhooks it accepts and the hosts that may subscribe. It holds
@@ -45,6 +46,17 @@ func (r Relay) HookByKey(key string) (Hook, bool) {
 		}
 	}
 	return Hook{}, false
+}
+
+// Covers tells whether the relay sends events of the project ref: it has a webhook in hooks. Refs compare without
+// case, as the forges' paths do.
+func (r Relay) Covers(ref string) bool {
+	for _, h := range r.Hooks {
+		if strings.EqualFold(h.Project, ref) {
+			return true
+		}
+	}
+	return false
 }
 
 var (

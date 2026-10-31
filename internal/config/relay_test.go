@@ -86,3 +86,20 @@ func TestAgentRelayMode(t *testing.T) {
 		t.Fatalf("agent.relay without token_ref: %v", err)
 	}
 }
+
+func TestRelayCovers(t *testing.T) {
+	cfg, err := Load(write(t, withRelay("")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for ref, want := range map[string]bool{
+		"gl:nas/switchboard-sandbox": true,
+		"gl:NAS/Switchboard-Sandbox": true, // forge paths are case-insensitive
+		"gh:alice/sandbox":           false,
+		"gl:nas/elsewhere":           false,
+	} {
+		if got := cfg.Relay.Covers(ref); got != want {
+			t.Errorf("Covers(%q) = %v, want %v", ref, got, want)
+		}
+	}
+}

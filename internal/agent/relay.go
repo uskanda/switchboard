@@ -16,14 +16,38 @@ type Subscriber interface {
 	Run(ctx context.Context, on func(relay.Event), state func(connected bool))
 }
 
-// interval is how long the loop waits between polls: reconcile_interval while the relay is up, else poll_interval.
+// interval is how long the loop waits between polls: reconcile_interval while the relay is up and has a webhook for
+// every project, else poll_interval. A project without a webhook in relay.hooks gets no event, so it is polled as
+// if there were no relay.
 func (a *Agent) interval() time.Duration {
 	a.rmu.Lock()
 	defer a.rmu.Unlock()
-	if a.connected {
+	if a.connected && len(a.uncovered()) == 0 {
 		return a.Config.Agent.ReconcileInterval
 	}
 	return a.Config.Agent.PollInterval
+}
+
+// uncovered lists the projects the relay sends no event of.
+func (a *Agent) uncovered() []config.Project {
+	var out []config.Project
+	for _, p := range a.projects {
+		if !a.Config.Relay.Covers(p.Ref) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// due lists the projects a tick at now fetches: every one while the relay is down; while it is up, those without a
+// webhook, and the others too once reconcile_interval has passed since the last reconcile.
+func (a *Agent) due(now time.Time) []config.Project {
+	a.rmu.Lock()
+	defer a.rmu.Unlock()
+	if !a.connected || now.Sub(a.reconciled) >= a.Config.Agent.ReconcileInterval {
+		return a.projects
+	}
+	return a.uncovered()
 }
 
 // onRelayState records whether the relay is up and wakes the loop, which polls at once: on connecting, to take in
@@ -37,7 +61,11 @@ func (a *Agent) onRelayState(up bool) {
 		return
 	}
 	if up {
-		a.logf("relay connected; reconciling every %s", a.Config.Agent.ReconcileInterval)
+		a.rmu.Lock()
+		n := len(a.uncovered())
+		a.rmu.Unlock()
+		a.logf("relay connected; reconciling every %s, and polling %d project(s) without a webhook every %s",
+			a.Config.Agent.ReconcileInterval, n, a.Config.Agent.PollInterval)
 	} else {
 		a.logf("relay lost; polling every %s until it is back", a.Config.Agent.PollInterval)
 	}
