@@ -29,6 +29,7 @@ type Config struct {
 	Relay          Relay          `yaml:"relay"`
 	Notify         Notify         `yaml:"notify"`
 	Plan           Plan           `yaml:"plan"`
+	Inbox          Inbox          `yaml:"inbox"`
 
 	// Path is the file the configuration was loaded from.
 	Path string `yaml:"-"`
@@ -117,6 +118,15 @@ type AgentRelay struct {
 type Plan struct {
 	ApproveWord string `yaml:"approve_word"`
 }
+
+// Inbox controls the inbox service (switchboard inbox serve). RefreshInterval is how often it reads the forges
+// again while a page listens for changes; 30s when unset, at least MinRefreshInterval.
+type Inbox struct {
+	RefreshInterval time.Duration `yaml:"refresh_interval"`
+}
+
+// MinRefreshInterval keeps the inbox's reads well under GitHub's search limit of 30 a minute.
+const MinRefreshInterval = 10 * time.Second
 
 // Project is one repository. Ref is the configured "gh:owner/repo" or "gl:group/project"; Forge ("gh" or "gl"),
 // Owner and Repo are parsed from it. On GitLab, Owner is the namespace and may hold subgroups.
@@ -317,6 +327,9 @@ func (c *Config) applyDefaults(approveWritten bool) {
 	set(&c.Claude.Auth, "subscription")
 	set(&c.Forges.GitLab.BaseURL, "https://gitlab.com")
 	c.Forges.GitLab.BaseURL = strings.TrimRight(c.Forges.GitLab.BaseURL, "/")
+	if c.Inbox.RefreshInterval == 0 {
+		c.Inbox.RefreshInterval = 30 * time.Second
+	}
 	if c.Agent.PollInterval == 0 {
 		c.Agent.PollInterval = 60 * time.Second
 	}
@@ -360,6 +373,9 @@ func (c *Config) validate() error {
 		errs = append(errs, fmt.Errorf("version must be 1, got %d", c.Version))
 	}
 	need(c.Host.Name, "host.name")
+	if c.Inbox.RefreshInterval < MinRefreshInterval {
+		errs = append(errs, fmt.Errorf("inbox.refresh_interval must be at least %v, got %v", MinRefreshInterval, c.Inbox.RefreshInterval))
+	}
 	if w := c.Plan.ApproveWord; strings.TrimSpace(w) == "" || strings.ContainsAny(w, " \t\r\n") {
 		errs = append(errs, fmt.Errorf("plan.approve_word must be one word without spaces, got %q", w))
 	}

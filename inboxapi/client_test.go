@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -169,5 +170,35 @@ func TestClientFindsALaterSocket(t *testing.T) {
 	in, err := c.List(ctx)
 	if err != nil || len(in.Items) != 1 {
 		t.Fatalf("after the service: %+v, %v", in, err)
+	}
+}
+
+func TestEventsPassesEachListingInOrder(t *testing.T) {
+	c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/events" {
+			t.Errorf("%s %s", r.Method, r.URL)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, "event: inbox\ndata: {\"items\":[{\"ref\":\"gh:o/r#1\"}],\"errors\":[]}\n\n")
+		io.WriteString(w, ": ping\n\n")
+		io.WriteString(w, "event: other\ndata: {}\n\n")
+		io.WriteString(w, "event: inbox\ndata: {\"items\":[{\"ref\":\"gh:o/r#1\"},{\"ref\":\"gh:o/r#2\"}],\"errors\":[]}\n\n")
+	})
+	var got []int
+	err := c.Events(ctx, func(in *Inbox) { got = append(got, len(in.Items)) })
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("err = %v, want ErrUnavailable once the stream ended", err)
+	}
+	if len(got) != 2 || got[0] != 1 || got[1] != 2 {
+		t.Fatalf("listings = %v, want sizes 1 then 2", got)
+	}
+}
+
+func TestEventsRefusedIsAnError(t *testing.T) {
+	c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		reply(w, 404, Error{Code: CodeNotFound, Message: "no such endpoint"})
+	})
+	if err := c.Events(ctx, func(*Inbox) { t.Error("a listing arrived") }); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("err = %v, want not found", err)
 	}
 }

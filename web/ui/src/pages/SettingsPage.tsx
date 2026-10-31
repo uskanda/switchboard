@@ -91,7 +91,7 @@ export function SettingsPage() {
   return (
     <Shell>
       <div className="flex flex-col gap-xs">
-        <h1 className="text-headline-md font-semibold">計画の実行への追加の指示</h1>
+        <h2 className="text-headline-md font-semibold">計画の実行への追加の指示</h2>
         <p className="text-muted">
           計画から始めたissueの、計画を立てる実行にだけ渡します。すべてのプロジェクトの指示のあとに、そのプロジェクトの指示をつなげます。
         </p>

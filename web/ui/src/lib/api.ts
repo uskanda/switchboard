@@ -18,6 +18,9 @@ export type Item = {
   running_since?: string | null;
   /** The last line of the run's progress comment, "?" without one. */
   progress?: string;
+  /** The forge's update time and count of people's comments (GitLab's; 0 on GitHub): a move in either means the issue changed. */
+  updated_at?: string | null;
+  notes?: number;
 };
 
 export const isRunning = (it: Item) => it.state === "running";
@@ -36,7 +39,28 @@ export type Detail = {
   post: string;
   /** The word whose reply approves a plan, such as /ok. */
   approve_word?: string;
+  /** The issue's own author, time and body, and all its comments, oldest first. A back end older than the thread leaves them out. */
+  author?: string;
+  created_at?: string | null;
+  body?: string;
+  comments?: Comment[];
 };
+
+/**
+ * Comment is one comment of an issue. agent is set on a post of the agent, whose kind is then the state of its
+ * marker (running for the claim of a run, progress, waiting, done); a person's comment is as written.
+ */
+export type Comment = {
+  author: string;
+  created_at: string;
+  body: string;
+  agent: boolean;
+  kind?: "running" | "progress" | "waiting" | "done" | string;
+};
+
+/** watchKey is what moves when an issue on the list changes: a page showing the issue reads it again on a move. */
+export const watchKey = (it: Item) =>
+  JSON.stringify([it.updated_at ?? null, it.notes ?? 0, it.state ?? "waiting", it.reason, it.progress ?? null]);
 
 /** One file of the plan runs' additional instructions; target "" is the one for every project. */
 export type Instruction = { target: string; content: string };

@@ -45,6 +45,11 @@ func (f *fakeInbox) Reply(_ context.Context, ref, text string, force bool) error
 	return nil
 }
 
+// Events has no stream to give: the tests of the event stream use streamInbox.
+func (f *fakeInbox) Events(context.Context, func(*inboxapi.Inbox)) error {
+	return inboxapi.ErrUnavailable
+}
+
 var assets = fstest.MapFS{
 	"index.html":    {Data: []byte("<!doctype html><title>inbox</title>")},
 	"assets/app.js": {Data: []byte("console.log(1)")},
