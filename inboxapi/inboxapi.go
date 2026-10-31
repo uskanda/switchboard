@@ -150,11 +150,18 @@ func ServerSocket() string {
 // SystemSocket is where the inbox service installed by switchboard service install --inbox listens.
 const SystemSocket = "/run/switchboard/inbox.sock"
 
+// systemSocket is SystemSocket, replaced in tests.
+var systemSocket = SystemSocket
+
 // DefaultSocket is where a client looks without a configured path: the installed service's socket when it exists,
-// else ServerSocket.
+// else ServerSocket, else the installed service's socket even though it does not exist yet. A client started by
+// systemd without XDG_RUNTIME_DIR, before the inbox service made its socket, still knows where it will be.
 func DefaultSocket() string {
-	if _, err := os.Stat(SystemSocket); err == nil {
-		return SystemSocket
+	if _, err := os.Stat(systemSocket); err == nil {
+		return systemSocket
 	}
-	return ServerSocket()
+	if s := ServerSocket(); s != "" {
+		return s
+	}
+	return systemSocket
 }

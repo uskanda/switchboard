@@ -45,10 +45,6 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "switchboard-web: %v\n", err)
 		return 1
 	}
-	sock := cfg.Socket
-	if sock == "" {
-		sock = inboxapi.DefaultSocket()
-	}
 	ln, err := net.Listen("tcp", cfg.Listen)
 	if err != nil {
 		fmt.Fprintf(stderr, "switchboard-web: %v\n", err)
@@ -57,7 +53,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	srv := &http.Server{
-		Handler:           &server.Server{Inbox: &inboxapi.Client{Socket: sock}, Listen: cfg.Listen, Assets: assets.FS()},
+		Handler:           &server.Server{Inbox: &inboxapi.Client{Socket: cfg.Socket}, Listen: cfg.Listen, Assets: assets.FS()},
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,
@@ -68,6 +64,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		defer cancel()
 		srv.Shutdown(shut)
 	}()
+	sock := cfg.Socket
+	if sock == "" {
+		// The client looks the socket up on each request: the inbox service may not have made it yet.
+		sock = inboxapi.DefaultSocket() + " (looked up on each request)"
+	}
 	fmt.Fprintf(stderr, "switchboard-web: serving http://%s, inbox service at %s\n", cfg.Listen, sock)
 	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		fmt.Fprintf(stderr, "switchboard-web: %v\n", err)

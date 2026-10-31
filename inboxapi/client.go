@@ -14,6 +14,8 @@ import (
 
 // Client calls the inbox service on its Unix socket.
 type Client struct {
+	// Socket is the inbox service's socket. When empty, DefaultSocket is looked up on each request, so the client
+	// reaches an inbox service that made its socket after the client started.
 	Socket string
 
 	once sync.Once
@@ -25,7 +27,11 @@ func (c *Client) client() *http.Client {
 		var d net.Dialer
 		c.http = &http.Client{Transport: &http.Transport{
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				return d.DialContext(ctx, "unix", c.Socket)
+				sock := c.Socket
+				if sock == "" {
+					sock = DefaultSocket()
+				}
+				return d.DialContext(ctx, "unix", sock)
 			},
 		}}
 	})
