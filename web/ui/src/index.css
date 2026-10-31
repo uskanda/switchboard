@@ -30,3 +30,15 @@
 }
 
 html { background: var(--color-surface); color: var(--color-on-surface); font-family: var(--font-sans); font-size: var(--text-body-md); line-height: 1.6; }
+
+/* Markdown from issues (components/Markdown.tsx): the type scale of DESIGN.md, no other colors. */
+.md > * + * { margin-top: var(--spacing-sm); }
+.md h1, .md h2, .md h3, .md h4 { font-size: var(--text-body-md); font-weight: 600; margin-top: var(--spacing-lg); }
+.md h1:first-child, .md h2:first-child, .md h3:first-child { margin-top: 0; }
+.md ul { list-style: disc; padding-left: var(--spacing-xl); }
+.md ol { list-style: decimal; padding-left: var(--spacing-xl); }
+.md code { font-family: var(--font-mono); font-size: var(--text-mono-sm); }
+.md pre { overflow-x: auto; border: 1px solid var(--color-outline); border-radius: var(--radius-sm); padding: var(--spacing-sm); }
+.md blockquote { border-left: 2px solid var(--color-outline); padding-left: var(--spacing-md); color: var(--color-muted); }
+.md table { display: block; overflow-x: auto; border-collapse: collapse; }
+.md th, .md td { border: 1px solid var(--color-outline); padding: var(--spacing-xs) var(--spacing-sm); text-align: left; }

@@ -1,10 +1,8 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { InboxPage } from "./InboxPage";
-import { IssuePage } from "./IssuePage";
-import { SettingsPage } from "./SettingsPage";
+import { AppRoutes } from "@/App";
 
 type Answer = { status: number; body?: unknown };
 
@@ -17,6 +15,7 @@ function answer(routes: Record<string, Answer | Answer[]>) {
       calls.push({ key, init });
       const r = routes[key];
       const a = Array.isArray(r) ? r.shift() : r;
+      if (!a && key === "GET /api/inbox") return new Response(JSON.stringify({ items: [], errors: [], fetched_at: "" }), { status: 200 });
       if (!a) return new Response(JSON.stringify({ code: "not_found", message: key }), { status: 404 });
       return new Response(a.status === 204 ? null : JSON.stringify(a.body), { status: a.status });
     }),
@@ -29,11 +28,7 @@ afterEach(() => vi.unstubAllGlobals());
 function at(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <Routes>
-        <Route path="/" element={<InboxPage />} />
-        <Route path="/issue/:ref" element={<IssuePage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-      </Routes>
+      <AppRoutes />
     </MemoryRouter>,
   );
 }
