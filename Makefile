@@ -3,9 +3,9 @@ SHELL := /usr/bin/env bash
 
 GO ?= go
 
-.PHONY: verify verify-fmt verify-vet verify-test build
+.PHONY: verify verify-fmt verify-vet verify-test verify-web build
 
-verify: verify-fmt verify-vet verify-test ## Run every check that applies to this repository
+verify: verify-fmt verify-vet verify-test verify-web ## Run every check that applies to this repository
 	@echo "verify: ok"
 
 verify-fmt: ## Fail when a Go file is not gofmt-formatted
@@ -19,5 +19,12 @@ verify-vet:
 verify-test:
 	@$(GO) test ./... && echo "[test] ok"
 
-build: ## Build bin/switchboard
+# web/ is a module of its own (the web inbox): the front end is checked and built first, then embedded in Go.
+verify-web:
+	@cd web/ui && pnpm install --frozen-lockfile --silent && pnpm typecheck && pnpm lint && pnpm test && pnpm build
+	@cd web && $(GO) vet ./... && $(GO) test ./... && echo "[web] ok"
+
+build: ## Build bin/switchboard and bin/switchboard-web
 	@$(GO) build -o bin/switchboard ./cmd/switchboard
+	@cd web/ui && pnpm install --frozen-lockfile --silent && pnpm build
+	@cd web && $(GO) build -o ../bin/switchboard-web ./cmd/switchboard-web
