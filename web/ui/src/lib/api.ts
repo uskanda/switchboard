@@ -34,7 +34,15 @@ export type Detail = {
   reason: string;
   since: string | null;
   post: string;
+  /** The word whose reply approves a plan, such as /ok. */
+  approve_word?: string;
 };
+
+/** One file of the plan runs' additional instructions; target "" is the one for every project. */
+export type Instruction = { target: string; content: string };
+
+/** Instructions are read on host, the machine of the inbox service. */
+export type Instructions = { host: string; items: Instruction[] };
 
 export class ApiError extends Error {
   constructor(
@@ -63,6 +71,15 @@ export const postReply = (ref: string, text: string) =>
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ref, text }),
+  });
+
+export const getInstructions = () => call<Instructions>("/api/instructions");
+
+export const saveInstructions = (target: string, content: string) =>
+  call<void>("/api/instructions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ target, content }),
   });
 
 /** issuePath is the page of one issue; the ref is one path segment. */

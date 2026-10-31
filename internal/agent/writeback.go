@@ -26,6 +26,7 @@ type outcome struct {
 	Ack     int64  `json:"ack"`
 	Body    string `json:"body"` // the comment without its marker
 	PR      string `json:"pr,omitempty"`
+	Q       int    `json:"q,omitempty"` // for plan-questions: the number of the last question
 
 	msg texts
 }
@@ -54,15 +55,7 @@ func (o *outcome) verify(why string) *outcome {
 func (o *outcome) wait(d *Declaration, denials []claudecode.Denial) *outcome {
 	parts := []string{"**" + o.msg.soFar + "**\n\n" + d.Summary}
 	if len(denials) > 0 {
-		var lines []string
-		for _, dn := range denials {
-			what := dn.ToolName
-			if c := dn.Command(); c != "" {
-				what += ": `" + strings.ReplaceAll(c, "`", "'") + "`"
-			}
-			lines = append(lines, "- "+what)
-		}
-		parts = append(parts, "**"+o.msg.denied+"**\n\n"+strings.Join(lines, "\n"))
+		parts = append(parts, "**"+o.msg.denied+"**\n\n"+deniedList(denials))
 	}
 	if q := strings.TrimSpace(d.Question); q != "" {
 		parts = append(parts, "**"+o.msg.question+"**\n\n"+q)
@@ -106,7 +99,7 @@ func (a *Agent) writeBack(ctx context.Context, ref forge.IssueRef, o *outcome) e
 			a.Audit.Log("comment.withheld", map[string]any{"issue": ref.String(), "run": o.Run})
 		}
 		posting := body
-		m := marker.Marker{Host: a.Config.Host.Name, Session: o.Session, Run: o.Run, State: o.State, Reason: o.Reason, Ack: o.Ack, At: time.Now()}
+		m := marker.Marker{Host: a.Config.Host.Name, Session: o.Session, Run: o.Run, State: o.State, Reason: o.Reason, Ack: o.Ack, At: time.Now(), Q: o.Q}
 		body += "\n\n" + m.Format() + "\n"
 		a.checkComment(ref, o.Run, "comment.md", body)
 		c, err := a.forgeOf(ref).PostComment(ctx, ref, body)
@@ -249,6 +242,9 @@ func (a *Agent) notify(ctx context.Context, is *forge.IssueSummary, o *outcome, 
 	if o.State == "done" {
 		text = notify.Done{Ref: ref, ChangeURL: o.PR, IssueURL: is.URL}.Text(lang)
 	} else {
+		if i := strings.Index(body, "❓ "); o.Reason == marker.PlanQuestions && i >= 0 {
+			body = body[i:] // quote the first question, not the summary above it
+		}
 		text = notify.Waiting{
 			Ref: ref, Title: is.Title, Reason: o.Reason, Question: Question(body),
 			IssueURL: is.URL, WebURL: a.Config.Notify.WebURL,

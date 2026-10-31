@@ -112,7 +112,7 @@ components:
 - Surface（#F6F5F2）：わずかに温かい灰白の地。純白（`surface-raised`、#FFFFFF）はカードと入力欄だけに使い、地から一段浮かせる
 - Outline（#E2E0DB）：カードと表の区切り線。影の代わりに使う
 - Muted（#5F636A）：端末の名前、経過時間、補足の文
-- Attention（`#8A3F06`、地は`#FBEBD6`）：理由が`question`と`verify`の待ち。人の判断を待っているが、実行は失敗していない
+- Attention（`#8A3F06`、地は`#FBEBD6`）：理由が`question`、`verify`、`plan-questions`、`plan`の待ち。人の判断を待っているが、実行は失敗していない
 - Error（`#B3261E`、バッジは`#7A1A14`、地は`#FBE4E1`）：理由が`error`と`permission`の待ちと、受信箱のサービスに届かないなどの誤り
 - 暗いテーマ：`dark-`で始まる値を、OSの`prefers-color-scheme: dark`のときに使う。役割は明るいテーマと同じで、明るさだけを反転する
 
@@ -143,7 +143,9 @@ components:
 ## Components
 
 - 一覧の行（カード）：1行目に参照（`mono-sm`）とタイトル、2行目に理由のバッジ、端末、経過時間（`muted`）、3行目に質問の冒頭。行全体を1件の画面へのリンクにする
-- 理由のバッジ：`question`と`verify`は`badge-attention`、`error`と`permission`は`badge-error`
+- 理由のバッジ：`question`、`verify`、`plan-questions`、`plan`は`badge-attention`、`error`と`permission`は`badge-error`
+- 計画の待ちの案内：理由が`plan-questions`か`plan`のとき、返答の欄の上に、承認の語（`/ok`など）の使い方を`label-md`の`muted`で1行出す
+- 設定の画面：ヘッダの右の「設定」のリンクから開く。指示の欄を1つずつカードにし、欄ごとに`button-secondary`の保存のボタンを置く。保存の結果と誤りは、その欄の中に出す。塗りのボタンは置かない
 - 返答の欄：`surface-raised`の地に`outline`の枠。フォーカスでは`primary`の2pxの輪郭を付ける。空のときは送るボタンを押せなくする
 - 送るボタン：`button-primary`。送っている間は押せなくし、ボタンの文言を送信中の表示に替える
 - 誤りのバナー：`banner-error`。届かなかったフォージ、受信箱のサービスに届かないこと、待ちでなくなったことを、画面の上に出す

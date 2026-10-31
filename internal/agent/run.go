@@ -15,6 +15,8 @@ import (
 	"github.com/uskanda/switchboard/internal/claudecode"
 	"github.com/uskanda/switchboard/internal/config"
 	"github.com/uskanda/switchboard/internal/forge"
+	"github.com/uskanda/switchboard/internal/instructions"
+	"github.com/uskanda/switchboard/internal/labels"
 	"github.com/uskanda/switchboard/internal/prompt"
 	"github.com/uskanda/switchboard/internal/trust"
 	"github.com/uskanda/switchboard/internal/workspace"
@@ -47,8 +49,8 @@ func newUUID() string {
 	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:]
 }
 
-// declaration reads the declaration from res, or says why the run ended abnormally.
-func declaration(res *claudecode.Result) (*Declaration, string) {
+// structured returns the structured output of res, or says why the run ended abnormally.
+func structured(res *claudecode.Result) ([]byte, string) {
 	switch {
 	case !res.HasResult:
 		return nil, fmt.Sprintf("no result message (exit code %d)", res.ExitCode)
@@ -59,8 +61,17 @@ func declaration(res *claudecode.Result) (*Declaration, string) {
 	case res.Structured == nil:
 		return nil, "no structured output"
 	}
+	return res.Structured, ""
+}
+
+// declaration reads the declaration from res, or says why the run ended abnormally.
+func declaration(res *claudecode.Result) (*Declaration, string) {
+	raw, problem := structured(res)
+	if problem != "" {
+		return nil, problem
+	}
 	var d Declaration
-	dec := json.NewDecoder(bytes.NewReader(res.Structured))
+	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&d); err != nil {
 		return nil, "the structured output does not match the schema: " + err.Error()
@@ -147,6 +158,15 @@ func (a *Agent) execute(ctx context.Context, pl *plan, act *active) string {
 func (a *Agent) work(ctx context.Context, pl *plan, rec record) *outcome {
 	p, is := pl.project, pl.issue
 	o := &outcome{Run: rec.Run, Session: rec.Session, Ack: rec.Ack, msg: a.msg}
+	if pl.kind == conflictRun {
+		var starts []string
+		for _, l := range is.Labels {
+			if labels.IsStart(l, a.Config.Labels) {
+				starts = append(starts, "`"+l+"`")
+			}
+		}
+		return o.fail(fmt.Sprintf(a.msg.multipleStarts, strings.Join(starts, ", ")))
+	}
 	sp := a.space(pl)
 	dir, err := sp.Prepare(ctx)
 	if err != nil {
@@ -173,17 +193,38 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) *outcome {
 		default:
 			k = prompt.Untrusted
 		}
-		in.Comments = append(in.Comments, prompt.Comment{Kind: k, Author: c.Author.Login, Body: c.Body})
+		in.Comments = append(in.Comments, prompt.Comment{Kind: k, ID: c.ID, Author: c.Author.Login, Body: c.Body})
 	}
-	stopProgress := a.followProgress(ctx, is.Ref, rec, filepath.Join(a.runDir(rec.Run), "stream.jsonl"))
-	res, err := claudecode.Run(ctx, claudecode.Request{
+	lang, word := a.Config.Comments.Language, a.Config.Plan.ApproveWord
+	req := claudecode.Request{
 		Binary: a.Config.Claude.Binary, Dir: dir, RunDir: a.runDir(rec.Run), SessionID: rec.Session,
-		Prompt: prompt.Build(in), SystemPrompt: prompt.System(a.Config.Comments.Language),
-		Settings: settings(p.VerifyCommand), MaxTurns: a.Config.Agent.MaxTurns, Schema: Schema,
-		Auth: a.Config.Claude.Auth, Timeout: a.Config.Agent.Timeout,
+		SystemPrompt: prompt.System(lang), Settings: settings(p.VerifyCommand), MaxTurns: a.Config.Agent.MaxTurns,
+		Schema: Schema, Auth: a.Config.Claude.Auth, Timeout: a.Config.Agent.Timeout,
 		IntGrace: a.IntGrace, TermGrace: a.TermGrace, Env: a.Env,
-	})
+	}
+	head := ""
+	switch pl.kind {
+	case planRun:
+		in.Task = prompt.PlanTask
+		req.SystemPrompt, req.Settings, req.Schema = prompt.PlanSystem(lang, word, a.planInstructions(p)), planSettings(), PlanSchema
+		if head, err = sp.Head(ctx); err != nil {
+			return o.fail(fmt.Sprintf(a.msg.prepare, err))
+		}
+	case approvedRun:
+		req.SystemPrompt = prompt.ApprovedSystem(lang, pl.planID, pl.okID)
+	}
+	req.Prompt = prompt.Build(in)
+	stopProgress := a.followProgress(ctx, is.Ref, rec, filepath.Join(a.runDir(rec.Run), "stream.jsonl"))
+	res, err := claudecode.Run(ctx, req)
 	stopProgress()
+	discarded := false
+	if head != "" {
+		// A plan run changes nothing; whatever it changed anyway is thrown away, also when it failed.
+		var rerr error
+		if discarded, rerr = sp.Restore(a.ctx, head); rerr != nil {
+			return o.fail(fmt.Sprintf(a.msg.prepare, rerr))
+		}
+	}
 	switch {
 	case err != nil:
 		if ctx.Err() != nil {
@@ -194,6 +235,9 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) *outcome {
 		return nil
 	case res.TimedOut:
 		return o.fail(fmt.Sprintf(a.msg.timeout, a.Config.Agent.Timeout))
+	}
+	if pl.kind == planRun {
+		return a.planOutcome(res, pl, o, discarded)
 	}
 	d, problem := declaration(res)
 	switch {
@@ -283,4 +327,30 @@ func tail(s string) string {
 		s = s[len(s)-4000:]
 	}
 	return strings.ReplaceAll(s, "```", "'''")
+}
+
+// planOutcome writes back the end of a plan run: its questions or its plan, never a push.
+func (a *Agent) planOutcome(res *claudecode.Result, pl *plan, o *outcome, discarded bool) *outcome {
+	d, problem := planDeclaration(res)
+	word := a.Config.Plan.ApproveWord
+	switch {
+	case res.Subtype == "error_max_turns":
+		return o.fail(fmt.Sprintf(a.msg.maxTurns, a.Config.Agent.MaxTurns))
+	case problem != "" && res.IsError:
+		return o.fail(fmt.Sprintf(a.msg.failed, problem))
+	case problem != "":
+		return o.fail(fmt.Sprintf(a.msg.noDeclaration, problem))
+	case d.Status == "questions":
+		return o.planQuestions(d, pl.qNext, res.Denials, discarded, word)
+	}
+	return o.planText(d, res.Denials, discarded, word)
+}
+
+// planInstructions returns the user's additional instructions for the plan runs of p, read again for every run.
+// A configuration that was not loaded from a file has none.
+func (a *Agent) planInstructions(p config.Project) string {
+	if a.Config.Path == "" {
+		return ""
+	}
+	return instructions.For(a.Config.Path, nil).Plan(p.Ref)
 }

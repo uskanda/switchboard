@@ -7,12 +7,14 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/uskanda/switchboard/inboxapi"
 	"github.com/uskanda/switchboard/internal/forge"
 	"github.com/uskanda/switchboard/internal/inbox"
+	"github.com/uskanda/switchboard/internal/instructions"
 )
 
 // Inbox is what the server needs of *inbox.Inbox.
@@ -29,10 +31,20 @@ const TTL = time.Minute
 // FetchTimeout bounds one listing from the forges.
 const FetchTimeout = 30 * time.Second
 
+// Instructions is where the API reads and writes the additional instructions of the plan runs: the store, the
+// configured projects in order, and the name of this machine.
+type Instructions struct {
+	Store    instructions.Store
+	Projects []string
+	Host     string
+}
+
 // Server is the http.Handler of the API.
 type Server struct {
 	Inbox Inbox
 	Now   func() time.Time // time.Now when nil
+	// Instructions, when set, serves /v1/instructions.
+	Instructions *Instructions
 
 	mu     sync.Mutex
 	cached *inboxapi.Inbox
@@ -46,22 +58,27 @@ func (s *Server) now() time.Time {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	route := map[string]struct {
+	type route struct {
 		method string
 		h      func(http.ResponseWriter, *http.Request)
-	}{
+	}
+	routes := map[string]route{
 		"/v1/inbox": {http.MethodGet, s.list},
 		"/v1/issue": {http.MethodGet, s.issue},
 		"/v1/reply": {http.MethodPost, s.reply},
-	}[r.URL.Path]
+	}
+	if s.Instructions != nil {
+		routes["/v1/instructions"] = route{"", s.instructions}
+	}
+	rt := routes[r.URL.Path]
 	switch {
-	case route.h == nil:
+	case rt.h == nil:
 		fail(w, http.StatusNotFound, inboxapi.CodeNotFound, "no such endpoint")
-	case r.Method != route.method:
-		w.Header().Set("Allow", route.method)
-		fail(w, http.StatusMethodNotAllowed, inboxapi.CodeInvalid, "use "+route.method)
+	case rt.method != "" && r.Method != rt.method:
+		w.Header().Set("Allow", rt.method)
+		fail(w, http.StatusMethodNotAllowed, inboxapi.CodeInvalid, "use "+rt.method)
 	default:
-		route.h(w, r)
+		rt.h(w, r)
 	}
 }
 
@@ -125,6 +142,47 @@ func (s *Server) reply(w http.ResponseWriter, r *http.Request) {
 	s.cached = nil
 	s.mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// instructions serves GET (the global and every project's instructions) and PUT (save one) of /v1/instructions.
+func (s *Server) instructions(w http.ResponseWriter, r *http.Request) {
+	in := s.Instructions
+	switch r.Method {
+	case http.MethodGet:
+		out := inboxapi.Instructions{Host: in.Host, Items: []inboxapi.Instruction{}}
+		for _, t := range append([]string{instructions.Global}, in.Projects...) {
+			text, err := in.Store.Read(t)
+			if err != nil {
+				fail(w, http.StatusInternalServerError, inboxapi.CodeForge, err.Error())
+				return
+			}
+			out.Items = append(out.Items, inboxapi.Instruction{Target: t, Content: text})
+		}
+		send(w, http.StatusOK, out)
+	case http.MethodPut:
+		var req inboxapi.SaveInstructionsRequest
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+			fail(w, http.StatusBadRequest, inboxapi.CodeInvalid, "the body is not a save of instructions")
+			return
+		}
+		if req.Target != instructions.Global && !slices.Contains(in.Projects, req.Target) {
+			fail(w, http.StatusUnprocessableEntity, inboxapi.CodeUnknownProject, req.Target+" is not a project in the configuration")
+			return
+		}
+		switch err := in.Store.Save(req.Target, req.Content); {
+		case errors.Is(err, instructions.ErrTooLarge):
+			fail(w, http.StatusRequestEntityTooLarge, inboxapi.CodeTooLarge, err.Error())
+		case errors.Is(err, instructions.ErrSecret):
+			fail(w, http.StatusUnprocessableEntity, inboxapi.CodeSecret, err.Error())
+		case err != nil:
+			fail(w, http.StatusInternalServerError, inboxapi.CodeForge, err.Error())
+		default:
+			w.WriteHeader(http.StatusNoContent)
+		}
+	default:
+		w.Header().Set("Allow", "GET, PUT")
+		fail(w, http.StatusMethodNotAllowed, inboxapi.CodeInvalid, "use GET or PUT")
+	}
 }
 
 // failWith answers with the code the inbox's error stands for.

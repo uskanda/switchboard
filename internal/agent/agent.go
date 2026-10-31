@@ -351,7 +351,7 @@ func (a *Agent) evaluateOnce(ctx context.Context, p config.Project, s forge.Issu
 		a.Audit.Log("labels.normalized", map[string]any{"issue": s.Ref.String(), "found": s.Labels, "kept": labels.StateOf(fixed, n)})
 		st = labels.StateOf(fixed, n)
 	}
-	if st != n.Ready && st != n.Waiting {
+	if !labels.IsStart(st, n) && st != n.Waiting {
 		return nil
 	}
 	return a.consider(ctx, p, s.Ref)
@@ -399,6 +399,12 @@ type plan struct {
 	issue    *forge.Issue
 	comments []forge.Comment
 	kinds    []trust.Kind
+
+	start        string  // the start label the run starts from, or "" when it resumes on a reply
+	mode         string  // with start: the mode its claim records
+	kind         runKind // set by classify
+	planID, okID int64   // for approvedRun: the plan and the comment that approved it
+	qNext        int     // for planRun: the number of its first question
 }
 
 // ack is the last comment the run takes in, or 0.
@@ -422,9 +428,9 @@ func (a *Agent) decide(ctx context.Context, p config.Project, ref forge.IssueRef
 		return nil, nil
 	}
 	st := labels.StateOf(is.Labels, n)
-	switch st {
-	case n.Ready:
-		actor, err := a.forgeOf(ref).LabelActor(ctx, ref, n.Ready)
+	switch {
+	case labels.IsStart(st, n):
+		actor, err := a.forgeOf(ref).LabelActor(ctx, ref, st)
 		if errors.Is(err, forge.ErrNotFound) {
 			actor = nil
 		} else if err != nil {
@@ -433,7 +439,7 @@ func (a *Agent) decide(ctx context.Context, p config.Project, ref forge.IssueRef
 		if !j.ReadyLabel(ref, actor) {
 			return nil, nil
 		}
-	case n.Waiting:
+	case st == n.Waiting:
 	default:
 		return nil, nil
 	}
@@ -441,6 +447,27 @@ func (a *Agent) decide(ctx context.Context, p config.Project, ref forge.IssueRef
 	for _, c := range comments {
 		pl.kinds = append(pl.kinds, j.Comment(ref, c))
 	}
+	if labels.IsStart(st, n) {
+		if labels.MultipleStarts(is.Labels, n) {
+			// Report the clash only when every start label came from a trusted user.
+			for _, l := range is.Labels {
+				if !labels.IsStart(l, n) || l == st {
+					continue
+				}
+				actor, err := a.forgeOf(ref).LabelActor(ctx, ref, l)
+				if err != nil && !errors.Is(err, forge.ErrNotFound) {
+					return nil, err
+				}
+				if err != nil || !j.ReadyLabel(ref, actor) {
+					return nil, nil
+				}
+			}
+			pl.kind = conflictRun
+		} else {
+			pl.start, pl.mode = st, a.modeFor(p, st)
+		}
+	}
+	pl.classify(a.Config.Plan.ApproveWord)
 	if st == n.Waiting && !pl.hasReply() {
 		return nil, nil
 	}
@@ -626,6 +653,9 @@ func (a *Agent) cleanUp(ctx context.Context, p config.Project, ref forge.IssueRe
 func (a *Agent) claim(ctx context.Context, pl *plan, act *active) (bool, error) {
 	ref, f, host := pl.issue.Ref, a.forgeOf(pl.issue.Ref), a.Config.Host.Name
 	m := marker.Marker{Host: host, Run: act.run, State: "running", Ack: pl.ack(), At: time.Now()}
+	if pl.start != "" {
+		m.Mode = pl.mode // the claim starts a cycle; a resumed run's claim does not
+	}
 	mine, err := f.PostComment(ctx, ref, fmt.Sprintf(a.msg.claim, host)+"\n\n"+m.Format()+"\n")
 	if err != nil {
 		return false, fmt.Errorf("post the claim: %w", err)

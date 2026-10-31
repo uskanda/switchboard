@@ -70,3 +70,55 @@ func TestSystemPromptStatesTheProtocol(t *testing.T) {
 		t.Error("the English system prompt does not name the language")
 	}
 }
+
+func TestPlanSystemPromptAsksAndChangesNothing(t *testing.T) {
+	s := PlanSystem("ja", "/ok", "")
+	for _, want := range []string{"plan stage", "Do not change", "recommendation", "questions", `"plan"`, "Japanese", "/ok", "git push", "untrusted"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("plan system prompt lacks %q", want)
+		}
+	}
+	for _, unwanted := range []string{`status "done"`, "git commit", "additional instructions"} {
+		if strings.Contains(s, unwanted) {
+			t.Errorf("plan system prompt holds %q", unwanted)
+		}
+	}
+}
+
+func TestPlanSystemPromptAddsTheUsersInstructionsLast(t *testing.T) {
+	s := PlanSystem("en", "/ok", "Always ask about the API names.")
+	at := strings.Index(s, "Always ask about the API names.")
+	head := strings.Index(s, "## Additional instructions from the user")
+	if head < 0 || at < head || at < strings.Index(s, "## Language") {
+		t.Fatalf("the user's instructions are not the last section:\n%s", s)
+	}
+	if !strings.Contains(s[head:], "the rules above win") {
+		t.Fatalf("the section does not put the built-in rules first:\n%s", s[head:])
+	}
+}
+
+func TestApprovedSystemPromptNamesThePlanAndTheApproval(t *testing.T) {
+	s := ApprovedSystem("en", 41, 57)
+	for _, want := range []string{"comment 41", "comment 57", "Do not reopen", `status "done"`, "git commit"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("approved system prompt lacks %q", want)
+		}
+	}
+}
+
+func TestCommentsCarryTheirIDs(t *testing.T) {
+	p := Build(Input{Ref: forge.IssueRef{Owner: "o", Repo: "r", Number: 1}, Title: "t", Body: "b", Nonce: "n0", Comments: []Comment{
+		{Kind: Previous, ID: 41, Body: "The plan.\n\n<!-- switchboard v=1 state=waiting -->"},
+		{Kind: Trusted, ID: 57, Author: "alice", Body: "/ok"},
+	}})
+	if !strings.Contains(p, "## Your earlier post (comment 41)") || !strings.Contains(p, "## Comment from alice (comment 57)") {
+		t.Fatalf("prompt:\n%s", p)
+	}
+}
+
+func TestTheTaskLineCanBeReplaced(t *testing.T) {
+	p := Build(Input{Ref: forge.IssueRef{Owner: "o", Repo: "r", Number: 1}, Nonce: "n0", Task: "Plan the work."})
+	if !strings.HasSuffix(p, "\nPlan the work.\n") || strings.Contains(p, "Do the work") {
+		t.Fatalf("prompt:\n%s", p)
+	}
+}

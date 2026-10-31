@@ -20,6 +20,26 @@ function failure(err: unknown): string {
   return `失敗しました：${err instanceof Error ? err.message : String(err)}`;
 }
 
+/** PlanHint says how to answer a wait of the plan stage: the approval word approves, anything else is a reply. */
+function PlanHint({ reason, word }: { reason: string; word: string }) {
+  const code = <code className="font-mono text-mono-sm">{word}</code>;
+  if (reason === "plan") {
+    return (
+      <p className="text-label-md text-muted">
+        この計画で進めるなら {code} と送ると承認になり、作業が始まります。直してほしいところがあれば、そのまま書いて送ってください。
+      </p>
+    );
+  }
+  if (reason === "plan-questions") {
+    return (
+      <p className="text-label-md text-muted">
+        推奨どおりでよければ {code} と送ってください。変えたい問いがあれば「{word} q2はB」のように続けて書きます。
+      </p>
+    );
+  }
+  return null;
+}
+
 export function IssuePage() {
   const ref = useParams().ref ?? "";
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -80,6 +100,7 @@ export function IssuePage() {
               <label htmlFor="reply" className="text-label-md font-medium">
                 返答
               </label>
+              <PlanHint reason={detail.reason} word={detail.approve_word || "/ok"} />
               <Textarea id="reply" value={text} onChange={(e) => setText(e.target.value)} disabled={sending} />
               <Button type="submit" disabled={sending || text.trim() === ""} className="self-end">
                 {sending ? "送っています" : "返答を送る"}

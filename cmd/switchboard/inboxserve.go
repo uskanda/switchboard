@@ -15,6 +15,7 @@ import (
 	"github.com/uskanda/switchboard/inboxapi"
 	"github.com/uskanda/switchboard/internal/inbox"
 	"github.com/uskanda/switchboard/internal/inboxserve"
+	"github.com/uskanda/switchboard/internal/instructions"
 )
 
 // serveInbox is the inbox the API serves: every configured forge, each read and written with its inbox token.
@@ -56,7 +57,18 @@ func inboxServe(args []string, stdout, stderr io.Writer) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	srv := &http.Server{Handler: &inboxserve.Server{Inbox: b}, ReadHeaderTimeout: 10 * time.Second}
+	d, err := stateDir()
+	if err != nil {
+		return fail(stderr, err)
+	}
+	var projects []string
+	for _, p := range cfg.Projects {
+		projects = append(projects, p.Ref)
+	}
+	api := &inboxserve.Server{Inbox: b, Instructions: &inboxserve.Instructions{
+		Store: instructions.For(cfg.Path, d.Audit()), Projects: projects, Host: cfg.Host.Name,
+	}}
+	srv := &http.Server{Handler: api, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
 		shut, cancel := context.WithTimeout(context.Background(), 5*time.Second)

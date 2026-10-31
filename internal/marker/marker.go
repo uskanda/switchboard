@@ -2,6 +2,7 @@
 //
 //	<!-- switchboard v=1 host=<host> session=<id> run=<id> state=<state> reason=<reason> ack=<comment-id> at=<RFC3339> -->
 //
+// A claim made from a start label also carries mode=<plan|direct>, and a post of plan questions q=<last number>.
 // Unknown keys are ignored, so that a newer version's marker still parses.
 package marker
 
@@ -24,10 +25,20 @@ type Marker struct {
 	Session string
 	Run     string
 	State   string // running (the claim of a run), progress (its progress comment), waiting, done
-	Reason  string // for waiting: question, permission, error, verify, limit
+	Reason  string // for waiting: question, permission, error, verify, limit, plan-questions, plan
 	Ack     int64  // the last comment ID the run took in
 	At      time.Time
+	Mode    string // on a claim made from a start label: plan or direct
+	Q       int    // on a post of plan questions: the number of its last question
 }
+
+// The modes a claim names, and the reasons of the waits in the plan stage.
+const (
+	ModePlan      = "plan"
+	ModeDirect    = "direct"
+	PlanQuestions = "plan-questions"
+	PlanReady     = "plan"
+)
 
 // The states a marker names.
 const (
@@ -68,6 +79,10 @@ func (m Marker) Format() string {
 	if !m.At.IsZero() {
 		fmt.Fprintf(&b, " at=%s", m.At.UTC().Format(time.RFC3339))
 	}
+	add("mode", m.Mode)
+	if m.Q != 0 {
+		fmt.Fprintf(&b, " q=%d", m.Q)
+	}
 	b.WriteString(" -->")
 	return b.String()
 }
@@ -104,6 +119,10 @@ func Parse(body string) (*Marker, bool) {
 			m.Ack, _ = strconv.ParseInt(v, 10, 64)
 		case "at":
 			m.At, _ = time.Parse(time.RFC3339, v)
+		case "mode":
+			m.Mode = v
+		case "q":
+			m.Q, _ = strconv.Atoi(v)
 		}
 	}
 	if m.V < 1 {

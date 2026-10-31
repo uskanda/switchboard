@@ -282,3 +282,31 @@ func (s *Space) Remove(ctx context.Context) (bool, error) {
 	}
 	return true, nil
 }
+
+// Head returns the commit the worktree is on.
+func (s *Space) Head(ctx context.Context) (string, error) {
+	return s.git(ctx, s.Dir(), nil, "rev-parse", "HEAD")
+}
+
+// Restore puts the worktree back on head with no changes and no untracked files, and reports whether there was
+// anything to undo. Ignored files are left alone.
+func (s *Space) Restore(ctx context.Context, head string) (bool, error) {
+	now, err := s.Head(ctx)
+	if err != nil {
+		return false, err
+	}
+	status, err := s.git(ctx, s.Dir(), nil, "status", "--porcelain", "--untracked-files=all")
+	if err != nil {
+		return false, err
+	}
+	if now == head && status == "" {
+		return false, nil
+	}
+	if _, err := s.git(ctx, s.Dir(), nil, "reset", "-q", "--hard", head); err != nil {
+		return true, err
+	}
+	if _, err := s.git(ctx, s.Dir(), nil, "clean", "-q", "-d", "-f"); err != nil {
+		return true, err
+	}
+	return true, nil
+}

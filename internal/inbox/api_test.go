@@ -65,3 +65,12 @@ func TestReplyErrorsCanBeTold(t *testing.T) {
 		t.Fatalf("a row number: %v", err)
 	}
 }
+
+func TestDetailCarriesTheApprovalWord(t *testing.T) {
+	w := newWorld(t)
+	w.b.Config.Plan.ApproveWord = "/lgtm"
+	d, err := w.b.Detail(ctx, w.a)
+	if err != nil || d.ApproveWord != "/lgtm" {
+		t.Fatalf("detail = %+v, %v", d, err)
+	}
+}

@@ -20,6 +20,8 @@ type Inbox interface {
 	List(ctx context.Context) (*inboxapi.Inbox, error)
 	Issue(ctx context.Context, ref string) (*inboxapi.Detail, error)
 	Reply(ctx context.Context, ref, text string, force bool) error
+	Instructions(ctx context.Context) (*inboxapi.Instructions, error)
+	SaveInstructions(ctx context.Context, target, content string) error
 }
 
 // CodeUnavailable is the error code the web inbox answers with when the inbox service cannot be reached.
@@ -49,6 +51,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.answer(w, out, err)
 	case r.URL.Path == "/api/reply" && r.Method == http.MethodPost:
 		s.reply(w, r)
+	case r.URL.Path == "/api/instructions" && r.Method == http.MethodGet:
+		out, err := s.Inbox.Instructions(r.Context())
+		s.answer(w, out, err)
+	case r.URL.Path == "/api/instructions" && r.Method == http.MethodPost:
+		s.saveInstructions(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/"):
 		send(w, http.StatusNotFound, inboxapi.Error{Code: inboxapi.CodeNotFound, Message: "no such endpoint"})
 	case r.Method == http.MethodGet || r.Method == http.MethodHead:
@@ -58,15 +65,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// sameOrigin tells whether a reply comes from the web inbox's own page: a JSON body (a page elsewhere cannot send
+// sameOrigin tells whether a reply or a save comes from the web inbox's own page: a JSON body (a page elsewhere cannot send
 // one without a preflight, which this server never answers), an Origin of exactly this address, and a Host of
 // exactly this address (a page that rebinds its own name to this address still sends its own name).
 func (s *Server) sameOrigin(r *http.Request) (int, string) {
 	if mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mt != "application/json" {
-		return http.StatusUnsupportedMediaType, "a reply is sent as application/json"
+		return http.StatusUnsupportedMediaType, "a reply or a save is sent as application/json"
 	}
 	if r.Header.Get("Origin") != "http://"+s.Listen || r.Host != s.Listen {
-		return http.StatusForbidden, "a reply is taken only from the web inbox's own page at http://" + s.Listen
+		return http.StatusForbidden, "a reply or a save is taken only from the web inbox's own page at http://" + s.Listen
 	}
 	return 0, ""
 }
@@ -89,11 +96,32 @@ func (s *Server) reply(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// saveInstructions passes a save of the plan runs' instructions on, from the web inbox's own page only.
+func (s *Server) saveInstructions(w http.ResponseWriter, r *http.Request) {
+	if code, why := s.sameOrigin(r); code != 0 {
+		send(w, code, inboxapi.Error{Code: inboxapi.CodeInvalid, Message: why})
+		return
+	}
+	var req inboxapi.SaveInstructionsRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		send(w, http.StatusBadRequest, inboxapi.Error{Code: inboxapi.CodeInvalid, Message: "the body is not a save of instructions"})
+		return
+	}
+	if err := s.Inbox.SaveInstructions(r.Context(), req.Target, req.Content); err != nil {
+		s.answer(w, nil, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 var status = map[string]int{
-	inboxapi.CodeInvalid:    http.StatusBadRequest,
-	inboxapi.CodeNotFound:   http.StatusNotFound,
-	inboxapi.CodeNotWaiting: http.StatusConflict,
-	inboxapi.CodeForge:      http.StatusBadGateway,
+	inboxapi.CodeInvalid:        http.StatusBadRequest,
+	inboxapi.CodeNotFound:       http.StatusNotFound,
+	inboxapi.CodeNotWaiting:     http.StatusConflict,
+	inboxapi.CodeTooLarge:       http.StatusRequestEntityTooLarge,
+	inboxapi.CodeSecret:         http.StatusUnprocessableEntity,
+	inboxapi.CodeUnknownProject: http.StatusUnprocessableEntity,
+	inboxapi.CodeForge:          http.StatusBadGateway,
 }
 
 func (s *Server) answer(w http.ResponseWriter, out any, err error) {

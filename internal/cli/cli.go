@@ -26,6 +26,7 @@ var commands = []*command{
 	{words: []string{"inbox"}, summary: "list the waiting issues of every configured project"},
 	{words: []string{"show"}, summary: "show the last question of one waiting issue"},
 	{words: []string{"reply"}, summary: "post a reply to one waiting issue"},
+	{words: []string{"instructions", "edit"}, summary: "edit the additional instructions of the plan runs, for every project or one"},
 	{words: []string{"doctor"}, summary: "check the configuration, the tokens and the claude CLI"},
 	{words: []string{"service", "install"}, summary: "run the agent as a systemd service, after showing what sudo will run"},
 	{words: []string{"service", "uninstall"}, summary: "stop the systemd service and remove its unit and credentials"},

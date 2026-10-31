@@ -28,6 +28,10 @@ type Config struct {
 	Projects       []Project      `yaml:"projects"`
 	Relay          Relay          `yaml:"relay"`
 	Notify         Notify         `yaml:"notify"`
+	Plan           Plan           `yaml:"plan"`
+
+	// Path is the file the configuration was loaded from.
+	Path string `yaml:"-"`
 }
 
 // Host names this machine; projects whose host matches run here.
@@ -69,9 +73,12 @@ type TrustedAuthors struct {
 	GitLab []string `yaml:"gitlab"`
 }
 
-// Labels are the names of the four state labels.
+// Labels are the names of the state labels. Ready, Plan and Go are the start labels: each means ready, and the one
+// put on an issue decides whether its run plans first.
 type Labels struct {
 	Ready   string `yaml:"ready"`
+	Plan    string `yaml:"plan"`
+	Go      string `yaml:"go"`
 	Running string `yaml:"running"`
 	Waiting string `yaml:"waiting"`
 	Done    string `yaml:"done"`
@@ -106,6 +113,11 @@ type AgentRelay struct {
 	TokenRef string `yaml:"token_ref"`
 }
 
+// Plan controls the plan-first mode. ApproveWord starts the comment that approves a plan; /ok when unset.
+type Plan struct {
+	ApproveWord string `yaml:"approve_word"`
+}
+
 // Project is one repository. Ref is the configured "gh:owner/repo" or "gl:group/project"; Forge ("gh" or "gl"),
 // Owner and Repo are parsed from it. On GitLab, Owner is the namespace and may hold subgroups.
 type Project struct {
@@ -116,6 +128,8 @@ type Project struct {
 	VerifyCommand       string   `yaml:"verify_command"`
 	IncludeUntrusted    bool     `yaml:"include_untrusted"`
 	ProtectedPathsExtra []string `yaml:"protected_paths_extra"`
+	// PlanFirst makes the ready label start with a plan that waits for approval before any change is made.
+	PlanFirst bool `yaml:"plan_first"`
 	// TokenRef and AgentIdentity, set together, replace the forge's agent token and identity for this project, as
 	// with a GitLab project access token. The inbox never uses them.
 	TokenRef      string `yaml:"token_ref"`
@@ -160,10 +174,12 @@ func Load(path string) (*Config, error) {
 	if err := dec.Decode(&c); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, nameKeys(err, &root))
 	}
-	c.applyDefaults()
+	_, written := scalarAt(&root, "plan", "approve_word")
+	c.applyDefaults(written)
 	if err := c.validate(); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
+	c.Path = path
 	return &c, nil
 }
 
@@ -222,6 +238,30 @@ func keyAtLine(n *yaml.Node, path string, line int) string {
 	return ""
 }
 
+// scalarAt returns the scalar at the key path under the document root, and whether it is there.
+func scalarAt(root *yaml.Node, keys ...string) (string, bool) {
+	n := root
+	if n.Kind == yaml.DocumentNode && len(n.Content) > 0 {
+		n = n.Content[0]
+	}
+	for _, k := range keys {
+		if n.Kind != yaml.MappingNode {
+			return "", false
+		}
+		var next *yaml.Node
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			if n.Content[i].Value == k {
+				next = n.Content[i+1]
+			}
+		}
+		if next == nil {
+			return "", false
+		}
+		n = next
+	}
+	return n.Value, n.Kind == yaml.ScalarNode
+}
+
 // findTokenLike returns the key path of the first scalar that looks like a token, or "".
 func findTokenLike(n *yaml.Node, path string) string {
 	switch n.Kind {
@@ -255,17 +295,24 @@ func findTokenLike(n *yaml.Node, path string) string {
 	return ""
 }
 
-func (c *Config) applyDefaults() {
+// applyDefaults fills what the file left out. approveWritten says whether plan.approve_word was written, even as "",
+// so that an empty word is refused rather than replaced.
+func (c *Config) applyDefaults(approveWritten bool) {
 	set := func(s *string, v string) {
 		if *s == "" {
 			*s = v
 		}
 	}
 	set(&c.Labels.Ready, "agent:ready")
+	set(&c.Labels.Plan, "agent:plan")
+	set(&c.Labels.Go, "agent:go")
 	set(&c.Labels.Running, "agent:running")
 	set(&c.Labels.Waiting, "agent:waiting")
 	set(&c.Labels.Done, "agent:done")
 	set(&c.Comments.Language, "en")
+	if !approveWritten {
+		c.Plan.ApproveWord = "/ok"
+	}
 	set(&c.Claude.Binary, "claude")
 	set(&c.Claude.Auth, "subscription")
 	set(&c.Forges.GitLab.BaseURL, "https://gitlab.com")
@@ -313,6 +360,9 @@ func (c *Config) validate() error {
 		errs = append(errs, fmt.Errorf("version must be 1, got %d", c.Version))
 	}
 	need(c.Host.Name, "host.name")
+	if w := c.Plan.ApproveWord; strings.TrimSpace(w) == "" || strings.ContainsAny(w, " \t\r\n") {
+		errs = append(errs, fmt.Errorf("plan.approve_word must be one word without spaces, got %q", w))
+	}
 	switch c.Comments.Language {
 	case "en", "ja":
 	default:

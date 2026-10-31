@@ -19,6 +19,7 @@ const listen = "192.168.0.82:8783"
 // fakeInbox stands in for the inbox service.
 type fakeInbox struct {
 	replies []inboxapi.ReplyRequest
+	saved   []inboxapi.SaveInstructionsRequest
 	err     error
 }
 

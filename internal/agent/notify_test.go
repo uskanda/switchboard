@@ -126,3 +126,30 @@ func TestWithheldCommentKeepsTheSecretOutOfTheNotification(t *testing.T) {
 		t.Fatalf("notifications: %q", got)
 	}
 }
+
+func TestPlanWaitsAreNotified(t *testing.T) {
+	x := newH(t, "", nil)
+	n := &notes{}
+	x.step(1, questions([3]string{"Default", "Which default should the flag have?", "Off."}))
+	x.step(2, planDecl("Add --dry-run, off by default.\n\nThen test it."))
+	x.agentWith(withNotes(n))
+	x.startPlan()
+	x.replyAndRun("/ok")
+	got := n.sent()
+	if len(got) != 2 {
+		t.Fatalf("sent %d notifications: %q", len(got), got)
+	}
+	for _, want := range []string{"Waiting (plan-questions)", "Q1", "Default"} {
+		if !strings.Contains(got[0], want) {
+			t.Errorf("the questions notification lacks %q:\n%s", want, got[0])
+		}
+	}
+	if strings.Contains(got[0], "Read the config package.") {
+		t.Errorf("the questions notification quotes the summary, not the question:\n%s", got[0])
+	}
+	for _, want := range []string{"Waiting (plan)", "Add --dry-run, off by default."} {
+		if !strings.Contains(got[1], want) {
+			t.Errorf("the plan notification lacks %q:\n%s", want, got[1])
+		}
+	}
+}
