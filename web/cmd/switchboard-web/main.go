@@ -60,7 +60,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		Handler:           &server.Server{Inbox: &inboxapi.Client{Socket: sock}, Listen: cfg.Listen, Assets: assets.FS()},
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      60 * time.Second,
+		// The event streams set their own deadlines; this one is for the other requests.
+		WriteTimeout: 60 * time.Second,
+		// A signal ends the open event streams too, which Shutdown would otherwise wait for.
+		BaseContext: func(net.Listener) context.Context { return ctx },
 	}
 	go func() {
 		<-ctx.Done()

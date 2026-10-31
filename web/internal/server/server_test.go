@@ -8,8 +8,10 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/uskanda/switchboard/inboxapi"
 )
@@ -18,18 +20,35 @@ const listen = "192.168.0.82:8783"
 
 // fakeInbox stands in for the inbox service.
 type fakeInbox struct {
+	mu      sync.Mutex
 	replies []inboxapi.ReplyRequest
 	err     error
+	items   []inboxapi.Item // the one item below when nil
 }
 
 func (f *fakeInbox) List(context.Context) (*inboxapi.Inbox, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.err != nil {
 		return nil, f.err
 	}
-	return &inboxapi.Inbox{Items: []inboxapi.Item{{N: 1, Ref: "gh:o/r#12", Title: "<script>x</script>"}}}, nil
+	items := f.items
+	if items == nil {
+		items = []inboxapi.Item{{N: 1, Ref: "gh:o/r#12", Title: "<script>x</script>"}}
+	}
+	// fetched_at differs on every call, as the inbox service's does each time its cache is renewed.
+	return &inboxapi.Inbox{Items: items, Errors: []inboxapi.ForgeError{}, FetchedAt: time.Now()}, nil
+}
+
+func (f *fakeInbox) set(items []inboxapi.Item, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.items, f.err = items, err
 }
 
 func (f *fakeInbox) Issue(_ context.Context, ref string) (*inboxapi.Detail, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -37,6 +56,8 @@ func (f *fakeInbox) Issue(_ context.Context, ref string) (*inboxapi.Detail, erro
 }
 
 func (f *fakeInbox) Reply(_ context.Context, ref, text string, force bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.err != nil {
 		return f.err
 	}

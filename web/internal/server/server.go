@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/uskanda/switchboard/inboxapi"
 )
@@ -33,6 +35,11 @@ type Server struct {
 	Listen string
 	// Assets is the built front end, with index.html at its root.
 	Assets fs.FS
+	// Poll is how often an open page's list is asked for again (DefaultPoll when zero).
+	Poll time.Duration
+
+	mu   sync.Mutex
+	wake chan struct{}
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -47,6 +54,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/api/issue" && r.Method == http.MethodGet:
 		out, err := s.Inbox.Issue(r.Context(), r.URL.Query().Get("ref"))
 		s.answer(w, out, err)
+	case r.URL.Path == "/api/events" && r.Method == http.MethodGet:
+		s.events(w, r)
 	case r.URL.Path == "/api/reply" && r.Method == http.MethodPost:
 		s.reply(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/"):
@@ -86,6 +95,8 @@ func (s *Server) reply(w http.ResponseWriter, r *http.Request) {
 		s.answer(w, nil, err)
 		return
 	}
+	// The inbox service dropped its cached list; the open pages get the renewed one now.
+	s.wakeAll()
 	w.WriteHeader(http.StatusNoContent)
 }
 
