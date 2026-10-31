@@ -1,5 +1,7 @@
 package agent
 
+import "strings"
+
 // texts are the fixed parts of what the agent posts, in one language (comments.language).
 type texts struct {
 	questionTitle, permissionTitle, errorTitle, verifyTitle, doneTitle string
@@ -99,4 +101,23 @@ func textsFor(lang string) texts {
 // uses them to quote the question.
 func QuestionLabels() []string {
 	return []string{"**" + english.question + "**", "**" + japanese.question + "**"}
+}
+
+// Question is the question in the text of an agent post (without its marker), on one line: the paragraph after the
+// question label, or else the first paragraph after the heading. It is "" when there is none.
+func Question(text string) string {
+	for _, l := range QuestionLabels() {
+		if i := strings.LastIndex(text, l+"\n"); i >= 0 {
+			text = text[i+len(l):]
+			break
+		}
+	}
+	for _, para := range strings.Split(text, "\n\n") {
+		p := strings.TrimSpace(para)
+		if p == "" || strings.HasPrefix(p, "#") || (strings.HasPrefix(p, "**") && strings.HasSuffix(p, "**")) {
+			continue
+		}
+		return strings.Join(strings.Fields(p), " ")
+	}
+	return ""
 }

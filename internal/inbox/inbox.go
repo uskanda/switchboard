@@ -263,19 +263,8 @@ func body(post string) string {
 // Excerpt is the start of the question in an agent post, on one line: the paragraph after the question label, or
 // else the first paragraph after the heading.
 func Excerpt(post string) string {
-	text := body(post)
-	for _, l := range agent.QuestionLabels() {
-		if i := strings.LastIndex(text, l+"\n"); i >= 0 {
-			text = text[i+len(l):]
-			break
-		}
-	}
-	for _, para := range strings.Split(text, "\n\n") {
-		p := strings.TrimSpace(para)
-		if p == "" || strings.HasPrefix(p, "#") || (strings.HasPrefix(p, "**") && strings.HasSuffix(p, "**")) {
-			continue
-		}
-		return clip(strings.Join(strings.Fields(p), " "), 72)
+	if q := agent.Question(body(post)); q != "" {
+		return clip(q, 72)
 	}
 	return "?"
 }
