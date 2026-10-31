@@ -19,7 +19,7 @@ type Config struct {
 	// Listen is the address to serve on: an IP address of this host and a port. There is no default, and every
 	// interface (0.0.0.0, ::) is refused: which network sees the inbox is for the user to decide.
 	Listen string `yaml:"listen"`
-	// Socket is the inbox service's socket; inboxapi.DefaultSocket when empty.
+	// Socket is the inbox service's socket; inboxapi.DefaultSocket, looked up on each request, when empty.
 	Socket string `yaml:"socket"`
 }
 

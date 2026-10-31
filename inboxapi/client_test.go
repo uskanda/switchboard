@@ -120,3 +120,54 @@ func TestSocketPaths(t *testing.T) {
 		t.Fatalf("with neither: %q", got)
 	}
 }
+
+func TestDefaultSocket(t *testing.T) {
+	dir := t.TempDir()
+	systemSocket = filepath.Join(dir, "system.sock")
+	t.Cleanup(func() { systemSocket = SystemSocket })
+	t.Setenv("RUNTIME_DIRECTORY", "")
+	t.Setenv("XDG_RUNTIME_DIR", "/run/user/1000")
+	if got := DefaultSocket(); got != "/run/user/1000/switchboard/inbox.sock" {
+		t.Fatalf("with XDG_RUNTIME_DIR: %q", got)
+	}
+	// A system service started without XDG_RUNTIME_DIR, before the inbox service made its socket.
+	t.Setenv("XDG_RUNTIME_DIR", "")
+	if got := DefaultSocket(); got != systemSocket {
+		t.Fatalf("with neither: %q", got)
+	}
+	os.WriteFile(systemSocket, nil, 0o600)
+	t.Setenv("XDG_RUNTIME_DIR", "/run/user/1000")
+	if got := DefaultSocket(); got != systemSocket {
+		t.Fatalf("with the system socket: %q", got)
+	}
+}
+
+// A client with no socket looks for it on each request, so it reaches an inbox service that started after it.
+func TestClientFindsALaterSocket(t *testing.T) {
+	dir, err := os.MkdirTemp("", "ia")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	systemSocket = filepath.Join(dir, "inbox.sock")
+	t.Cleanup(func() { systemSocket = SystemSocket })
+	t.Setenv("RUNTIME_DIRECTORY", "")
+	t.Setenv("XDG_RUNTIME_DIR", "")
+	c := &Client{}
+	if _, err := c.List(ctx); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("before the service: err = %v", err)
+	}
+	ln, err := net.Listen("unix", systemSocket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reply(w, 200, Inbox{Items: []Item{{Ref: "gh:o/r#1"}}})
+	})}
+	go srv.Serve(ln)
+	t.Cleanup(func() { srv.Close() })
+	in, err := c.List(ctx)
+	if err != nil || len(in.Items) != 1 {
+		t.Fatalf("after the service: %+v, %v", in, err)
+	}
+}
