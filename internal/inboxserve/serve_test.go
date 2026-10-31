@@ -29,12 +29,12 @@ type counting struct {
 	err      error
 }
 
-func (c *counting) SearchOpenIssuesWithLabel(ctx context.Context, scope, label string) ([]forge.IssueSummary, error) {
+func (c *counting) SearchOpenIssuesWithLabel(ctx context.Context, scope string, labels ...string) ([]forge.IssueSummary, error) {
 	c.searches.Add(1)
 	if c.err != nil {
 		return nil, c.err
 	}
-	return c.Forge.SearchOpenIssuesWithLabel(ctx, scope, label)
+	return c.Forge.SearchOpenIssuesWithLabel(ctx, scope, labels...)
 }
 
 type world struct {

@@ -352,3 +352,17 @@ func TestEditComment(t *testing.T) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
 }
+
+// GitLab's labels parameter needs every label, so each label is asked for on its own and the issues merged.
+func TestSearchOpenIssuesWithAnyOfTheLabels(t *testing.T) {
+	s, c := newServer(t)
+	s.on("GET "+proj+"/issues", func(w http.ResponseWriter, r *http.Request) {
+		l := r.URL.Query().Get("labels")
+		iid := map[string]int{"agent:waiting": 3, "agent:running": 4}[l]
+		jsonReply([]map[string]any{{"iid": iid, "title": "t", "state": "opened", "labels": []string{l}}})(w, r)
+	})
+	got, err := c.SearchOpenIssuesWithLabel(ctx, "nas/tools/sb", "agent:waiting", "agent:running")
+	if err != nil || len(got) != 2 || got[0].Ref.Number != 3 || got[1].Ref.Number != 4 || len(s.log) != 2 {
+		t.Fatalf("Search = %+v, %v (%d requests)", got, err, len(s.log))
+	}
+}

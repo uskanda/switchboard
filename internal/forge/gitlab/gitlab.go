@@ -454,20 +454,30 @@ func (c *Client) Version(ctx context.Context) (string, error) {
 
 // SearchOpenIssuesWithLabel implements forge.Forge. On GitLab the scope is one project's path ("group/project"):
 // the inbox reads the configured projects one by one.
-func (c *Client) SearchOpenIssuesWithLabel(ctx context.Context, scope, label string) ([]forge.IssueSummary, error) {
+// GitLab's labels parameter matches the issues that carry all of them, so each label is asked for on its own.
+func (c *Client) SearchOpenIssuesWithLabel(ctx context.Context, scope string, labels ...string) ([]forge.IssueSummary, error) {
 	i := strings.LastIndex(scope, "/")
 	if i < 0 {
 		return nil, fmt.Errorf("gitlab: %q is not a project path", scope)
 	}
 	owner, repo := scope[:i], scope[i+1:]
 	var out []forge.IssueSummary
-	_, err := pages(ctx, c, c.url(project(owner, repo)+"/issues", url.Values{"labels": {label}, "state": {"opened"}, "per_page": {"100"}}), 0,
-		func(p []glIssue) {
-			for _, gi := range p {
-				out = append(out, gi.summary(owner, repo))
-			}
-		})
-	return out, err
+	seen := map[int]bool{}
+	for _, label := range labels {
+		_, err := pages(ctx, c, c.url(project(owner, repo)+"/issues", url.Values{"labels": {label}, "state": {"opened"}, "per_page": {"100"}}), 0,
+			func(p []glIssue) {
+				for _, gi := range p {
+					if s := gi.summary(owner, repo); !seen[s.Ref.Number] {
+						seen[s.Ref.Number] = true
+						out = append(out, s)
+					}
+				}
+			})
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 var _ forge.Forge = (*Client)(nil)

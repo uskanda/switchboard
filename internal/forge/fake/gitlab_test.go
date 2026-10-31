@@ -77,3 +77,18 @@ func TestEditComment(t *testing.T) {
 		t.Fatalf("editing a missing comment = %v", err)
 	}
 }
+
+func TestSearchWithAnyOfTheLabels(t *testing.T) {
+	f := New(nil)
+	me := f.AddUser("me", 1)
+	f.AddRepo("o", "r", true)
+	a := f.AddIssue("o", "r", 1, "t", "b", me)
+	b := f.AddIssue("o", "r", 2, "t", "b", me)
+	f.AddIssue("o", "r", 3, "t", "b", me)
+	f.AddLabel(a, "agent:waiting", me)
+	f.AddLabel(b, "agent:running", me)
+	got, err := f.SearchOpenIssuesWithLabel(context.Background(), "user:me", "agent:waiting", "agent:running")
+	if err != nil || len(got) != 2 {
+		t.Fatalf("Search = %+v, %v", got, err)
+	}
+}

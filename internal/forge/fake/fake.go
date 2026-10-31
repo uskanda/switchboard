@@ -417,7 +417,7 @@ func (f *Forge) User(_ context.Context, login string) (*forge.User, error) {
 
 // SearchOpenIssuesWithLabel implements forge.Forge. A GitHub fake ignores the scope and searches every repository;
 // a GitLab fake searches the one project the scope names, as GitLab does.
-func (f *Forge) SearchOpenIssuesWithLabel(_ context.Context, scope string, label string) ([]forge.IssueSummary, error) {
+func (f *Forge) SearchOpenIssuesWithLabel(_ context.Context, scope string, labels ...string) ([]forge.IssueSummary, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var out []forge.IssueSummary
@@ -426,8 +426,11 @@ func (f *Forge) SearchOpenIssuesWithLabel(_ context.Context, scope string, label
 			continue
 		}
 		for _, is := range r.issues {
-			if is.data.State == "open" && contains(is.data.Labels, label) {
-				out = append(out, f.summary(is))
+			for _, label := range labels {
+				if is.data.State == "open" && contains(is.data.Labels, label) {
+					out = append(out, f.summary(is))
+					break
+				}
 			}
 		}
 	}

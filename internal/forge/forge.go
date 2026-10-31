@@ -136,6 +136,6 @@ type Forge interface {
 	RepoPrivate(ctx context.Context, owner, repo string) (bool, error)
 	// User resolves a login to the user, with its numeric ID.
 	User(ctx context.Context, login string) (*User, error)
-	// SearchOpenIssuesWithLabel lists the open issues within scope (such as "user:alice") that carry label.
-	SearchOpenIssuesWithLabel(ctx context.Context, scope, label string) ([]IssueSummary, error)
+	// SearchOpenIssuesWithLabel lists the open issues within scope (such as "user:alice") that carry any of labels.
+	SearchOpenIssuesWithLabel(ctx context.Context, scope string, labels ...string) ([]IssueSummary, error)
 }

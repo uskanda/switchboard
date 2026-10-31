@@ -85,7 +85,7 @@ type down struct{ forge.Forge }
 
 var errDown = errors.New("connection refused")
 
-func (down) SearchOpenIssuesWithLabel(context.Context, string, string) ([]forge.IssueSummary, error) {
+func (down) SearchOpenIssuesWithLabel(context.Context, string, ...string) ([]forge.IssueSummary, error) {
 	return nil, errDown
 }
 

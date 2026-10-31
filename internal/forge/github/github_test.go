@@ -304,3 +304,17 @@ func TestEditComment(t *testing.T) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
 }
+
+// Several labels are searched at once: on GitHub, label:"a","b" matches either (V28).
+func TestSearchOpenIssuesWithAnyOfTheLabels(t *testing.T) {
+	s, c := newServer(t)
+	s.on("GET /search/issues", func(w http.ResponseWriter, r *http.Request) {
+		if q := r.URL.Query().Get("q"); q != `is:issue is:open label:"agent:waiting","agent:running" user:alice` {
+			t.Errorf("q = %s", q)
+		}
+		jsonReply(map[string]any{"items": []map[string]any{}})(w, r)
+	})
+	if _, err := c.SearchOpenIssuesWithLabel(ctx, "user:alice", "agent:waiting", "agent:running"); err != nil {
+		t.Fatal(err)
+	}
+}
