@@ -28,14 +28,20 @@ type progressLog struct {
 }
 
 // add appends the line for now, given the tool counts and the assistant's latest text, and reports whether it did.
-// A line with the same tools and purpose as the last one is not added.
+// A line with the same tools and purpose as the last one is not added. A line that looks like it holds a secret is
+// replaced by one that says so; it is checked before the purpose is cut, so that a cut secret is still found.
 func (l *progressLog) add(now time.Time, tools map[string]int, text string) bool {
-	what := l.tools(tools) + l.msg.purposeSep + purpose(text)
+	full := firstLine(text)
+	what := l.tools(tools) + l.msg.purposeSep + cut(full)
 	if len(l.lines) > 0 && what == l.last {
 		return false
 	}
 	l.last = what
-	l.lines = append(l.lines, now.Format("15:04")+" "+l.elapsed(now.Sub(l.started))+" "+what)
+	line := now.Format("15:04") + " " + l.elapsed(now.Sub(l.started)) + " " + what
+	if workspace.HasSecret(line) || workspace.HasSecret(full) {
+		line = l.msg.progressWithheld
+	}
+	l.lines = append(l.lines, line)
 	return true
 }
 
@@ -65,17 +71,22 @@ func (l *progressLog) elapsed(d time.Duration) string {
 	return fmt.Sprintf(l.msg.minutes, m)
 }
 
-// purpose is the first non-blank line of text, cut to purposeLen characters; "?" when there is none.
-func purpose(text string) string {
+// firstLine is the first non-blank line of text; "?" when there is none.
+func firstLine(text string) string {
 	for _, line := range strings.Split(text, "\n") {
 		if line = strings.TrimSpace(line); line != "" {
-			if r := []rune(line); len(r) > purposeLen {
-				line = string(r[:purposeLen])
-			}
 			return line
 		}
 	}
 	return "?"
+}
+
+// cut keeps the first purposeLen characters of a purpose.
+func cut(line string) string {
+	if r := []rune(line); len(r) > purposeLen {
+		return string(r[:purposeLen])
+	}
+	return line
 }
 
 // followProgress posts and keeps up the progress comment of a run while claude writes stream, every ProgressEvery
@@ -136,32 +147,33 @@ func (a *Agent) progressTick(ctx context.Context, ref forge.IssueRef, pc *progre
 	if !pc.log.add(now, pc.read.Tools, pc.read.Text) {
 		return
 	}
-	body := a.progressBody(ref, pc)
+	body := a.progressBody(pc)
 	a.checkComment(ref, pc.rec.Run, "progress.md", body)
-	if pc.id == 0 {
-		c, err := a.forgeOf(ref).PostComment(ctx, ref, body)
-		if err != nil {
-			fail("post", err)
+	if pc.id != 0 {
+		err := a.forgeOf(ref).EditComment(ctx, ref, pc.id, body)
+		if err == nil {
 			return
 		}
-		pc.id = c.ID
-		a.Audit.Log("progress.posted", map[string]any{"issue": ref.String(), "run": pc.rec.Run, "comment": c.ID})
+		if !errors.Is(err, forge.ErrNotFound) {
+			fail("edit", err)
+			return
+		}
+		pc.id = 0 // someone removed the comment: post it again
+	}
+	c, err := a.forgeOf(ref).PostComment(ctx, ref, body)
+	if err != nil {
+		fail("post", err)
 		return
 	}
-	if err := a.forgeOf(ref).EditComment(ctx, ref, pc.id, body); err != nil {
-		fail("edit", err)
-	}
+	pc.id = c.ID
+	a.Audit.Log("progress.posted", map[string]any{"issue": ref.String(), "run": pc.rec.Run, "comment": c.ID})
 }
 
-// progressBody is the progress comment: a heading, one list item per line, and the marker. A line that looks like
-// it holds a secret is replaced by one that says so.
-func (a *Agent) progressBody(ref forge.IssueRef, pc *progressComment) string {
+// progressBody is the progress comment: a heading, one list item per line, and the marker.
+func (a *Agent) progressBody(pc *progressComment) string {
 	var b strings.Builder
 	b.WriteString("### " + a.msg.progressTitle + "\n\n")
 	for _, l := range pc.log.lines {
-		if workspace.HasSecret(l) {
-			l = a.msg.progressWithheld
-		}
 		b.WriteString("- " + l + "\n")
 	}
 	m := marker.Marker{Host: a.Config.Host.Name, Session: pc.rec.Session, Run: pc.rec.Run, State: marker.Progress, Ack: pc.rec.Ack, At: pc.rec.Started}

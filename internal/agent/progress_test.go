@@ -46,6 +46,16 @@ func TestProgressLineShape(t *testing.T) {
 	}
 }
 
+// A secret that the 120-character cut splits is still found: the line is checked before it is cut.
+func TestProgressLineWithASecretAtTheCut(t *testing.T) {
+	start := time.Date(2026, 10, 31, 13, 34, 0, 0, time.UTC)
+	l := &progressLog{msg: english, started: start}
+	l.add(start.Add(time.Minute), map[string]int{"Bash": 1}, strings.Repeat("x", 105)+"ghp_"+strings.Repeat("A", 36))
+	if len(l.lines) != 1 || l.lines[0] != english.progressWithheld {
+		t.Fatalf("lines = %q", l.lines)
+	}
+}
+
 // asst is a step fragment that prints an assistant message with text and one call of tool, whose input must
 // never reach the forge.
 func asst(text, tool string) string {
@@ -116,6 +126,33 @@ func TestProgressCommentGrowsInPlaceAndGoesAway(t *testing.T) {
 	}
 	if len(x.claims(x.ref)) != 1 || len(x.posts(x.ref)) != 1 || x.lastPost(x.ref).Marker.State != "waiting" {
 		t.Fatalf("claims %d, posts %+v", len(x.claims(x.ref)), x.posts(x.ref))
+	}
+}
+
+// A progress comment that someone removed mid-run is posted again with the next line, not edited in vain.
+func TestARemovedProgressCommentIsPostedAgain(t *testing.T) {
+	x := newH(t, "", nil)
+	x.agentWith(fast)
+	x.step(1, asst("目的A", "Edit")+block(1, asst("目的B", "Bash")+block(2, waiting("s", "q"))))
+	x.f.AddLabel(x.ref, "agent:ready", x.master)
+	x.poll()
+	x.waitFor("the progress comment", func() bool { return len(progressOf(x.f, x.bot.ID, x.ref)) == 1 })
+	gone := progressOf(x.f, x.bot.ID, x.ref)[0]
+	if err := x.f.DeleteComment(context.Background(), x.ref, gone.ID); err != nil {
+		t.Fatal(err)
+	}
+	x.release(1)
+	x.waitFor("the progress comment posted again", func() bool {
+		ps := progressOf(x.f, x.bot.ID, x.ref)
+		return len(ps) == 1 && ps[0].ID != gone.ID && strings.Contains(ps[0].Body, "目的B")
+	})
+	if x.audit.has("progress.failed", nil) {
+		t.Fatal("the removed comment was recorded as a failure")
+	}
+	x.release(2)
+	x.settle()
+	if ps := progressOf(x.f, x.bot.ID, x.ref); len(ps) != 0 {
+		t.Fatalf("the progress comment stayed: %+v", ps)
 	}
 }
 
