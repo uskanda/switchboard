@@ -38,7 +38,7 @@ GitHub/GitLabのissueを起点に、複数端末・複数プロダクトにま�
 
 ## ステータス
 
-Phase 3の実装中。Phase 1とPhase 2は完了している。GitHubとGitLab（GitLab.comとセルフホスト）のプロジェクトを扱い、両フォージの待ちを1つの受信箱に出せることを、実物で確かめた（[docs/ROADMAP.md](docs/ROADMAP.md) の検証項目V20、V24）。Phase 3では、エージェントをsystemdのサービスとして常駐させ、複数の端末が同じissueを重ねて実行しないようにする。対象はLinux（Ubuntu）で、issueの更新はポーリングで検知する。macOSと中継サーバーは、後のフェーズで扱う。
+Phase 4の実装中。Phase 1からPhase 3までの実装を終えた。Phase 3の2台での実物の確認は、後回しにしている。GitHubとGitLab（GitLab.comとセルフホスト）のプロジェクトを扱い、両フォージの待ちを1つの受信箱に出せることを、実物で確かめた（[docs/ROADMAP.md](docs/ROADMAP.md) の検証項目V20、V24）。エージェントはsystemdのサービスとして常駐でき、複数の端末が同じissueを重ねて実行しない。Phase 4では、webhookを受ける中継を足し、返答から実行の開始までをポーリングの間隔に依存させない。対象はLinux（Ubuntu）で、macOSは後のフェーズで扱う。
 
 ## 必要なもの
 
@@ -216,6 +216,60 @@ switchboard service install
 ### 複数の端末で動かす
 
 担当は、プロジェクトの `host` で端末ごとに分ける。設定を誤って2台が同じプロジェクトを担当しても、同じissueを2台が実行することは無い。エージェントは、着手のときに「端末ubuntu-aで実行を始めます」のような着手のコメントを投稿してから、issueを取り直す。最も早く着手のコメントを出した端末だけが実行し、他の端末は自分のコメントを消して退く。2台とも、この版のswitchboardにすること。
+
+### 中継で返答にすぐ着手する
+
+既定では、エージェントはポーリングで更新を見つける。返答してから実行が始まるまで、最大で `poll_interval` だけかかる。中継（`switchboard relay serve`）を置くと、フォージのwebhookを受けた中継がissueのIDだけをエージェントへ配り、エージェントは数秒で取り直す。中継は、issueの本文、コメント、タイトル、ユーザー名を持たず、フォージのトークンも持たない。
+
+今の版の中継は、受け口を `127.0.0.1` で待ち、公開しない。同じ端末で動くGitLabのプロジェクトに使う。GitHub.comからのwebhookには公開の受け口が要るので、GitHubのプロジェクトは当面ポーリングで扱う。
+
+中継につながっている間、エージェントは `reconcile_interval`（既定10分）ごとに全プロジェクトを照合する。中継が止まったら、すぐに `poll_interval` のポーリングに戻り、中継が戻ったらつなぎ直す。
+
+設置の手順は次のとおりである。
+
+1. 端末のトークンを作る。トークンはSecret Serviceに置かれ、画面には、設定に足す項目（トークンのハッシュと、エージェントの `relay`）だけが出る
+
+   ```bash
+   switchboard relay token add <端末名>
+   ```
+
+2. GitLabの管理画面で、`Admin > Settings > Network > Outbound requests` を開く。「Local IP addresses and domain names that hooks and integrations can access」に、`127.0.0.1:8781` を足す。「Allow requests to the local network from webhooks and integrations」はオフのままにする。足してから数分の間、GitLabのバックグラウンドの処理は、このアドレスへの送信を拒むことがある
+3. プロジェクトのwebhookを登録する。シークレットはSecret Serviceに置かれ、受信箱のトークンでwebhookが登録される。GitLabでは、署名トークンで登録する。トークンに権限が無ければ、画面から登録する手順が、シークレットとともに1回だけ表示される
+
+   ```bash
+   switchboard relay hook add gl:nas/switchboard-sandbox
+   ```
+
+4. 1と3で表示された項目を、設定ファイルの `relay:` 節と `agent:` 節に貼り付ける。switchboardは設定ファイルを書き換えない
+
+   ```yaml
+   relay:
+     hooks:
+       - project: gl:nas/switchboard-sandbox
+         key: <hook-key>
+         secret_ref: switchboard/relay-hook-<hook-key>
+     hosts:
+       - name: <端末名>
+         token_hash: sha256:<16進>
+   agent:
+     reconcile_interval: 10m
+     relay:
+       url: http://127.0.0.1:8782/events
+       token_ref: switchboard/relay-<端末名>
+   ```
+
+5. 中継をサービスとして置き、エージェントを中継モードで置き直す。sudoで実行するコマンドは、エージェントのサービスと同じ形で、unitの名前が `switchboard-relay.service` になる。中継のクレデンシャルは、webhookのシークレットだけである
+
+   ```bash
+   switchboard service install --relay
+   switchboard service install
+   ```
+
+中継の状態は `switchboard service status --relay` で、ログは `journalctl -u switchboard-relay.service` で見る。webhookをやめるときは `switchboard relay hook remove <プロジェクト>` を実行し、設定から項目を消して `service install --relay` をやり直す。
+
+GitLabは、4回続けて失敗したwebhookを一時的に止める。中継を長く止めると、webhookも止まりうる。止まっている間の更新も、照合で処理される。webhookを有効に戻すには、GitLabのプロジェクトの `Settings > Webhooks` でテストを送る。
+
+署名トークンを使えないGitLabでは、`relay hook add --gitlab-token` で、`X-Gitlab-Token` を使って登録できる。このとき、設定の項目に `gitlab_token: true` が付く。`X-Gitlab-Token` は平文の共有シークレットなので、署名トークンが使えるならそちらを使う。
 
 ## 開発
 

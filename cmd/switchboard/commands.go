@@ -21,6 +21,7 @@ import (
 	"github.com/uskanda/switchboard/internal/forge/gitlab"
 	"github.com/uskanda/switchboard/internal/inbox"
 	"github.com/uskanda/switchboard/internal/labels"
+	"github.com/uskanda/switchboard/internal/relayclient"
 	"github.com/uskanda/switchboard/internal/secret"
 	"github.com/uskanda/switchboard/internal/state"
 )
@@ -158,6 +159,16 @@ func agentRun(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	a := &agent.Agent{Config: cfg, Routes: routes, State: d, Audit: audit, Log: stderr}
+	if r := cfg.Agent.Relay; r != nil {
+		res := secret.Resolver{Store: secret.Keyring{}, AllowEnv: cfg.Secrets.AllowEnv}
+		tok, err := res.Token(r.TokenRef)
+		if err != nil {
+			return fail(stderr, err)
+		}
+		a.Relay = &relayclient.Client{URL: r.URL, Token: tok, Logf: func(format string, args ...any) {
+			fmt.Fprintf(stderr, "switchboard: "+format+"\n", args...)
+		}}
+	}
 	if err := a.Run(ctx); err != nil {
 		return fail(stderr, err)
 	}

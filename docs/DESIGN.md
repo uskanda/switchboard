@@ -230,10 +230,10 @@ $ switchboard inbox
 ### 4.7 中継（`internal/relay`、Phase 4）
 
 - リスナーを2つに分ける
-  - webhook受信：`127.0.0.1:<port>` で待ち、Tailscale Funnel（またはCloudflare Tunnel）でこのポートだけを公開。パスは `/webhook/{github|gitlab}/<hook-key>`。`hook-key` でプロジェクトごとのwebhookシークレットを引き、1つのシークレット漏えいの影響をそのプロジェクトに限定する
-  - SSE配信：Tailnet側のアドレスだけで待つ（`tailscale serve` 等）。端末ごとのbearerトークン（中継側はハッシュのみ保持）で認証
+  - webhook受信：`127.0.0.1:<port>`（既定8781）で待つ。当面は公開せず、同じ端末のGitLabからだけ受ける（ADR-007）。公開するときは、このポートだけを公開する。パスは `/webhook/{github|gitlab}/<hook-key>`。`hook-key` でプロジェクトごとのwebhookシークレットを引き、1つのシークレット漏えいの影響をそのプロジェクトに限定する
+  - SSE配信：`127.0.0.1:<port>`（既定8782）で待ち、アドレスは設定で変えられる。端末ごとのbearerトークン（中継側はハッシュのみ保持）で認証（ADR-035）
 - 処理順：ボディ上限（例5 MiB）→ 署名検証 → 配信IDで重複排除（LRU、72時間）→ 対象イベントだけ抽出 → 残りを破棄
-  - 署名検証：GitHubは `X-Hub-Signature-256`（HMAC-SHA256）を検証する。GitLabは署名トークン（`webhook-id` / `webhook-timestamp` / `webhook-signature`、GitLab 19.0以降）を優先する。タイムスタンプが許容幅（例5分）を外れたら破棄し、リプレイを防ぐ。署名トークンが使えない環境に限り、`X-Gitlab-Token` を定数時間で比較する〔確認済C9、利用中のGitLabで要確認V16〕（ADR-017）
+  - 署名検証：GitHubは `X-Hub-Signature-256`（HMAC-SHA256）を検証する。GitLabは署名トークン（`webhook-id` / `webhook-timestamp` / `webhook-signature`、GitLab 19.0以降）で検証する。鍵は `whsec_` を除いてbase64を解いた32バイトで、`<webhook-id>.<webhook-timestamp>.<ボディ>` に署名する。タイムスタンプが5分を外れたら破棄し、リプレイを防ぐ。署名トークンが使えないプロジェクトに限り、`gitlab_token: true` で `X-Gitlab-Token` の定数時間の比較を許す〔確認済C9、V16〕（ADR-017）
   - 配信ID：GitHubは `X-GitHub-Delivery` を使う。手動再送でも同じ値になる〔確認済C8〕。GitLabは `Idempotency-Key`（= `webhook-id`）を使う。再試行しても同じ値になる〔確認済C10〕。`X-Gitlab-Event-UUID` は使わない
 - GitHubは失敗した配信を自動では再送しない〔確認済C8〕。中継が落ちている間のイベントは失われる前提で、reconcileのポーリングで必ず回収する
 - 対象イベントは次のとおり。
@@ -244,14 +244,17 @@ $ switchboard inbox
   ```
   id: 1042
   event: issue
-  data: {"forge":"github","project":"uskanda/foo","issue":42,"kind":"issue_comment","delivery":"<uuid>"}
+  data: {"forge":"gh","project":"alice/foo","issue":42,"kind":"issue_comment","delivery":"<uuid>"}
   ```
 
 - 直近1,000件をリングバッファに持ち、`Last-Event-ID` で再接続時に取りこぼしを埋める。バッファから溢れた分はreconcileのポーリングで回収する
 - ログに残すのは配信ID・フォージ・プロジェクト・issue番号・種別・検証結果のみ。ボディは残さない
 - イベントは全端末に同報し、担当判定は各エージェントが行う（中継に端末対応表を持たせない）
 
-ADR-007（公開方法）は、自宅サーバーがあるならTailscale Funnelを推奨（追加の事業者を増やさず、公開範囲をポート単位で絞れる）。自宅サーバーがない場合は小さなVM＋Tailscale。
+- エージェントは、届いたイベントのプロジェクトを3秒まとめてから、ポーリングと同じ処理で取り直す。つながっている間は `reconcile_interval`（既定10分）ごと、切れている間は `poll_interval` ごとにポーリングし、つながったときと切れたときはすぐに1回ポーリングする
+- 中継のサービスは `switchboard service install --relay` で置き、webhookのシークレットだけをクレデンシャルにする
+
+ADR-007（公開方法）は、当面は公開しないと決めた。公開するときは、中継用のサーバーを別に用意して改めて決める。
 
 ---
 

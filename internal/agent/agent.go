@@ -44,6 +44,11 @@ type Agent struct {
 	Log io.Writer
 	// IntGrace and TermGrace override how long a stopping run gets after SIGINT and after SIGTERM.
 	IntGrace, TermGrace time.Duration
+	// Relay, when set, is the relay's event stream: an event makes the agent fetch its project again, and while
+	// connected the agent polls every reconcile_interval instead of every poll_interval.
+	Relay Subscriber
+	// Debounce is how long the events of one project are gathered before it is fetched; 3s when zero.
+	Debounce time.Duration
 
 	ctx      context.Context // runs end when it does
 	unlock   func()
@@ -58,6 +63,12 @@ type Agent struct {
 	notes   map[forge.IssueRef]int  // GitLab: the comment count of each waiting issue at its last evaluation
 	closed  map[forge.IssueRef]bool // closed issues whose worktree waits for their run to stop
 	wg      sync.WaitGroup
+
+	pollMu    sync.Mutex // one poll or relay refresh at a time
+	rmu       sync.Mutex
+	connected bool                   // the relay stream is up
+	timers    map[string]*time.Timer // by project ref: the pending refresh of a project with events
+	wake      chan struct{}          // the relay connected or was lost
 }
 
 // Route is what one project uses to reach its forge.
@@ -176,7 +187,12 @@ func (a *Agent) Run(ctx context.Context) error {
 	defer a.Close()
 	defer a.Wait()
 	a.logf("polling %d project(s) every %s", len(a.projects), a.Config.Agent.PollInterval)
-	t := time.NewTicker(a.Config.Agent.PollInterval)
+	a.wake = make(chan struct{}, 1)
+	if a.Relay != nil {
+		defer a.stopRefreshes()
+		go a.Relay.Run(ctx, a.onEvent, a.onRelayState)
+	}
+	t := time.NewTicker(a.interval())
 	defer t.Stop()
 	for {
 		if err := a.Poll(ctx); err != nil && ctx.Err() == nil {
@@ -186,38 +202,48 @@ func (a *Agent) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case <-t.C:
+		case <-a.wake: // poll at once, then at the interval of the new state
+			t.Reset(a.interval())
 		}
 	}
 }
 
 // Poll evaluates the issues updated since the last poll, then starts queued issues while slots are free.
 func (a *Agent) Poll(ctx context.Context) error {
+	a.pollMu.Lock()
+	defer a.pollMu.Unlock()
 	var errs []error
 	for _, p := range a.projects {
-		f := a.routeOf(p).Forge
-		list, err := f.UpdatedIssues(ctx, p.Owner, p.Repo, a.since(p))
-		if err != nil {
-			errs = append(errs, fmt.Errorf("%s: %w", p.Ref, err))
-			continue
-		}
-		for _, s := range list {
-			a.mu.Lock()
-			last, ok := a.seen[s.Ref]
-			a.mu.Unlock()
-			if ok && !s.UpdatedAt.After(last) {
-				continue
-			}
-			if err := a.evaluate(ctx, p, s); err != nil {
-				errs = append(errs, err)
-			}
-		}
-		if p.Forge == forge.GitLab {
-			errs = append(errs, a.pollReplies(ctx, p, f)...)
-		}
+		errs = append(errs, a.pollProject(ctx, p)...)
 	}
 	a.cleanClosed(ctx)
 	a.drain(ctx)
 	return errors.Join(errs...)
+}
+
+// pollProject evaluates the issues of p updated since the last poll and, on GitLab, the waiting issues with new notes.
+func (a *Agent) pollProject(ctx context.Context, p config.Project) []error {
+	f := a.routeOf(p).Forge
+	list, err := f.UpdatedIssues(ctx, p.Owner, p.Repo, a.since(p))
+	if err != nil {
+		return []error{fmt.Errorf("%s: %w", p.Ref, err)}
+	}
+	var errs []error
+	for _, s := range list {
+		a.mu.Lock()
+		last, ok := a.seen[s.Ref]
+		a.mu.Unlock()
+		if ok && !s.UpdatedAt.After(last) {
+			continue
+		}
+		if err := a.evaluate(ctx, p, s); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if p.Forge == forge.GitLab {
+		errs = append(errs, a.pollReplies(ctx, p, f)...)
+	}
+	return errs
 }
 
 // pollReplies evaluates the waiting issues of a GitLab project whose comment count changed. GitLab does not move an

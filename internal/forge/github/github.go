@@ -77,8 +77,11 @@ func (e *apiError) Error() string {
 }
 
 func (e *apiError) Unwrap() error {
-	if e.status == http.StatusNotFound {
+	switch e.status {
+	case http.StatusNotFound:
 		return forge.ErrNotFound
+	case http.StatusForbidden:
+		return forge.ErrForbidden
 	}
 	return nil
 }

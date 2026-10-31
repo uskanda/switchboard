@@ -14,11 +14,13 @@ import (
 	"github.com/uskanda/switchboard/internal/secret"
 )
 
-// The places the service uses.
+// The places the services use.
 const (
-	Name     = "switchboard-agent.service"
-	UnitPath = "/etc/systemd/system/" + Name
-	CredDir  = "/etc/credstore.encrypted"
+	Name          = "switchboard-agent.service"
+	UnitPath      = "/etc/systemd/system/" + Name
+	RelayName     = "switchboard-relay.service"
+	RelayUnitPath = "/etc/systemd/system/" + RelayName
+	CredDir       = "/etc/credstore.encrypted"
 )
 
 // Credential is one agent token, by its token_ref and its credential name.
@@ -30,13 +32,33 @@ type Credential struct {
 // Path is where the encrypted credential is kept.
 func (c Credential) Path() string { return CredDir + "/switchboard." + c.Name }
 
-// Credentials lists the agent tokens of this host's projects: the forges' token_ref and the projects' overrides.
-// The inbox tokens are left out; the service never reads or replies as the user.
+// Credentials lists the agent tokens of this host's projects: the forges' token_ref and the projects' overrides, and
+// the relay bearer token when the agent follows a relay. The inbox tokens are left out; the service never reads or
+// replies as the user.
 func Credentials(cfg *config.Config) []Credential {
+	var refs []string
+	for _, p := range cfg.ProjectsFor(cfg.Host.Name) {
+		refs = append(refs, cfg.AgentTokenRef(p))
+	}
+	if r := cfg.Agent.Relay; r != nil {
+		refs = append(refs, r.TokenRef)
+	}
+	return credentials(refs)
+}
+
+// RelayCredentials lists the webhook secrets of the relay. It holds no forge token (ADR-004).
+func RelayCredentials(cfg *config.Config) []Credential {
+	var refs []string
+	for _, h := range cfg.Relay.Hooks {
+		refs = append(refs, h.SecretRef)
+	}
+	return credentials(refs)
+}
+
+func credentials(refs []string) []Credential {
 	var out []Credential
 	seen := map[string]bool{}
-	for _, p := range cfg.ProjectsFor(cfg.Host.Name) {
-		ref := cfg.AgentTokenRef(p)
+	for _, ref := range refs {
 		if ref == "" || seen[ref] {
 			continue
 		}
@@ -51,14 +73,30 @@ type Setup struct {
 	User, Home, Path string // the account the agent runs as, its home, and the PATH that finds claude and git
 	Binary, Config   string // absolute paths of switchboard and of the configuration
 	Creds            []Credential
+	Relay            bool // the relay's service (relay serve) instead of the agent's
 }
+
+// UnitName is the name of the service's unit.
+func (s Setup) UnitName() string {
+	if s.Relay {
+		return RelayName
+	}
+	return Name
+}
+
+// UnitPath is where the service's unit is placed.
+func (s Setup) UnitPath() string { return "/etc/systemd/system/" + s.UnitName() }
 
 // Unit is the systemd unit of the service.
 func (s Setup) Unit() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "[Unit]\nDescription=switchboard agent\nAfter=network-online.target\nWants=network-online.target\n\n")
+	what, command := "agent", "agent run"
+	if s.Relay {
+		what, command = "relay", "relay serve"
+	}
+	fmt.Fprintf(&b, "[Unit]\nDescription=switchboard %s\nAfter=network-online.target\nWants=network-online.target\n\n", what)
 	fmt.Fprintf(&b, "[Service]\nUser=%s\nEnvironment=HOME=%s\nEnvironment=PATH=%s\n", s.User, s.Home, s.Path)
-	fmt.Fprintf(&b, "ExecStart=%s agent run --config %s\n", s.Binary, s.Config)
+	fmt.Fprintf(&b, "ExecStart=%s %s --config %s\n", s.Binary, command, s.Config)
 	for _, c := range s.Creds {
 		fmt.Fprintf(&b, "LoadCredentialEncrypted=%s:%s\n", c.Name, c.Path())
 	}
@@ -87,18 +125,18 @@ func (s Setup) InstallSteps(unitFile string, token func(ref string) (string, err
 		steps = append(steps, Step{Args: []string{"systemd-creds", "encrypt", "--name=" + c.Name, "-", c.Path()}, Stdin: t})
 	}
 	return append(steps,
-		Step{Args: []string{"install", "-m", "0644", unitFile, UnitPath}},
+		Step{Args: []string{"install", "-m", "0644", unitFile, s.UnitPath()}},
 		Step{Args: []string{"systemctl", "daemon-reload"}},
-		Step{Args: []string{"systemctl", "enable", Name}},
-		Step{Args: []string{"systemctl", "restart", Name}},
+		Step{Args: []string{"systemctl", "enable", s.UnitName()}},
+		Step{Args: []string{"systemctl", "restart", s.UnitName()}},
 	), nil
 }
 
 // UninstallSteps stops and disables the service, and removes the unit and the credentials.
 func (s Setup) UninstallSteps() []Step {
 	steps := []Step{
-		{Args: []string{"systemctl", "disable", "--now", Name}},
-		{Args: []string{"rm", "-f", UnitPath}},
+		{Args: []string{"systemctl", "disable", "--now", s.UnitName()}},
+		{Args: []string{"rm", "-f", s.UnitPath()}},
 	}
 	for _, c := range s.Creds {
 		steps = append(steps, Step{Args: []string{"rm", "-f", c.Path()}})
@@ -148,12 +186,12 @@ func Apply(steps []Step, c Confirm, run func(Step) error) error {
 
 // Status writes whether the unit is installed, which credentials it loads, and what systemctl says of the service.
 // It reads the unit with read and asks systemctl (is-enabled, is-active) as the user: nothing needs root.
-func Status(w io.Writer, read func(path string) (string, error), systemctl func(args ...string) string) {
-	unit, err := read(UnitPath)
+func Status(w io.Writer, s Setup, read func(path string) (string, error), systemctl func(args ...string) string) {
+	unit, err := read(s.UnitPath())
 	if err != nil {
 		fmt.Fprintln(w, "unit: not installed")
 	} else {
-		fmt.Fprintf(w, "unit: %s\n", UnitPath)
+		fmt.Fprintf(w, "unit: %s\n", s.UnitPath())
 		var names []string
 		for _, l := range strings.Split(unit, "\n") {
 			if v, ok := strings.CutPrefix(l, "LoadCredentialEncrypted="); ok {
@@ -162,6 +200,6 @@ func Status(w io.Writer, read func(path string) (string, error), systemctl func(
 		}
 		fmt.Fprintf(w, "credentials: %s\n", strings.Join(names, ", "))
 	}
-	fmt.Fprintf(w, "enabled: %s\n", systemctl("is-enabled", Name))
-	fmt.Fprintf(w, "active: %s\n", systemctl("is-active", Name))
+	fmt.Fprintf(w, "enabled: %s\n", systemctl("is-enabled", s.UnitName()))
+	fmt.Fprintf(w, "active: %s\n", systemctl("is-active", s.UnitName()))
 }
