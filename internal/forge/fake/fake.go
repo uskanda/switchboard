@@ -21,6 +21,7 @@ type Forge struct {
 	users    map[string]forge.User
 	PRs      []forge.ChangeRequest
 	Comments int // number of PostComment calls, for tests that count writes
+	Edits    int // number of EditComment calls
 	// PostAs is the login PostComment posts as; "agent" when empty.
 	PostAs string
 	// FailSetLabels, when set, is returned by the next SetLabels call and then cleared.
@@ -157,8 +158,8 @@ func (f *Forge) AddComment(ref forge.IssueRef, body string, author forge.User) f
 	return f.addComment(ref, body, author)
 }
 
-// EditComment replaces a comment body as editor.
-func (f *Forge) EditComment(ref forge.IssueRef, id int64, body string, editor forge.User) {
+// EditCommentAs replaces a comment body as editor, as a person editing it on the forge would.
+func (f *Forge) EditCommentAs(ref forge.IssueRef, id int64, body string, editor forge.User) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	is := f.issue(ref)
@@ -327,6 +328,25 @@ func (f *Forge) PostCommentAs(ref forge.IssueRef, body, login string) (*forge.Co
 	return &c, nil
 }
 
+// EditComment implements forge.Forge. As on GitHub, editing a comment moves the issue's update time; a GitLab
+// fake leaves it, as for a new note.
+func (f *Forge) EditComment(_ context.Context, ref forge.IssueRef, id int64, body string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Edits++
+	is := f.issue(ref)
+	for i, c := range is.comments {
+		if c.ID == id {
+			is.comments[i].Body = body
+			if f.kind != forge.GitLab {
+				is.data.UpdatedAt = f.now()
+			}
+			return nil
+		}
+	}
+	return forge.ErrNotFound
+}
+
 // DeleteComment implements forge.Forge.
 func (f *Forge) DeleteComment(_ context.Context, ref forge.IssueRef, id int64) error {
 	f.mu.Lock()
@@ -397,7 +417,7 @@ func (f *Forge) User(_ context.Context, login string) (*forge.User, error) {
 
 // SearchOpenIssuesWithLabel implements forge.Forge. A GitHub fake ignores the scope and searches every repository;
 // a GitLab fake searches the one project the scope names, as GitLab does.
-func (f *Forge) SearchOpenIssuesWithLabel(_ context.Context, scope string, label string) ([]forge.IssueSummary, error) {
+func (f *Forge) SearchOpenIssuesWithLabel(_ context.Context, scope string, labels ...string) ([]forge.IssueSummary, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var out []forge.IssueSummary
@@ -406,8 +426,11 @@ func (f *Forge) SearchOpenIssuesWithLabel(_ context.Context, scope string, label
 			continue
 		}
 		for _, is := range r.issues {
-			if is.data.State == "open" && contains(is.data.Labels, label) {
-				out = append(out, f.summary(is))
+			for _, label := range labels {
+				if is.data.State == "open" && contains(is.data.Labels, label) {
+					out = append(out, f.summary(is))
+					break
+				}
 			}
 		}
 	}

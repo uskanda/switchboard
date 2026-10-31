@@ -10,9 +10,11 @@ import (
 	"time"
 )
 
-// Item is one waiting issue, as switchboard inbox --json lists it.
+// Item is one waiting or running issue, as switchboard inbox --json lists it. Only waiting issues have a row
+// number (N); a running one has RunningSince and Progress, the last line of its progress comment ("?" without one).
 type Item struct {
-	N            int        `json:"n"`
+	N            int        `json:"n,omitempty"`
+	State        string     `json:"state"` // waiting or running
 	Ref          string     `json:"ref"`
 	Project      string     `json:"project"`
 	Number       int        `json:"number"`
@@ -22,6 +24,8 @@ type Item struct {
 	WaitingSince *time.Time `json:"waiting_since"`
 	Reason       string     `json:"reason"`
 	Question     string     `json:"question"`
+	RunningSince *time.Time `json:"running_since,omitempty"`
+	Progress     string     `json:"progress,omitempty"`
 }
 
 // ForgeError is a forge that could not be read while listing.
@@ -38,7 +42,8 @@ type Inbox struct {
 }
 
 // Detail is the answer to GET /v1/issue?ref=: the agent's latest post on the issue, which holds the question and
-// the refused operations, with what its marker says.
+// the refused operations, with what its marker says. While the issue runs, State is "running" and Post is the
+// progress comment of the run (the claim before there is one); a reply to it is refused as not waiting.
 type Detail struct {
 	Ref     string     `json:"ref"`
 	Title   string     `json:"title"`

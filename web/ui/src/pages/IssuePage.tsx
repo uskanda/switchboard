@@ -6,7 +6,7 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { ApiError, age, getIssue, postReply, type Detail } from "@/lib/api";
+import { ApiError, age, elapsed, getIssue, postReply, type Detail } from "@/lib/api";
 
 function failure(err: unknown): string {
   if (err instanceof ApiError) {
@@ -47,6 +47,8 @@ export function IssuePage() {
     }
   }
 
+  const running = detail?.state === "running";
+
   return (
     <Shell>
       {error && <Alert>{error}</Alert>}
@@ -56,16 +58,16 @@ export function IssuePage() {
             <span className="font-mono text-mono-sm break-all">{detail.ref}</span>
             <h1 className="text-headline-md font-semibold break-words">{detail.title}</h1>
             <span className="flex flex-wrap items-center gap-sm text-label-md text-muted">
-              <ReasonBadge reason={detail.reason} />
+              {running ? <span className="font-medium">実行中</span> : <ReasonBadge reason={detail.reason} />}
               <span>{detail.host}</span>
-              <span>{age(detail.since)}</span>
+              <span>{running ? elapsed(detail.since) : age(detail.since)}</span>
               <a href={detail.url} className="inline-flex min-h-11 items-center underline" target="_blank" rel="noreferrer">
                 フォージで開く（新しいタブ）
               </a>
             </span>
           </div>
           <Card>
-            {/* The agent's post, as text: issue text is data, never markup. */}
+            {/* The agent's post (while the issue runs, its progress comment), as text: issue text is data, never markup. */}
             <p className="whitespace-pre-wrap break-words">{detail.post}</p>
           </Card>
           {sent && (
@@ -84,7 +86,8 @@ export function IssuePage() {
               </Button>
             </form>
           )}
-          {!detail.waiting && !sent && <p className="text-muted">このissueは待ちではありません。返答は送れません。</p>}
+          {running && !sent && <p className="text-muted">実行中のため返答できません</p>}
+          {!detail.waiting && !running && !sent && <p className="text-muted">このissueは待ちではありません。返答は送れません。</p>}
         </>
       )}
     </Shell>

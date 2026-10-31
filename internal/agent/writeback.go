@@ -108,7 +108,7 @@ func (a *Agent) writeBack(ctx context.Context, ref forge.IssueRef, o *outcome) e
 		posting := body
 		m := marker.Marker{Host: a.Config.Host.Name, Session: o.Session, Run: o.Run, State: o.State, Reason: o.Reason, Ack: o.Ack, At: time.Now()}
 		body += "\n\n" + m.Format() + "\n"
-		a.checkComment(ref, o.Run, body)
+		a.checkComment(ref, o.Run, "comment.md", body)
 		c, err := a.forgeOf(ref).PostComment(ctx, ref, body)
 		if err != nil {
 			return fmt.Errorf("post comment: %w", err)
@@ -118,6 +118,7 @@ func (a *Agent) writeBack(ctx context.Context, ref forge.IssueRef, o *outcome) e
 		// after the label, even when setting the label fails.
 		defer a.notify(ctx, &is.IssueSummary, o, posting)
 	}
+	a.dropProgress(ctx, ref, o.Run, comments)
 	to := a.Config.Labels.Waiting
 	if o.State == "done" {
 		to = a.Config.Labels.Done
@@ -125,13 +126,14 @@ func (a *Agent) writeBack(ctx context.Context, ref forge.IssueRef, o *outcome) e
 	return a.swapper(ref).Swap(ctx, ref, to)
 }
 
-// checkComment runs comments.check_command on the comment file. A failure is recorded; the comment is posted anyway.
-func (a *Agent) checkComment(ref forge.IssueRef, run, body string) {
+// checkComment runs comments.check_command on the comment, written to name in the run directory. A failure is
+// recorded; the comment is posted anyway.
+func (a *Agent) checkComment(ref forge.IssueRef, run, name, body string) {
 	cmd := a.Config.Comments.CheckCommand
 	if cmd == "" {
 		return
 	}
-	path := filepath.Join(a.runDir(run), "comment.md")
+	path := filepath.Join(a.runDir(run), name)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return
 	}

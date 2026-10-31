@@ -121,12 +121,20 @@ func (a *Agent) execute(ctx context.Context, pl *plan, act *active) string {
 		rec.State, rec.Ended = "canceled", time.Now().UTC()
 		a.saveRecord(ref, rec)
 		a.Audit.Log("run.canceled", map[string]any{"issue": ref.String(), "run": rec.Run})
+		if a.ctx.Err() == nil {
+			if _, comments, err := a.forgeOf(ref).Thread(a.ctx, ref); err == nil {
+				a.dropProgress(a.ctx, ref, rec.Run, comments)
+			}
+		}
 		a.logf("%s: run %s stopped without writing back", ref, rec.Run)
 		return ""
 	}
 	if err := a.writeBack(a.ctx, ref, o); err != nil {
 		a.logf("%s: write back run %s: %v; it is finished when the agent starts again", ref, rec.Run, err)
 		return ""
+	}
+	if o.State == "waiting" && ref.Kind() == forge.GitLab {
+		a.keepNotes(a.ctx, pl.project, ref)
 	}
 	rec.State, rec.Ended, rec.Result = "finished", time.Now().UTC(), o.result()
 	a.saveRecord(ref, rec)
@@ -167,6 +175,7 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) *outcome {
 		}
 		in.Comments = append(in.Comments, prompt.Comment{Kind: k, Author: c.Author.Login, Body: c.Body})
 	}
+	stopProgress := a.followProgress(ctx, is.Ref, rec, filepath.Join(a.runDir(rec.Run), "stream.jsonl"))
 	res, err := claudecode.Run(ctx, claudecode.Request{
 		Binary: a.Config.Claude.Binary, Dir: dir, RunDir: a.runDir(rec.Run), SessionID: rec.Session,
 		Prompt: prompt.Build(in), SystemPrompt: prompt.System(a.Config.Comments.Language),
@@ -174,6 +183,7 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) *outcome {
 		Auth: a.Config.Claude.Auth, Timeout: a.Config.Agent.Timeout,
 		IntGrace: a.IntGrace, TermGrace: a.TermGrace, Env: a.Env,
 	})
+	stopProgress()
 	switch {
 	case err != nil:
 		if ctx.Err() != nil {

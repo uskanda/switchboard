@@ -398,6 +398,13 @@ func (c *Client) PostComment(ctx context.Context, ref forge.IssueRef, body strin
 	return &forge.Comment{ID: gc.ID, Body: gc.Body, Author: gc.User.user(), CreatedAt: gc.CreatedAt}, nil
 }
 
+// EditComment implements forge.Forge.
+func (c *Client) EditComment(ctx context.Context, ref forge.IssueRef, id int64, body string) error {
+	_, err := c.do(ctx, http.MethodPatch, c.url(fmt.Sprintf("/repos/%s/%s/issues/comments/%d", ref.Owner, ref.Repo, id), nil),
+		map[string]any{"body": body}, nil, nil)
+	return err
+}
+
 // DeleteComment implements forge.Forge.
 func (c *Client) DeleteComment(ctx context.Context, ref forge.IssueRef, id int64) error {
 	_, err := c.do(ctx, http.MethodDelete, c.url(fmt.Sprintf("/repos/%s/%s/issues/comments/%d", ref.Owner, ref.Repo, id), nil), nil, nil, nil)
@@ -451,8 +458,13 @@ var repoFromURL = regexp.MustCompile(`/repos/([^/]+)/([^/]+)$`)
 
 // SearchOpenIssuesWithLabel implements forge.Forge. It reads the first 100 results, which covers any realistic
 // number of waiting issues.
-func (c *Client) SearchOpenIssuesWithLabel(ctx context.Context, scope, label string) ([]forge.IssueSummary, error) {
-	q := fmt.Sprintf(`is:issue is:open label:%s %s`, strconv.Quote(label), scope)
+// Several labels go into one qualifier, label:"a","b", which matches any of them (V28).
+func (c *Client) SearchOpenIssuesWithLabel(ctx context.Context, scope string, labels ...string) ([]forge.IssueSummary, error) {
+	quoted := make([]string, len(labels))
+	for i, l := range labels {
+		quoted[i] = strconv.Quote(l)
+	}
+	q := fmt.Sprintf(`is:issue is:open label:%s %s`, strings.Join(quoted, ","), scope)
 	var out struct {
 		Items []ghIssue `json:"items"`
 	}

@@ -29,12 +29,12 @@ type counting struct {
 	err      error
 }
 
-func (c *counting) SearchOpenIssuesWithLabel(ctx context.Context, scope, label string) ([]forge.IssueSummary, error) {
+func (c *counting) SearchOpenIssuesWithLabel(ctx context.Context, scope string, labels ...string) ([]forge.IssueSummary, error) {
 	c.searches.Add(1)
 	if c.err != nil {
 		return nil, c.err
 	}
-	return c.Forge.SearchOpenIssuesWithLabel(ctx, scope, label)
+	return c.Forge.SearchOpenIssuesWithLabel(ctx, scope, labels...)
 }
 
 type world struct {
@@ -193,3 +193,28 @@ func TestWrongMethodsAndBodies(t *testing.T) {
 }
 
 func stringsReader(s string) *strings.Reader { return strings.NewReader(s) }
+
+func TestRunningIssueIsListedAndCannotBeAnswered(t *testing.T) {
+	w := newWorld(t)
+	w.f.PostAs = "bot"
+	run := w.f.AddIssue("o", "r", 30, "Speed up", "body", w.bot)
+	w.f.PostComment(ctx, run, "Started on host desk.\n\n"+marker.Marker{Host: "desk", Run: "r7", State: "running", At: w.now.Add(-5 * time.Minute)}.Format())
+	w.f.PostComment(ctx, run, "### Progress of the run\n\n- 11:59 4m Bash 3 | テストを直す\n\n"+marker.Marker{Host: "desk", Run: "r7", State: "progress"}.Format())
+	w.f.AddLabel(run, "agent:running", w.bot)
+	w.f.PostAs = "me"
+	got, err := w.c.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Items) != 2 || got.Items[0].State != "waiting" || got.Items[1].State != "running" ||
+		got.Items[1].Progress != "11:59 4m Bash 3 | テストを直す" || got.Items[1].N != 0 || got.Items[1].Host != "desk" {
+		t.Fatalf("items = %+v", got.Items)
+	}
+	d, err := w.c.Issue(ctx, "gh:o/r#30")
+	if err != nil || d.State != "running" || !strings.Contains(d.Post, "テストを直す") {
+		t.Fatalf("detail = %+v, %v", d, err)
+	}
+	if err := w.c.Reply(ctx, "gh:o/r#30", "Go on.", false); !errors.Is(err, inboxapi.ErrNotWaiting) {
+		t.Fatalf("reply to a running issue: %v", err)
+	}
+}

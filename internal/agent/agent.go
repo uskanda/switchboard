@@ -49,6 +49,8 @@ type Agent struct {
 	Relay Subscriber
 	// Debounce is how long the events of one project are gathered before it is fetched; 3s when zero.
 	Debounce time.Duration
+	// ProgressEvery is how often the progress comment of a run is brought up to date; a minute when zero.
+	ProgressEvery time.Duration
 	// Notifier, when set, is told each time the agent posts a waiting or a done comment.
 	Notifier Notifier
 
@@ -454,8 +456,8 @@ func (pl *plan) hasReply() bool {
 	var m *marker.Marker
 	for i := len(pl.comments) - 1; i >= 0 && m == nil; i-- {
 		if pl.kinds[i] == trust.AgentPost {
-			if pm, _ := marker.Parse(pl.comments[i].Body); pm != nil && pm.State != "running" {
-				m = pm // a claim of a run is not the question the issue waits on
+			if pm, _ := marker.Parse(pl.comments[i].Body); pm != nil && !pm.Transient() {
+				m = pm // a claim or the progress of a run is not the question the issue waits on
 			}
 		}
 	}

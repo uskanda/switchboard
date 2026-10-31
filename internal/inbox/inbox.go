@@ -49,10 +49,13 @@ func DefaultCache() string {
 	return filepath.Join(base, "switchboard", "inbox.json")
 }
 
-// Item is one waiting issue. Host, WaitingSince and Reason come only from the marker of the agent's latest post;
-// "?" (or null) when there is none.
+// Item is one waiting or running issue. On a waiting issue, Host, WaitingSince and Reason come only from the marker
+// of the agent's latest post; "?" (or null) when there is none. On a running issue, Host and RunningSince come from
+// the marker of the claim of the run, and Progress is the last line of its progress comment ("?" without one).
+// Only waiting issues are numbered.
 type Item struct {
-	N            int        `json:"n"`
+	N            int        `json:"n,omitempty"`
+	State        string     `json:"state"` // waiting or running
 	Ref          string     `json:"ref"`
 	Project      string     `json:"project"`
 	Number       int        `json:"number"`
@@ -62,7 +65,15 @@ type Item struct {
 	WaitingSince *time.Time `json:"waiting_since"`
 	Reason       string     `json:"reason"`
 	Question     string     `json:"question"`
+	RunningSince *time.Time `json:"running_since,omitempty"`
+	Progress     string     `json:"progress,omitempty"`
 }
+
+// The states of an Item.
+const (
+	Waiting = "waiting"
+	Running = "running"
+)
 
 func refString(r forge.IssueRef) string { return r.String() }
 
@@ -108,13 +119,14 @@ func (b *Inbox) agentID(ctx context.Context, ref forge.IssueRef) (int64, error) 
 }
 
 // latestPost returns the agent's latest post: authored by the agent and ending in a marker. Claims of a run
-// (state=running) say nothing about why the issue waits, so they are passed over.
+// (state=running) and its progress comments (state=progress) say nothing about why the issue waits, so they are
+// passed over.
 func latestPost(comments []forge.Comment, agentID int64) (*forge.Comment, *marker.Marker) {
 	for i := len(comments) - 1; i >= 0; i-- {
 		if comments[i].Author.ID != agentID {
 			continue
 		}
-		if m, ok := marker.Parse(comments[i].Body); ok && m.State != "running" {
+		if m, ok := marker.Parse(comments[i].Body); ok && !m.Transient() {
 			return &comments[i], m
 		}
 	}
@@ -126,9 +138,11 @@ func latestPost(comments []forge.Comment, agentID int64) (*forge.Comment, *marke
 // naming the forge that failed.
 func (b *Inbox) List(ctx context.Context) ([]Item, error) {
 	items, ferrs := b.Collect(ctx)
-	rows := make([]string, len(items))
-	for i := range items {
-		rows[i] = items[i].Ref
+	var rows []string
+	for _, it := range items {
+		if it.N > 0 {
+			rows = append(rows, it.Ref)
+		}
 	}
 	if err := b.saveRows(rows); err != nil {
 		return nil, err
@@ -149,7 +163,8 @@ type ForgeError struct {
 func (e ForgeError) Error() string { return e.Forge + " could not be read: " + e.Err.Error() }
 func (e ForgeError) Unwrap() error { return e.Err }
 
-// Collect lists the waiting issues as List does, numbered, without recording the rows. The forges that could not
+// Collect lists the waiting issues as List does, numbered, and after them the running issues, without recording the
+// rows. The forges that could not
 // be read are returned beside what the others listed.
 func (b *Inbox) Collect(ctx context.Context) ([]Item, []ForgeError) {
 	var kinds []string
@@ -182,7 +197,13 @@ func (b *Inbox) Collect(ctx context.Context) ([]Item, []ForgeError) {
 		}
 	}
 	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].State != items[j].State {
+			return items[i].State == Waiting
+		}
 		a, c := items[i].WaitingSince, items[j].WaitingSince
+		if items[i].State == Running {
+			a, c = items[i].RunningSince, items[j].RunningSince
+		}
 		switch {
 		case a == nil || c == nil:
 			return a != nil && c == nil
@@ -192,7 +213,9 @@ func (b *Inbox) Collect(ctx context.Context) ([]Item, []ForgeError) {
 		return items[i].Ref < items[j].Ref
 	})
 	for i := range items {
-		items[i].N = i + 1
+		if items[i].State == Waiting {
+			items[i].N = i + 1
+		}
 	}
 	return items, errs
 }
@@ -213,8 +236,8 @@ func (b *Inbox) uses(kind string) bool {
 	return false
 }
 
-// list reads one forge's waiting issues. GitHub is searched once over search_scope; GitLab is read project by
-// project, since it has no search over the configured projects alone.
+// list reads one forge's waiting and running issues. GitHub is searched once over search_scope; GitLab is read
+// project by project, since it has no search over the configured projects alone.
 func (b *Inbox) list(ctx context.Context, kind string) ([]Item, error) {
 	f := b.forgeOf(kind)
 	if f == nil {
@@ -222,7 +245,7 @@ func (b *Inbox) list(ctx context.Context, kind string) ([]Item, error) {
 	}
 	var found []forge.IssueSummary
 	if kind == forge.GitHub {
-		s, err := f.SearchOpenIssuesWithLabel(ctx, b.Config.Forges.GitHub.SearchScope, b.Config.Labels.Waiting)
+		s, err := f.SearchOpenIssuesWithLabel(ctx, b.Config.Forges.GitHub.SearchScope, b.Config.Labels.Waiting, b.Config.Labels.Running)
 		if err != nil {
 			return nil, err
 		}
@@ -232,7 +255,7 @@ func (b *Inbox) list(ctx context.Context, kind string) ([]Item, error) {
 			if kindOf(p) != kind {
 				continue
 			}
-			s, err := f.SearchOpenIssuesWithLabel(ctx, p.FullName(), b.Config.Labels.Waiting)
+			s, err := f.SearchOpenIssuesWithLabel(ctx, p.FullName(), b.Config.Labels.Waiting, b.Config.Labels.Running)
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", p.Ref, err)
 			}
@@ -257,7 +280,11 @@ func (b *Inbox) list(ctx context.Context, kind string) ([]Item, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", s.Ref, err)
 		}
-		it := Item{Ref: refString(s.Ref), Project: s.Ref.Project(), Number: s.Ref.Number, Title: s.Title, URL: s.URL, Host: "?", Reason: "?", Question: "?"}
+		if labels.StateOf(s.Labels, b.Config.Labels) == b.Config.Labels.Running {
+			items = append(items, runningItem(s, comments, agentID))
+			continue
+		}
+		it := Item{State: Waiting, Ref: refString(s.Ref), Project: s.Ref.Project(), Number: s.Ref.Number, Title: s.Title, URL: s.URL, Host: "?", Reason: "?", Question: "?"}
 		if c, m := latestPost(comments, agentID); c != nil {
 			it.Host, it.Reason, it.Question = orQ(m.Host), orQ(m.Reason), Excerpt(c.Body)
 			if !m.At.IsZero() {
@@ -268,6 +295,49 @@ func (b *Inbox) list(ctx context.Context, kind string) ([]Item, error) {
 		items = append(items, it)
 	}
 	return items, nil
+}
+
+// runningItem is the row of a running issue: where and since when it runs, from the claim of the run, and the last
+// line of the run's progress comment.
+func runningItem(s forge.IssueSummary, comments []forge.Comment, agentID int64) Item {
+	it := Item{State: Running, Ref: refString(s.Ref), Project: s.Ref.Project(), Number: s.Ref.Number, Title: s.Title, URL: s.URL, Host: "?", Progress: "?"}
+	claim, cm := latestOf(comments, agentID, marker.Running)
+	if claim == nil {
+		return it
+	}
+	it.Host = orQ(cm.Host)
+	if !cm.At.IsZero() {
+		at := cm.At
+		it.RunningSince = &at
+	}
+	if p, pm := latestOf(comments, agentID, marker.Progress); p != nil && pm.Run == cm.Run {
+		it.Progress = lastLine(body(p.Body))
+	}
+	return it
+}
+
+// latestOf returns the agent's latest post whose marker is in state.
+func latestOf(comments []forge.Comment, agentID int64, state string) (*forge.Comment, *marker.Marker) {
+	for i := len(comments) - 1; i >= 0; i-- {
+		if comments[i].Author.ID != agentID {
+			continue
+		}
+		if m, ok := marker.Parse(comments[i].Body); ok && m.State == state {
+			return &comments[i], m
+		}
+	}
+	return nil, nil
+}
+
+// lastLine is the last item of a progress comment's list, "?" when it has none.
+func lastLine(text string) string {
+	lines := strings.Split(text, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if l, ok := strings.CutPrefix(strings.TrimSpace(lines[i]), "- "); ok {
+			return l
+		}
+	}
+	return "?"
 }
 
 func orQ(s string) string {
@@ -314,16 +384,34 @@ func age(since *time.Time, now time.Time) string {
 	return fmt.Sprintf("%dd", int(d.Hours()/24))
 }
 
-// Print writes the listing as aligned columns.
+// Print writes the listing as aligned columns: the waiting issues, then the running ones under their own heading.
 func Print(w io.Writer, items []Item, now time.Time) {
-	if len(items) == 0 {
+	var waiting, running []Item
+	for _, it := range items {
+		if it.State == Running {
+			running = append(running, it)
+		} else {
+			waiting = append(waiting, it)
+		}
+	}
+	if len(waiting) == 0 {
 		fmt.Fprintln(w, "No issue is waiting.")
+	} else {
+		tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(tw, "#\tISSUE\tHOST\tWAITING\tREASON\tQUESTION")
+		for _, it := range waiting {
+			fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\n", it.N, it.Ref, it.Host, age(it.WaitingSince, now), it.Reason, it.Question)
+		}
+		tw.Flush()
+	}
+	if len(running) == 0 {
 		return
 	}
+	fmt.Fprintln(w, "\nRunning")
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "#\tISSUE\tHOST\tWAITING\tREASON\tQUESTION")
-	for _, it := range items {
-		fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\n", it.N, it.Ref, it.Host, age(it.WaitingSince, now), it.Reason, it.Question)
+	fmt.Fprintln(tw, "ISSUE\tHOST\tRUNNING\tPROGRESS")
+	for _, it := range running {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", it.Ref, it.Host, age(it.RunningSince, now), it.Progress)
 	}
 	tw.Flush()
 }
@@ -421,7 +509,7 @@ type Detail struct {
 	URL     string     `json:"url"`
 	Waiting bool       `json:"waiting"` // open and labeled waiting
 	Host    string     `json:"host"`
-	State   string     `json:"state"`
+	State   string     `json:"state"` // the state of the agent's latest post, or running while the issue runs
 	Reason  string     `json:"reason"`
 	Since   *time.Time `json:"since"`
 	Post    string     `json:"post"` // the agent's latest post, without its marker
@@ -437,6 +525,11 @@ func (b *Inbox) Detail(ctx context.Context, ref forge.IssueRef) (*Detail, error)
 	if err != nil {
 		return nil, err
 	}
+	if is.State == "open" && labels.StateOf(is.Labels, b.Config.Labels) == b.Config.Labels.Running {
+		if d := runningDetail(is, comments, agentID); d != nil {
+			return d, nil
+		}
+	}
 	c, m := latestPost(comments, agentID)
 	if c == nil {
 		return nil, wrap(ErrNotFound, fmt.Errorf("%s has no post from the agent", refString(ref)))
@@ -451,6 +544,24 @@ func (b *Inbox) Detail(ctx context.Context, ref forge.IssueRef) (*Detail, error)
 		d.Since = &at
 	}
 	return d, nil
+}
+
+// runningDetail is a running issue with the progress comment of its run, or the claim while there is none. It is nil
+// when the agent has not claimed the issue.
+func runningDetail(is *forge.Issue, comments []forge.Comment, agentID int64) *Detail {
+	claim, cm := latestOf(comments, agentID, marker.Running)
+	if claim == nil {
+		return nil
+	}
+	d := &Detail{Ref: refString(is.Ref), Title: is.Title, URL: is.URL, Host: orQ(cm.Host), State: Running, Reason: "?", Post: body(claim.Body)}
+	if p, pm := latestOf(comments, agentID, marker.Progress); p != nil && pm.Run == cm.Run {
+		d.Post = body(p.Body)
+	}
+	if !cm.At.IsZero() {
+		at := cm.At
+		d.Since = &at
+	}
+	return d
 }
 
 // Show writes the agent's latest post on the issue, without its marker.

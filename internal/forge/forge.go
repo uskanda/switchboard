@@ -124,6 +124,8 @@ type Forge interface {
 	SetLabels(ctx context.Context, ref IssueRef, labels []string) error
 	// PostComment adds a comment and returns it.
 	PostComment(ctx context.Context, ref IssueRef, body string) (*Comment, error)
+	// EditComment replaces the body of a comment of the issue; ErrNotFound when there is none with that ID.
+	EditComment(ctx context.Context, ref IssueRef, id int64, body string) error
 	// DeleteComment removes a comment of the issue; ErrNotFound when there is none with that ID.
 	DeleteComment(ctx context.Context, ref IssueRef, id int64) error
 	// EnsureLabel creates the label unless one with that name exists; it reports whether it created one.
@@ -134,6 +136,6 @@ type Forge interface {
 	RepoPrivate(ctx context.Context, owner, repo string) (bool, error)
 	// User resolves a login to the user, with its numeric ID.
 	User(ctx context.Context, login string) (*User, error)
-	// SearchOpenIssuesWithLabel lists the open issues within scope (such as "user:alice") that carry label.
-	SearchOpenIssuesWithLabel(ctx context.Context, scope, label string) ([]IssueSummary, error)
+	// SearchOpenIssuesWithLabel lists the open issues within scope (such as "user:alice") that carry any of labels.
+	SearchOpenIssuesWithLabel(ctx context.Context, scope string, labels ...string) ([]IssueSummary, error)
 }

@@ -355,6 +355,13 @@ func (c *Client) PostComment(ctx context.Context, ref forge.IssueRef, body strin
 	return &forge.Comment{ID: n.ID, Body: n.Body, Author: n.Author.user(), CreatedAt: n.CreatedAt}, nil
 }
 
+// EditComment implements forge.Forge.
+func (c *Client) EditComment(ctx context.Context, ref forge.IssueRef, id int64, body string) error {
+	_, err := c.do(ctx, http.MethodPut, c.url(project(ref.Owner, ref.Repo)+"/issues/"+strconv.Itoa(ref.Number)+"/notes/"+strconv.FormatInt(id, 10), nil),
+		map[string]any{"body": body}, nil)
+	return err
+}
+
 // DeleteComment implements forge.Forge.
 func (c *Client) DeleteComment(ctx context.Context, ref forge.IssueRef, id int64) error {
 	_, err := c.do(ctx, http.MethodDelete, c.url(project(ref.Owner, ref.Repo)+"/issues/"+strconv.Itoa(ref.Number)+"/notes/"+strconv.FormatInt(id, 10), nil), nil, nil)
@@ -447,20 +454,30 @@ func (c *Client) Version(ctx context.Context) (string, error) {
 
 // SearchOpenIssuesWithLabel implements forge.Forge. On GitLab the scope is one project's path ("group/project"):
 // the inbox reads the configured projects one by one.
-func (c *Client) SearchOpenIssuesWithLabel(ctx context.Context, scope, label string) ([]forge.IssueSummary, error) {
+// GitLab's labels parameter matches the issues that carry all of them, so each label is asked for on its own.
+func (c *Client) SearchOpenIssuesWithLabel(ctx context.Context, scope string, labels ...string) ([]forge.IssueSummary, error) {
 	i := strings.LastIndex(scope, "/")
 	if i < 0 {
 		return nil, fmt.Errorf("gitlab: %q is not a project path", scope)
 	}
 	owner, repo := scope[:i], scope[i+1:]
 	var out []forge.IssueSummary
-	_, err := pages(ctx, c, c.url(project(owner, repo)+"/issues", url.Values{"labels": {label}, "state": {"opened"}, "per_page": {"100"}}), 0,
-		func(p []glIssue) {
-			for _, gi := range p {
-				out = append(out, gi.summary(owner, repo))
-			}
-		})
-	return out, err
+	seen := map[int]bool{}
+	for _, label := range labels {
+		_, err := pages(ctx, c, c.url(project(owner, repo)+"/issues", url.Values{"labels": {label}, "state": {"opened"}, "per_page": {"100"}}), 0,
+			func(p []glIssue) {
+				for _, gi := range p {
+					if s := gi.summary(owner, repo); !seen[s.Ref.Number] {
+						seen[s.Ref.Number] = true
+						out = append(out, s)
+					}
+				}
+			})
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 var _ forge.Forge = (*Client)(nil)
