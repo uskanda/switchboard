@@ -2,7 +2,10 @@
 // package inboxapi.
 
 export type Item = {
-  n: number;
+  /** The row number; only a waiting issue has one. */
+  n?: number;
+  /** waiting or running; a back end older than the running list leaves it out, and its items all wait. */
+  state?: "waiting" | "running";
   ref: string;
   project: string;
   number: number;
@@ -12,7 +15,12 @@ export type Item = {
   waiting_since: string | null;
   reason: string;
   question: string;
+  running_since?: string | null;
+  /** The last line of the run's progress comment, "?" without one. */
+  progress?: string;
 };
+
+export const isRunning = (it: Item) => it.state === "running";
 
 export type Inbox = { items: Item[]; errors: { forge: string; message: string }[]; fetched_at: string };
 
@@ -69,6 +77,15 @@ export function age(since: string | null, now: Date = new Date()): string {
   const h = Math.floor(min / 60);
   if (h < 24) return `${h}時間前`;
   return `${Math.floor(h / 24)}日前`;
+}
+
+/** elapsed is how long a run has gone on since it started, in Japanese, or "?" without a time. */
+export function elapsed(since: string | null | undefined, now: Date = new Date()): string {
+  if (!since) return "?";
+  const min = Math.max(0, Math.floor((now.getTime() - new Date(since).getTime()) / 60000));
+  if (min < 1) return "1分未満";
+  if (min < 60) return `${min}分`;
+  return `${Math.floor(min / 60)}時間${min % 60}分`;
 }
 
 /** attention tells the reasons that wait on a decision from the ones that report a failure. */

@@ -126,3 +126,46 @@ describe("one issue", () => {
     expect(screen.queryByRole("textbox", { name: "返答" })).toBeNull();
   });
 });
+
+const runningItem = {
+  state: "running", ref: "gh:o/r#30", project: "o/r", number: 30, title: "Speed up", url: "https://github.test/o/r/issues/30",
+  host: "desk", waiting_since: null, reason: "", question: "", running_since: new Date(Date.now() - 7 * 60_000).toISOString(),
+  progress: "13:41 7分 Bash 12・Edit 5 ｜ テストを直している",
+};
+
+describe("running issues", () => {
+  it("are listed apart from the waiting ones, with the latest progress line", async () => {
+    answer({ "GET /api/inbox": { status: 200, body: { items: [{ ...item, state: "waiting" }, runningItem], errors: [], fetched_at: "" } } });
+    at("/");
+    const heading = await screen.findByRole("heading", { level: 2, name: "実行中" });
+    expect(heading).toBeInTheDocument();
+    const progress = screen.getAllByText("13:41 7分 Bash 12・Edit 5 ｜ テストを直している")[0];
+    expect(heading.compareDocumentPosition(progress) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(progress.closest("a")).toHaveAttribute("href", "/issue/gh%3Ao%2Fr%2330");
+    expect(screen.getAllByText("7分")[0]).toBeInTheDocument();
+    expect(screen.getAllByText("desk")[0]).toBeInTheDocument();
+    expect(screen.getAllByText("Which default should --dry-run have?")[0]).toBeInTheDocument();
+  });
+
+  it("leave the waiting list empty when only they exist", async () => {
+    answer({ "GET /api/inbox": { status: 200, body: { items: [runningItem], errors: [], fetched_at: "" } } });
+    at("/");
+    expect(await screen.findByText("待ちのissueはありません")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "実行中" })).toBeInTheDocument();
+  });
+
+  it("show the whole progress comment and no reply form", async () => {
+    const running = {
+      ...detail, waiting: false, state: "running", reason: "?", host: "desk", since: new Date(Date.now() - 7 * 60_000).toISOString(),
+      post: "### 実行の進捗\n\n- 13:35 1分 Read 2 ｜ 読む\n- 13:41 7分 Bash 12 ｜ テストを直している",
+    };
+    answer({ "GET /api/issue?ref=gh%3Ao%2Fr%2312": { status: 200, body: running } });
+    at("/issue/gh%3Ao%2Fr%2312");
+    expect(await screen.findByText(/13:35 1分 Read 2 ｜ 読む/)).toBeInTheDocument();
+    expect(screen.getByText(/13:41 7分 Bash 12/)).toBeInTheDocument();
+    expect(screen.getByText("実行中のため返答できません")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "返答" })).toBeNull();
+    expect(screen.queryByText("?")).toBeNull(); // no reason badge
+    expect(screen.getByText("7分")).toBeInTheDocument();
+  });
+});
