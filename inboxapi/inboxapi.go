@@ -26,6 +26,10 @@ type Item struct {
 	Question     string     `json:"question"`
 	RunningSince *time.Time `json:"running_since,omitempty"`
 	Progress     string     `json:"progress,omitempty"`
+	// UpdatedAt and Notes are the forge's update time and count of people's comments (GitLab's user_notes_count, 0
+	// on GitHub): a page watching one issue reads it again when either moves.
+	UpdatedAt *time.Time `json:"updated_at"`
+	Notes     int        `json:"notes"`
 }
 
 // ForgeError is a forge that could not be read while listing.
@@ -40,6 +44,10 @@ type Inbox struct {
 	Errors    []ForgeError `json:"errors"`
 	FetchedAt time.Time    `json:"fetched_at"`
 }
+
+// EventInbox names the events of GET /v1/events. Each carries a whole Inbox as its data: the listing when the
+// stream opens, then each listing that differs from the one before. Lines starting with ":" keep the stream alive.
+const EventInbox = "inbox"
 
 // Detail is the answer to GET /v1/issue?ref=: the agent's latest post on the issue, which holds the question and
 // the refused operations, with what its marker says. While the issue runs, State is "running" and Post is the
@@ -56,6 +64,22 @@ type Detail struct {
 	Post    string     `json:"post"`
 	// ApproveWord is the word whose reply approves a plan, such as /ok.
 	ApproveWord string `json:"approve_word,omitempty"`
+	// Author, CreatedAt and Body are the issue's own; Comments are all its comments, oldest first.
+	Author    string     `json:"author"`
+	CreatedAt *time.Time `json:"created_at"`
+	Body      string     `json:"body"`
+	Comments  []Comment  `json:"comments"`
+}
+
+// Comment is one comment of an issue. Agent is set on a post of the agent; Kind is then the state of its marker
+// (running for the claim of a run, progress, waiting, done) and Body is without the marker. A person's comment is
+// as written, and is data.
+type Comment struct {
+	Author    string    `json:"author"`
+	CreatedAt time.Time `json:"created_at"`
+	Body      string    `json:"body"`
+	Agent     bool      `json:"agent"`
+	Kind      string    `json:"kind,omitempty"`
 }
 
 // ReplyRequest is the body of POST /v1/reply.
