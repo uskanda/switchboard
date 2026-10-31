@@ -186,12 +186,13 @@ type ghIssue struct {
 	UpdatedAt     time.Time       `json:"updated_at"`
 	PullRequest   json.RawMessage `json:"pull_request"`
 	RepositoryURL string          `json:"repository_url"`
+	HTMLURL       string          `json:"html_url"`
 }
 
 func (i ghIssue) summary(owner, repo string) forge.IssueSummary {
 	s := forge.IssueSummary{
 		Ref:   forge.IssueRef{Forge: forge.GitHub, Owner: owner, Repo: repo, Number: i.Number},
-		Title: i.Title, State: i.State, UpdatedAt: i.UpdatedAt,
+		Title: i.Title, State: i.State, URL: i.HTMLURL, UpdatedAt: i.UpdatedAt,
 	}
 	for _, l := range i.Labels {
 		s.Labels = append(s.Labels, l.Name)

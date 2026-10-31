@@ -2,8 +2,8 @@
 
 ## 1. 設定とフォージ（`config`、`forge`）
 
-- [ ] 1.1 `<notify>` 節（`<notify.telegram>` の `chat_id` と `token_ref`、`<notify.web_url>`）を読む。片方だけの `<notify.telegram>`、絶対URLでない `<notify.web_url>` を拒むこと、`<notify>` の無い設定を今までどおり読めることを、失敗するテストから確かめる
-- [ ] 1.2 `forge.IssueSummary` に `URL` を足し、GitHubは `html_url`、GitLabは `web_url` から埋める。偽物のフォージも決まった形のURLを返す。記録したHTTPのやり取りでテストする
+- [x] 1.1 `<notify>` 節（`<notify.telegram>` の `chat_id` と `token_ref`、`<notify.web_url>`）を読む。片方だけの `<notify.telegram>`、絶対URLでない `<notify.web_url>` を拒むこと、`<notify>` の無い設定を今までどおり読めることを、失敗するテストから確かめる
+- [x] 1.2 `forge.IssueSummary` に `URL` を足し、GitHubは `html_url`、GitLabは `web_url` から埋める。偽物のフォージも決まった形のURLを返す。記録したHTTPのやり取りでテストする
 
 ## 2. 通知（`notify`、`agent`）
 

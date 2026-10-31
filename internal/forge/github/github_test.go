@@ -136,7 +136,7 @@ func TestUpdatedIssuesUsesETag(t *testing.T) {
 func TestThreadMergesEditInformation(t *testing.T) {
 	s, c := newServer(t)
 	s.on("GET /repos/o/r/issues/7", jsonReply(map[string]any{
-		"number": 7, "title": "t", "body": "b", "state": "open",
+		"number": 7, "title": "t", "body": "b", "state": "open", "html_url": "https://github.com/o/r/issues/7",
 		"user": map[string]any{"login": "alice", "id": 1}, "labels": []map[string]any{{"name": "agent:waiting"}},
 		"created_at": "2026-10-29T00:00:00Z", "updated_at": "2026-10-29T01:00:00Z",
 	}))
@@ -156,6 +156,9 @@ func TestThreadMergesEditInformation(t *testing.T) {
 	is, comments, err := c.Thread(ctx, forge.IssueRef{Owner: "o", Repo: "r", Number: 7})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if is.URL != "https://github.com/o/r/issues/7" {
+		t.Fatalf("URL = %q", is.URL)
 	}
 	if is.Author.ID != 1 || !is.BodyEdit.Edited || is.BodyEdit.Editor.ID != 9 {
 		t.Errorf("issue edit = %+v", is.BodyEdit)

@@ -78,6 +78,7 @@ type IssueSummary struct {
 	Ref       IssueRef
 	Title     string
 	State     string // "open" or "closed"
+	URL       string // the issue's page on the forge
 	Labels    []string
 	UpdatedAt time.Time
 	// Notes is how many comments people wrote, as GitLab's user_notes_count. GitLab does not move UpdatedAt for a

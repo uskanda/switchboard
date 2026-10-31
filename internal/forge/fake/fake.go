@@ -91,7 +91,7 @@ func (f *Forge) AddIssue(owner, name string, number int, title, body string, aut
 	now := f.now()
 	r.issues[number] = &issue{
 		data: forge.Issue{
-			IssueSummary: forge.IssueSummary{Ref: ref, Title: title, State: "open", UpdatedAt: now},
+			IssueSummary: forge.IssueSummary{Ref: ref, Title: title, State: "open", URL: f.issueURL(ref), UpdatedAt: now},
 			Body:         body, Author: author, CreatedAt: now,
 		},
 		labeled: map[string]forge.User{},
@@ -458,3 +458,11 @@ func (f *Forge) ProjectID(_ context.Context, owner, name string) (int64, error) 
 }
 
 var _ forge.Forge = (*Forge)(nil)
+
+// issueURL is the page of the issue on this fake forge, shaped as on the real one.
+func (f *Forge) issueURL(ref forge.IssueRef) string {
+	if f.kind == forge.GitLab {
+		return fmt.Sprintf("https://gitlab.test/%s/%s/-/issues/%d", ref.Owner, ref.Repo, ref.Number)
+	}
+	return fmt.Sprintf("https://github.test/%s/%s/issues/%d", ref.Owner, ref.Repo, ref.Number)
+}
