@@ -31,6 +31,7 @@ func init() {
 	cli.Register("labels sync", labelsSync)
 	cli.Register("agent run", agentRun)
 	cli.Register("agent status", agentStatus)
+	cli.Register("inbox serve", inboxServe)
 	cli.Register("inbox", inboxList)
 	cli.Register("show", inboxShow)
 	cli.Register("reply", inboxReply)

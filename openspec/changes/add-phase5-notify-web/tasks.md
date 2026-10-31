@@ -16,7 +16,7 @@
 - [x] 3.1 `internal/inbox` を分け直す。フォージごとの誤りを返し、行番号を記録しない `Collect` を足す。`Show` を `Detail` と `PrintDetail` に分ける。`Reply` の待ちでない誤りを `ErrNotWaiting` にする。今のCLIのテストが変わらず通ることを確かめる
 - [x] 3.2 公開のパッケージ `inboxapi/` に、要求と応答の型、誤りの型、Unixソケットにつなぐ `Client` を作る
 - [x] 3.3 `internal/inboxserve` で、`/v1/inbox`、`/v1/issue`、`/v1/reply` を作る。届かなかったフォージの扱い、60秒のキャッシュと返答のあとの破棄、待ちでないときの409を、偽のフォージと `<inboxapi>` の `Client` でテストする
-- [ ] 3.4 `switchboard inbox serve` を組み立てる。ソケットの場所の決め方（`--socket`、`RUNTIME_DIRECTORY`、`XDG_RUNTIME_DIR`）、0600の権限、古いファイルの置き換え、受信箱のトークンだけを読むことをテストで確かめる
+- [x] 3.4 `switchboard inbox serve` を組み立てる。ソケットの場所の決め方（`--socket`、`RUNTIME_DIRECTORY`、`XDG_RUNTIME_DIR`）、0600の権限、古いファイルの置き換え、受信箱のトークンだけを読むことをテストで確かめる
 
 ## 4. WUI（`web`）
 

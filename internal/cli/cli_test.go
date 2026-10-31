@@ -12,7 +12,7 @@ func TestHelpListsEverySubcommand(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0", code)
 	}
-	for _, name := range []string{"labels sync", "agent run", "agent status", "inbox", "show", "reply", "doctor"} {
+	for _, name := range []string{"labels sync", "agent run", "agent status", "inbox serve", "inbox", "show", "reply", "doctor"} {
 		if !strings.Contains(out.String(), name) {
 			t.Errorf("help does not list %q:\n%s", name, out.String())
 		}
