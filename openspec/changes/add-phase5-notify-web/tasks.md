@@ -35,7 +35,7 @@
 ## 6. 検証の入口と文書
 
 - [x] 6.1 `make verify` に `verify-web` を、`make build` に `bin/switchboard-web` を足す。CIに、Node.jsとpnpmの準備を足す
-- [ ] 6.2 DECISIONS.mdに、ADR-036（WUIに限ってLANで受信ポートを開く、当面は認証しない）とADR-037（ADR-010の範囲を核に限り、WUIを別のモジュールにする）を足す。AGENTS.mdとSECURITY.mdのT5を、この例外に合わせて書き直す
+- [x] 6.2 DECISIONS.mdに、ADR-036（WUIに限ってLANで受信ポートを開く、当面は認証しない）とADR-037（ADR-010の範囲を核に限り、WUIを別のモジュールにする）を足す。AGENTS.mdとSECURITY.mdのT5を、この例外に合わせて書き直す
 - [ ] 6.3 README.mdに、Telegramのトークンの置き方と `<notify>` の設定を書く。`inbox serve` とWUIの設置、`<web.yaml>` の書き方、`listen` にIPアドレスを書く理由も書く
 - [ ] 6.4 WUIの認証を課題とするGitHubのissueを作る。LANの中の別の機器から `uskanda` として返答でき、それがエージェントへの信頼された指示になることを書く
 
