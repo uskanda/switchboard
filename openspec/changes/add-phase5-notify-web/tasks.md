@@ -23,8 +23,8 @@
 - [x] 4.1 `ui-guidelines` に従い、リポジトリ直下に `<DESIGN.md>`（見た目の基準）と `<PRODUCT.md>`（誰が何のために使うか）を書く。デスクトップとスマホの両方を対象にする
 - [x] 4.2 `web/` のGoのモジュールを作る。`<web.yaml>` の読み込みで、`listen` が無いとき、ホストが空、`0.0.0.0`、`::`、IPアドレスでないときに起動を拒むことを、失敗するテストから確かめる
 - [x] 4.3 WUIのバックエンドを作る。`/api/inbox`、`/api/issue`、`/api/reply` を `<inboxapi>` に中継し、返答のPOSTで `Content-Type`、`Origin`、`Host` を検査する。外のオリジン、違う `Host`、`Origin` の無い要求が403になり投稿されないこと、受信箱のサービスに届かないときの応答を、偽の `inbox serve` でテストする。応答のセキュリティのヘッダーも確かめる
-- [ ] 4.4 `web/ui` にVite、React、TypeScript、Tailwind、shadcn/uiの土台を作る。`pnpm typecheck`、`pnpm lint`、`pnpm test`、`pnpm build` を用意し、ビルドの成果物を `go:embed` で埋め込む。`dist/` が空でもGoのテストが通ることを確かめる
-- [ ] 4.5 一覧と1件の画面を作る。項目の表示、届かなかったフォージの警告、返答の送信、待ちでないときの表示、HTMLを含むタイトルが文字のまま出ることを、VitestとTesting Libraryで確かめる。幅360pxとデスクトップの幅で、横へのスクロール無しに使えることを、ブラウザで確かめる
+- [x] 4.4 `web/ui` にVite、React、TypeScript、Tailwind、shadcn/uiの土台を作る。`pnpm typecheck`、`pnpm lint`、`pnpm test`、`pnpm build` を用意し、ビルドの成果物を `go:embed` で埋め込む。`dist/` が空でもGoのテストが通ることを確かめる
+- [x] 4.5 一覧と1件の画面を作る。項目の表示、届かなかったフォージの警告、返答の送信、待ちでないときの表示、HTMLを含むタイトルが文字のまま出ることを、VitestとTesting Libraryで確かめる。幅360pxとデスクトップの幅で、横へのスクロール無しに使えることを、ブラウザで確かめる
 
 ## 5. サービス（`service`）
 
