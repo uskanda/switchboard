@@ -49,6 +49,8 @@ type Agent struct {
 	Relay Subscriber
 	// Debounce is how long the events of one project are gathered before it is fetched; 3s when zero.
 	Debounce time.Duration
+	// Notifier, when set, is told each time the agent posts a waiting or a done comment.
+	Notifier Notifier
 
 	ctx      context.Context // runs end when it does
 	unlock   func()

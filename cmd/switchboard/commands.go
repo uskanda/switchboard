@@ -21,6 +21,7 @@ import (
 	"github.com/uskanda/switchboard/internal/forge/gitlab"
 	"github.com/uskanda/switchboard/internal/inbox"
 	"github.com/uskanda/switchboard/internal/labels"
+	"github.com/uskanda/switchboard/internal/notify"
 	"github.com/uskanda/switchboard/internal/relayclient"
 	"github.com/uskanda/switchboard/internal/secret"
 	"github.com/uskanda/switchboard/internal/state"
@@ -168,6 +169,14 @@ func agentRun(args []string, stdout, stderr io.Writer) int {
 		a.Relay = &relayclient.Client{URL: r.URL, Token: tok, Logf: func(format string, args ...any) {
 			fmt.Fprintf(stderr, "switchboard: "+format+"\n", args...)
 		}}
+	}
+	if t := cfg.Notify.Telegram; t != nil {
+		res := secret.Resolver{Store: secret.Keyring{}, AllowEnv: cfg.Secrets.AllowEnv}
+		tok, err := res.Token(t.TokenRef)
+		if err != nil {
+			return fail(stderr, err)
+		}
+		a.Notifier = &notify.Telegram{Token: tok, ChatID: t.ChatID}
 	}
 	if err := a.Run(ctx); err != nil {
 		return fail(stderr, err)
