@@ -323,7 +323,12 @@ Web表示は、端末で受信ポートを開く唯一の部品である（ADR-0
    switchboard service install --web
    ```
 
-3. ブラウザで `http://192.168.0.82:8783` を開く。防火壁でポートを閉じているときは、LANからだけ開ける
+3. ブラウザで `http://192.168.0.82:8783` を開く。防火壁でポートを閉じているときは、LANからだけ開ける。firewalldなら、たとえば次のようにする
+
+   ```bash
+   sudo firewall-cmd --permanent --zone=public --add-rich-rule='rule family="ipv4" source address="192.168.0.0/24" port port="8783" protocol="tcp" accept'
+   sudo firewall-cmd --reload
+   ```
 
 状態は `switchboard service status --inbox` と `--web` で見る。手で試すときは、`switchboard inbox serve` を動かしてから `switchboard-web serve` を動かす。このときソケットは `$XDG_RUNTIME_DIR/switchboard/inbox.sock` にでき、`web.yaml` の `socket` で場所を指定できる。
 

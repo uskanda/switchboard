@@ -41,5 +41,5 @@
 
 ## 7. 結合の確認
 
-- [ ] 7.1 usknasで、利用者にTelegramのbotのトークンを `switchboard/telegram` に置いてもらう。設定に `<notify>` を足し、`service install`、`service install --inbox`、`service install --web` を実行してもらう。防火壁がWUIのポートを塞いでいないかも見る
-- [ ] 7.2 GitLabのsandboxでissueを待ちにして、Telegramに通知が届くことを確かめる。通知のリンクから、スマホのブラウザで受信箱を開く。返答すると実行が再開し、完了の通知が届くことも確かめる。デスクトップのブラウザでも同じ画面を開いて確かめる。結果はROADMAP.mdに記録する
+- [x] 7.1 usknasで、利用者にTelegramのbotのトークンを `switchboard/telegram` に置いてもらう。設定に `<notify>` を足し、`service install`、`service install --inbox`、`service install --web` を実行してもらう。防火壁がWUIのポートを塞いでいないかも見る
+- [x] 7.2 GitLabのsandboxでissueを待ちにして、Telegramに通知が届くことを確かめる。通知のリンクから、スマホのブラウザで受信箱を開く。返答すると実行が再開し、完了の通知が届くことも確かめる。デスクトップのブラウザでも同じ画面を開いて確かめる。結果はROADMAP.mdに記録する
