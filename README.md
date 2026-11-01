@@ -249,6 +249,14 @@ switchboard service install
 
 状態は `switchboard service status` で、ログは `journalctl -u switchboard-agent.service` で見る。撤去は `switchboard service uninstall` で行う。
 
+置いてあるサービス（エージェント、中継、受信箱、Web表示）を、まとめて動かし直せる。置いていないサービスは飛ばす。sudoのパスワードを端末で入力する。
+
+```bash
+make restart
+```
+
+作り直した版で動かし直すときは、`make deploy` を使う。2つのバイナリを作って `~/.local/bin` に置いてから、`make restart` と同じことをする。置き場所は `PREFIX` で変えられる。
+
 次のときは、`switchboard service install` をもう一度実行する。
 
 - トークンを入れ替えたとき（クレデンシャルを置き直す）
