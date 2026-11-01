@@ -98,6 +98,7 @@ describe("the projects of the settings", () => {
     await waitFor(() => expect(within(section).getAllByRole("listitem")).toHaveLength(2));
     expect(within(section).getByRole("status")).toHaveTextContent("gh:o/notes を追加しました");
     expect(within(section).getByText("switchboard relay hook add gh:o/notes")).toBeInTheDocument();
+    expect(within(section).getByRole("status")).toHaveTextContent("登録するまでは、ポーリングで扱います");
     const post = calls.find((c) => c.key === "POST /api/projects");
     expect(JSON.parse(String(post?.init?.body))).toEqual({ ref: "gh:o/notes", plan_first: true });
     expect(new Headers(post?.init?.headers).get("Content-Type")).toBe("application/json");

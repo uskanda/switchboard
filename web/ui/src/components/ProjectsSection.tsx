@@ -155,7 +155,7 @@ export function ProjectsSection({ onAdded }: { onAdded?: () => void }) {
           </p>
           {added.webhook && (
             <p>
-              中継を使っているので、中継の端末で webhook を登録してください：
+              中継の端末で次を実行すると、webhook で早く着手します。登録するまでは、ポーリングで扱います：
               <code className="block font-mono text-mono-sm break-all">{added.webhook}</code>
             </p>
           )}

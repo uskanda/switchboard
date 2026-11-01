@@ -177,14 +177,35 @@ func TestAddedProjectIsServedAtOnce(t *testing.T) {
 	}
 }
 
-func TestAddProjectNamesTheWebhookCommandWithARelay(t *testing.T) {
-	w := withProjects(t, strings.Replace(projectsYAML, "inbox:\n", "agent:\n  relay: {url: https://relay.example/events, token_ref: r}\n  reconcile_interval: 10m\ninbox:\n", 1))
+const withRelay = "agent:\n  relay: {url: https://relay.example/events, token_ref: r}\n  reconcile_interval: 10m\ninbox:\n"
+
+func TestAddProjectNamesTheWebhookCommandForGitLab(t *testing.T) {
+	body := strings.Replace(projectsYAML, "inbox:\n", withRelay, 1)
+	body = strings.Replace(body, "  github:", "  gitlab: {base_url: https://gl.example, token_ref: g, inbox_token_ref: gi, agent_identity: bot}\n  github:", 1)
+	body = strings.Replace(body, "trusted_authors: {github: [me]}", "trusted_authors: {github: [me], gitlab: [me]}", 1)
+	body += "  - ref: gl:nas/sb\n    path: /src/sb\n    host: here\n"
+	w := withProjects(t, body)
+	g := fake.NewGitLab(nil)
+	g.AddProject("nas", "tools", "private")
+	w.srv.Projects.Repos[forge.GitLab] = g
+	got, err := w.c.AddProject(ctx, inboxapi.AddProjectRequest{Ref: "gl:nas/tools"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Webhook != "switchboard relay hook add gl:nas/tools" {
+		t.Errorf("webhook = %q", got.Webhook)
+	}
+}
+
+// GitHub cannot reach the relay, which listens on 127.0.0.1 (ADR-007), so a GitHub project is polled instead.
+func TestAddProjectNamesNoWebhookForGitHub(t *testing.T) {
+	w := withProjects(t, strings.Replace(projectsYAML, "inbox:\n", withRelay, 1))
 	got, err := w.c.AddProject(ctx, inboxapi.AddProjectRequest{Ref: "gh:o/notes"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Webhook != "switchboard relay hook add gh:o/notes" {
-		t.Errorf("webhook = %q", got.Webhook)
+	if got.Webhook != "" {
+		t.Errorf("webhook = %q, want none for a GitHub project", got.Webhook)
 	}
 }
 
