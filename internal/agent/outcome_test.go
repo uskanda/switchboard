@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/uskanda/switchboard/internal/claudecode"
 	"github.com/uskanda/switchboard/internal/config"
+	"github.com/uskanda/switchboard/internal/forge"
 )
 
 // fixture is a step that prints a recorded stream-json output from the claudecode package.
@@ -139,6 +141,41 @@ func TestDoneOpensADraftPullRequest(t *testing.T) {
 	p := x.lastPost(x.ref)
 	if x.labels(x.ref) != "agent:done" || p.Marker.State != "done" || !strings.Contains(p.Body, "https://forge.test/o/r/pull/1") {
 		t.Fatalf("labels=%q post=%+v\n%s", x.labels(x.ref), p.Marker, p.Body)
+	}
+}
+
+// A rerun on an issue whose branch already has an open pull request pushes to it instead of opening another,
+// which GitHub refuses with 422.
+func TestDoneReusesTheOpenPullRequest(t *testing.T) {
+	x := newH(t, "", nil)
+	if _, err := x.f.CreateChangeRequest(context.Background(), forge.ChangeRequest{Owner: "o", Repo: "r", Head: "switchboard/issue-12", Base: "main"}); err != nil {
+		t.Fatal(err)
+	}
+	x.step(1, commit("flag.txt", "dry-run")+done("Added it."))
+	x.f.AddLabel(x.ref, "agent:ready", x.master)
+	x.poll()
+	x.settle()
+	if !x.originHas("switchboard/issue-12") || len(x.f.PRs) != 1 {
+		t.Fatalf("pushed=%v PRs=%d", x.originHas("switchboard/issue-12"), len(x.f.PRs))
+	}
+	p := x.lastPost(x.ref)
+	if x.labels(x.ref) != "agent:done" || !strings.Contains(p.Body, "https://forge.test/o/r/pull/1") {
+		t.Fatalf("labels=%q post=%+v\n%s", x.labels(x.ref), p.Marker, p.Body)
+	}
+}
+
+func TestDoneOpensANewPullRequestWhenTheOldOneIsClosed(t *testing.T) {
+	x := newH(t, "", nil)
+	if _, err := x.f.CreateChangeRequest(context.Background(), forge.ChangeRequest{Owner: "o", Repo: "r", Head: "switchboard/issue-12", Base: "main"}); err != nil {
+		t.Fatal(err)
+	}
+	x.f.ClosePR(0)
+	x.step(1, commit("flag.txt", "dry-run")+done("Added it."))
+	x.f.AddLabel(x.ref, "agent:ready", x.master)
+	x.poll()
+	x.settle()
+	if len(x.f.PRs) != 2 || !strings.Contains(x.lastPost(x.ref).Body, "https://forge.test/o/r/pull/2") {
+		t.Fatalf("PRs=%d\n%s", len(x.f.PRs), x.lastPost(x.ref).Body)
 	}
 }
 

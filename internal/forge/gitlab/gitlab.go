@@ -415,6 +415,21 @@ func (c *Client) CreateChangeRequest(ctx context.Context, cr forge.ChangeRequest
 	return out.WebURL, err
 }
 
+// OpenChangeRequest implements forge.Forge with the open merge requests from head to base.
+func (c *Client) OpenChangeRequest(ctx context.Context, owner, repo, head, base string) (string, error) {
+	var out []struct {
+		WebURL string `json:"web_url"`
+	}
+	q := url.Values{"state": {"opened"}, "source_branch": {head}, "target_branch": {base}}
+	if _, err := c.do(ctx, http.MethodGet, c.url(project(owner, repo)+"/merge_requests", q), nil, &out); err != nil {
+		return "", err
+	}
+	if len(out) == 0 {
+		return "", forge.ErrNotFound
+	}
+	return out[0].WebURL, nil
+}
+
 type glProject struct {
 	ID            int64  `json:"id"`
 	Visibility    string `json:"visibility"`

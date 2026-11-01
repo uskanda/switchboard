@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -295,10 +296,15 @@ func (a *Agent) finish(ctx context.Context, pl *plan, sp *workspace.Space, d *De
 		}
 		return o.fail(fmt.Sprintf(a.msg.pushFailed, err))
 	}
-	url, err := a.forgeOf(is.Ref).CreateChangeRequest(ctx, forge.ChangeRequest{
-		Owner: is.Ref.Owner, Repo: is.Ref.Repo, Title: is.Title, Body: body,
-		Head: sp.IssueBranch(), Base: p.BaseBranch, Draft: true,
-	})
+	// A rerun pushes to the pull request an earlier run opened; opening a second one would fail.
+	f := a.forgeOf(is.Ref)
+	url, err := f.OpenChangeRequest(ctx, is.Ref.Owner, is.Ref.Repo, sp.IssueBranch(), p.BaseBranch)
+	if errors.Is(err, forge.ErrNotFound) {
+		url, err = f.CreateChangeRequest(ctx, forge.ChangeRequest{
+			Owner: is.Ref.Owner, Repo: is.Ref.Repo, Title: is.Title, Body: body,
+			Head: sp.IssueBranch(), Base: p.BaseBranch, Draft: true,
+		})
+	}
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil
