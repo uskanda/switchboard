@@ -41,6 +41,14 @@ type Repos interface {
 	LabelNames(ctx context.Context, owner, repo string) ([]string, error)
 }
 
+// Issues opens issues. It is kept apart from Forge: the agent never opens one, and the inbox service calls it with
+// the inbox token, so the issue is the person's own (ADR-040).
+type Issues interface {
+	// CreateIssue opens an issue in owner/repo carrying labels and returns it; ErrNotFound when the token cannot see
+	// the repository.
+	CreateIssue(ctx context.Context, owner, repo, title, body string, labels []string) (*IssueSummary, error)
+}
+
 // The forge kinds, as written before the colon of a project reference.
 const (
 	GitHub = "gh"

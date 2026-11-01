@@ -1,4 +1,5 @@
 import { Link } from "react-router";
+import { NewIssue } from "@/components/NewIssue";
 import { ReasonBadge } from "@/components/ReasonBadge";
 import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
@@ -99,7 +100,7 @@ function Items({ items, timeHead, selected }: { items: Item[]; timeHead: string;
   );
 }
 
-/** InboxList is the list of waiting issues, then the running and the queued ones under their own headings. */
+/** InboxList is the button for a new issue, the list of waiting issues, then the running and the queued ones under their own headings. */
 export function InboxList({ selected }: { selected?: string }) {
   const { inbox, error } = useInbox();
   const waiting = inbox?.items.filter((it) => !isRunning(it) && !isQueued(it)) ?? [];
@@ -108,6 +109,7 @@ export function InboxList({ selected }: { selected?: string }) {
   return (
     <div className="flex flex-col gap-lg">
       <h2 className="sr-only">一覧</h2>
+      <NewIssue />
       {error && <Alert>{error}</Alert>}
       {inbox?.errors.map((e) => (
         <Alert key={e.forge}>

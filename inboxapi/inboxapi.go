@@ -147,6 +147,53 @@ type AddProjectResponse struct {
 	Webhook string  `json:"webhook,omitempty"`
 }
 
+// The kinds of start label an issue can be opened with: the configuration's labels.ready, labels.plan and labels.go.
+const (
+	StartReady = "ready"
+	StartPlan  = "plan"
+	StartGo    = "go"
+)
+
+// IssueTarget is a project an issue can be opened in, with Host, the machine that runs it.
+type IssueTarget struct {
+	Ref  string `json:"ref"`
+	Host string `json:"host"`
+}
+
+// IssueStart is a kind of start label (StartReady, StartPlan, StartGo) and the label it stands for.
+type IssueStart struct {
+	Kind  string `json:"kind"`
+	Label string `json:"label"`
+}
+
+// IssueTargets is the answer to GET /v1/issue-targets: every configured project, whatever machine runs it, in the
+// order of the configuration, and the start labels the configuration names.
+type IssueTargets struct {
+	Items  []IssueTarget `json:"items"`
+	Starts []IssueStart  `json:"starts"`
+}
+
+// MaxIssueTitle and MaxIssueBody bound what POST /v1/issues takes: characters of the title, bytes of the body.
+const (
+	MaxIssueTitle = 256
+	MaxIssueBody  = 1 << 20
+)
+
+// CreateIssueRequest is the body of POST /v1/issues. Start is a kind of IssueStart; the inbox service puts the label
+// it stands for on the issue, and no other.
+type CreateIssueRequest struct {
+	Ref   string `json:"ref"`
+	Title string `json:"title"`
+	Body  string `json:"body"`
+	Start string `json:"start"`
+}
+
+// CreateIssueResponse is the answer to a POST /v1/issues that opened the issue: its reference and its page.
+type CreateIssueResponse struct {
+	Ref string `json:"ref"`
+	URL string `json:"url"`
+}
+
 // The codes of Error.
 const (
 	CodeInvalid        = "invalid"         // 400
@@ -212,8 +259,9 @@ var (
 	ErrInvalid    = errors.New("invalid request")
 	ErrNotFound   = errors.New("not found")
 	ErrNotWaiting = errors.New("the issue is not waiting")
-	// ErrTooLarge, ErrSecret and ErrUnknownProject are the refusals of a save of instructions.
-	ErrTooLarge       = errors.New("the instructions are too large")
+	// ErrTooLarge, ErrSecret and ErrUnknownProject are the refusals of a save of instructions; ErrTooLarge and
+	// ErrUnknownProject also refuse a new issue.
+	ErrTooLarge       = errors.New("too large")
 	ErrSecret         = errors.New("the instructions look like they hold a secret")
 	ErrUnknownProject = errors.New("the project is not in the configuration")
 	// The refusals of an addition of a project.

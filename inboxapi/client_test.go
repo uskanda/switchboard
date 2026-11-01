@@ -251,3 +251,43 @@ func TestAddProjectRefusalsAreTyped(t *testing.T) {
 		}
 	}
 }
+
+func TestIssueTargets(t *testing.T) {
+	c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/issue-targets" {
+			t.Errorf("%s %s", r.Method, r.URL)
+		}
+		reply(w, 200, IssueTargets{Items: []IssueTarget{{Ref: "gh:o/r", Host: "nas"}}, Starts: []IssueStart{{Kind: StartReady, Label: "agent:ready"}}})
+	})
+	got, err := c.IssueTargets(ctx)
+	if err != nil || len(got.Items) != 1 || got.Items[0].Host != "nas" || len(got.Starts) != 1 || got.Starts[0].Label != "agent:ready" {
+		t.Fatalf("IssueTargets = %+v, %v", got, err)
+	}
+}
+
+func TestCreateIssuePostsJSON(t *testing.T) {
+	var got CreateIssueRequest
+	c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/issues" || r.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("%s %s %s", r.Method, r.URL, r.Header.Get("Content-Type"))
+		}
+		json.NewDecoder(r.Body).Decode(&got)
+		reply(w, http.StatusCreated, CreateIssueResponse{Ref: "gh:o/r#41", URL: "https://github.test/o/r/issues/41"})
+	})
+	out, err := c.CreateIssue(ctx, CreateIssueRequest{Ref: "gh:o/r", Title: "t", Body: "b", Start: StartPlan})
+	if err != nil || out.Ref != "gh:o/r#41" || out.URL == "" {
+		t.Fatalf("CreateIssue = %+v, %v", out, err)
+	}
+	if got != (CreateIssueRequest{Ref: "gh:o/r", Title: "t", Body: "b", Start: StartPlan}) {
+		t.Errorf("sent %+v", got)
+	}
+}
+
+func TestCreateIssueRefusalsAreTyped(t *testing.T) {
+	c := serve(t, func(w http.ResponseWriter, _ *http.Request) {
+		reply(w, http.StatusUnprocessableEntity, Error{Code: CodeUnknownProject, Message: "gh:o/x is not a project"})
+	})
+	if _, err := c.CreateIssue(ctx, CreateIssueRequest{Ref: "gh:o/x", Title: "t", Start: StartReady}); !errors.Is(err, ErrUnknownProject) {
+		t.Fatalf("err = %v, want ErrUnknownProject", err)
+	}
+}
