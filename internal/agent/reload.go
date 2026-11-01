@@ -53,7 +53,12 @@ func (a *Agent) applyProjects(ctx context.Context) {
 	for _, p := range a.accepting {
 		waiting = append(waiting, p)
 	}
+	dropped := a.dropped
+	a.dropped = nil
 	a.pmu.Unlock()
+	for _, ref := range dropped {
+		a.unqueue(ctx, ref)
+	}
 	for _, p := range waiting {
 		if ctx.Err() != nil {
 			return
@@ -77,7 +82,7 @@ func (a *Agent) applyDesired() {
 		}
 		a.logf("%s: removed from the configuration; its running runs finish, and its issues are no longer taken up", p.Ref)
 		delete(a.private, p.Ref)
-		a.dropPending(p)
+		a.dropped = append(a.dropped, a.dropPending(p)...)
 	}
 	a.projects = kept
 	for ref := range a.accepting {
@@ -91,15 +96,24 @@ func (a *Agent) applyDesired() {
 	}
 }
 
-// dropPending forgets the queued issues of a removed project.
-func (a *Agent) dropPending(p config.Project) {
+// dropPending forgets the queued issues of a removed project and the issues it would have evaluated again, and returns the queued ones, so that their queued comments can
+// be removed once pmu is released.
+func (a *Agent) dropPending(p config.Project) []forge.IssueRef {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	var out []forge.IssueRef
 	for ref := range a.pending {
-		if ref.Kind() == p.Forge && ref.Owner == p.Owner && ref.Repo == p.Repo {
+		if inProject(ref, p) {
 			delete(a.pending, ref)
+			out = append(out, ref)
 		}
 	}
+	for ref := range a.unsettled {
+		if inProject(ref, p) {
+			delete(a.unsettled, ref)
+		}
+	}
+	return out
 }
 
 // accept takes on a project of a reload: its route, the repository's visibility, the clone and the state labels.

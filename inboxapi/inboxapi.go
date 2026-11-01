@@ -10,11 +10,12 @@ import (
 	"time"
 )
 
-// Item is one waiting or running issue, as switchboard inbox --json lists it. Only waiting issues have a row
-// number (N); a running one has RunningSince and Progress, the last line of its progress comment ("?" without one).
+// Item is one waiting, running or queued issue, as switchboard inbox --json lists it. Only waiting issues have a row
+// number (N); a running one has RunningSince and Progress, the last line of its progress comment ("?" without one); a
+// queued one has QueuedSince, and Reason names the limit reached (max-parallel or project-max-parallel).
 type Item struct {
 	N            int        `json:"n,omitempty"`
-	State        string     `json:"state"` // waiting or running
+	State        string     `json:"state"` // waiting, running or queued
 	Ref          string     `json:"ref"`
 	Project      string     `json:"project"`
 	Number       int        `json:"number"`
@@ -26,6 +27,7 @@ type Item struct {
 	Question     string     `json:"question"`
 	RunningSince *time.Time `json:"running_since,omitempty"`
 	Progress     string     `json:"progress,omitempty"`
+	QueuedSince  *time.Time `json:"queued_since,omitempty"`
 	// UpdatedAt and Notes are the forge's update time and count of people's comments (GitLab's user_notes_count, 0
 	// on GitHub): a page watching one issue reads it again when either moves.
 	UpdatedAt *time.Time `json:"updated_at"`
@@ -61,7 +63,9 @@ const EventInbox = "inbox"
 
 // Detail is the answer to GET /v1/issue?ref=: the agent's latest post on the issue, which holds the question and
 // the refused operations, with what its marker says. While the issue runs, State is "running" and Post is the
-// progress comment of the run (the claim before there is one); a reply to it is refused as not waiting.
+// progress comment of the run (the claim before there is one); a reply to it is refused as not waiting. While the
+// issue waits for a slot, State is "queued" and Since is when it was queued; Post is then the last wait's post while
+// the issue still waits for a reply (which is still taken), else the queued comment.
 type Detail struct {
 	Ref     string     `json:"ref"`
 	Title   string     `json:"title"`
@@ -82,7 +86,7 @@ type Detail struct {
 }
 
 // Comment is one comment of an issue. Agent is set on a post of the agent; Kind is then the state of its marker
-// (running for the claim of a run, progress, waiting, done) and Body is without the marker. A person's comment is
+// (running for the claim of a run, progress, queued, waiting, done) and Body is without the marker. A person's comment is
 // as written, and is data.
 type Comment struct {
 	Author    string    `json:"author"`

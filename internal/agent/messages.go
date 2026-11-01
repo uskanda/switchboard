@@ -13,6 +13,9 @@ type texts struct {
 	pr, mr, verified, notVerified, prSummary, prVerification, withheld     string
 	claim, multipleStarts                                                  string
 
+	// The queued comment: on the host's limit (host name, value) or on the project's (value).
+	queuedHost, queuedProject string
+
 	// The comments of the plan stage: the titles, the hints on how to answer, and the note on discarded changes.
 	planQuestionsTitle, planTitle, planQuestionsHint, planHint, planDiscarded string
 
@@ -51,6 +54,8 @@ var english = texts{
 
 	pr:             "Pull request: %s",
 	claim:          "Started on host %s.",
+	queuedHost:     "Queued: host %s runs as many issues at once as it may (%d). This issue starts when a run ends.",
+	queuedProject:  "Queued: this project runs as many issues at once as it may (%d). This issue starts when one of its runs ends.",
 	multipleStarts: "More than one start label is on the issue (%s), so the agent cannot tell which run was asked for. Put exactly one of them on the issue to start again.",
 
 	planQuestionsTitle: "The agent has questions for the plan",
@@ -104,6 +109,8 @@ var japanese = texts{
 
 	pr:             "PR：%s",
 	claim:          "端末%sで実行を始めます。",
+	queuedHost:     "順番待ちにしました。端末%sで同時に動かせる実行の上限（%d）に達しています。実行が1つ終わると始めます。",
+	queuedProject:  "順番待ちにしました。このプロジェクトで同時に動かせる実行の上限（%d）に達しています。このプロジェクトの実行が1つ終わると始めます。",
 	multipleStarts: "始めるラベルが2つ以上付いているため（%s）、どの実行を求められたのか分かりません。どれか1つだけを付け直すと、もう一度始めます。",
 
 	planQuestionsTitle: "計画についての質問",

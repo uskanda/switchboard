@@ -4,8 +4,8 @@
 export type Item = {
   /** The row number; only a waiting issue has one. */
   n?: number;
-  /** waiting or running; a back end older than the running list leaves it out, and its items all wait. */
-  state?: "waiting" | "running";
+  /** waiting, running or queued; a back end older than the running list leaves it out, and its items all wait. */
+  state?: "waiting" | "running" | "queued";
   ref: string;
   project: string;
   number: number;
@@ -18,12 +18,19 @@ export type Item = {
   running_since?: string | null;
   /** The last line of the run's progress comment, "?" without one. */
   progress?: string;
+  /** When the issue was queued for a free slot; reason then names the limit reached. */
+  queued_since?: string | null;
   /** The forge's update time and count of people's comments (GitLab's; 0 on GitHub): a move in either means the issue changed. */
   updated_at?: string | null;
   notes?: number;
 };
 
 export const isRunning = (it: Item) => it.state === "running";
+export const isQueued = (it: Item) => it.state === "queued";
+
+/** queueText says which limit a queued issue waits on. */
+export const queueText = (reason: string) =>
+  reason === "project-max-parallel" ? "プロジェクトの上限に達しています" : "端末の上限に達しています";
 
 /**
  * Inbox is a listing. relay is whether the inbox service follows the relay's events ("" when it is not set up), and
@@ -58,14 +65,14 @@ export type Detail = {
 
 /**
  * Comment is one comment of an issue. agent is set on a post of the agent, whose kind is then the state of its
- * marker (running for the claim of a run, progress, waiting, done); a person's comment is as written.
+ * marker (running for the claim of a run, progress, queued, waiting, done); a person's comment is as written.
  */
 export type Comment = {
   author: string;
   created_at: string;
   body: string;
   agent: boolean;
-  kind?: "running" | "progress" | "waiting" | "done" | string;
+  kind?: "running" | "progress" | "queued" | "waiting" | "done" | string;
 };
 
 /** watchKey is what moves when an issue on the list changes: a page showing the issue reads it again on a move. */

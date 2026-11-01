@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
-import { ApiError, age, elapsed, getIssue, postReply, watchKey, type Detail } from "@/lib/api";
+import { ApiError, age, elapsed, getIssue, postReply, queueText, watchKey, type Detail } from "@/lib/api";
 import { useInbox } from "@/lib/inbox";
 import { cachedIssue, rememberIssue } from "@/lib/issueCache";
 import { composeReply, defaultAnswers, parsePlanQuestions, type Answer } from "@/lib/planQuestions";
@@ -153,6 +153,7 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
   }
 
   const running = detail?.state === "running";
+  const queued = detail?.state === "queued";
   // The form stays while something is typed or chosen, so a draft survives the issue leaving its wait.
   const showForm = detail && !sent && (detail.waiting || text !== "" || touched);
 
@@ -174,7 +175,14 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
             <span className="font-mono text-mono-sm break-all">{detail.ref}</span>
             <h2 className="text-headline-md font-semibold break-words">{detail.title}</h2>
             <span className="flex flex-wrap items-center gap-sm text-label-md text-muted">
-              {running ? <span className="font-medium">実行中</span> : <ReasonBadge reason={detail.reason} />}
+              {running ? (
+                <span className="font-medium">実行中</span>
+              ) : queued ? (
+                <span className="font-medium">順番待ち</span>
+              ) : (
+                <ReasonBadge reason={detail.reason} />
+              )}
+              {queued && <span>{queueText(detail.reason)}</span>}
               <span>{detail.host}</span>
               <span>{running ? elapsed(detail.since) : age(detail.since)}</span>
               <a href={detail.url} className="inline-flex min-h-11 items-center underline" target="_blank" rel="noreferrer">
@@ -245,7 +253,8 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
             </form>
           )}
           {running && !sent && !showForm && <p className="text-muted">実行中のため返答できません</p>}
-          {!detail.waiting && !running && !sent && !showForm && <p className="text-muted">このissueは待ちではありません。返答は送れません。</p>}
+          {queued && !detail.waiting && !sent && !showForm && <p className="text-muted">順番待ちのため、まだ返答は要りません</p>}
+          {!detail.waiting && !running && !queued && !sent && !showForm && <p className="text-muted">このissueは待ちではありません。返答は送れません。</p>}
         </>
       )}
     </article>
