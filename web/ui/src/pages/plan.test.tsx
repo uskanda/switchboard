@@ -109,7 +109,49 @@ describe("plan waits", () => {
     at("/issue/gh%3Ao%2Fr%2312");
     expect(await screen.findByText(/1\. Add --dry-run\./)).toBeInTheDocument();
     expect(screen.getByText("plan")).toBeInTheDocument();
-    expect(screen.getByText(/承認/)).toHaveTextContent("/ok");
+    expect(screen.getByText(/と送ると承認になり/)).toHaveTextContent("/ok");
+  });
+
+  it("approve with the approval word alone in one click", async () => {
+    const calls = answer({ "GET /api/issue?ref=gh%3Ao%2Fr%2312": { status: 200, body: planDetail }, "POST /api/reply": { status: 204 } });
+    at("/issue/gh%3Ao%2Fr%2312");
+    const approve = await screen.findByRole("button", { name: "承認する（/ok を送る）" });
+    expect(screen.getByRole("button", { name: "返答を送る" })).toBeDisabled();
+    await userEvent.click(approve);
+    expect(await screen.findByRole("status")).toHaveTextContent("送りました");
+    const post = calls.find((c) => c.key === "POST /api/reply");
+    expect(JSON.parse(String(post?.init?.body))).toEqual({ ref: "gh:o/r#12", text: "/ok" });
+  });
+
+  it("name and send the configured approval word", async () => {
+    const calls = answer({
+      "GET /api/issue?ref=gh%3Ao%2Fr%2312": { status: 200, body: { ...planDetail, approve_word: "/lgtm" } },
+      "POST /api/reply": { status: 204 },
+    });
+    at("/issue/gh%3Ao%2Fr%2312");
+    await userEvent.click(await screen.findByRole("button", { name: "承認する（/lgtm を送る）" }));
+    await screen.findByRole("status");
+    const post = calls.find((c) => c.key === "POST /api/reply");
+    expect(JSON.parse(String(post?.init?.body))).toEqual({ ref: "gh:o/r#12", text: "/lgtm" });
+  });
+
+  it("do not approve while something is written in the reply", async () => {
+    answer({ "GET /api/issue?ref=gh%3Ao%2Fr%2312": { status: 200, body: planDetail } });
+    at("/issue/gh%3Ao%2Fr%2312");
+    const approve = await screen.findByRole("button", { name: "承認する（/ok を送る）" });
+    const field = screen.getByRole("textbox", { name: "返答" });
+    await userEvent.type(field, "   ");
+    expect(approve).toBeEnabled();
+    await userEvent.type(field, "名前を変えて");
+    expect(approve).toBeDisabled();
+    expect(screen.getByRole("button", { name: "返答を送る" })).toBeEnabled();
+  });
+
+  it("do not approve once the issue stops waiting", async () => {
+    answer({ "GET /api/issue?ref=gh%3Ao%2Fr%2312": { status: 200, body: { ...planDetail, waiting: false } } });
+    at("/issue/gh%3Ao%2Fr%2312");
+    expect(await screen.findByText(/1\. Add --dry-run\./)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /承認する/ })).toBeNull();
   });
 
   it("show the reason of the plan questions on the list", async () => {

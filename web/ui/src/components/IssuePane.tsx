@@ -35,7 +35,7 @@ function PlanHint({ reason, word, answerable }: { reason: string; word: string; 
   if (reason === "plan") {
     return (
       <p className="text-label-md text-muted">
-        この計画で進めるなら {code} と送ると承認になり、作業が始まります。直してほしいところがあれば、そのまま書いて送ってください。
+        この計画で進めるなら「承認する」を押すか、{code} と送ると承認になり、作業が始まります。直してほしいところがあれば、そのまま書いて「返答を送る」を押してください。
       </p>
     );
   }
@@ -131,6 +131,9 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
   const plan = found && ((detail?.waiting && detail.reason === "plan-questions") || touched) ? found : null;
   const answers = plan ? (touched ? choices!.answers : plan.defaults) : [];
   const composed = plan ? composeReply(plan.parsed.questions, answers, text) : "";
+  const word = detail?.approve_word || "/ok";
+  // A wait on a plan is approved by its approval word alone, sent in one click while the reply is empty.
+  const approving = detail?.reason === "plan" && !plan;
 
   async function send(reply: string) {
     setSending(true);
@@ -225,7 +228,7 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
               <label htmlFor="reply" className="text-label-md font-medium">
                 返答
               </label>
-              <PlanHint reason={detail.reason} word={detail.approve_word || "/ok"} answerable={!!plan} />
+              <PlanHint reason={detail.reason} word={word} answerable={!!plan} />
               <Textarea id="reply" value={text} onChange={(e) => setText(e.target.value)} disabled={sending} />
               {!detail.waiting && <p className="text-muted">このissueは待ちではなくなりました。返答は送れません。</p>}
               {plan ? (
@@ -245,6 +248,15 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
                     </Button>
                   </div>
                 </>
+              ) : approving ? (
+                <div className="flex flex-wrap justify-end gap-sm">
+                  <Button type="submit" variant="secondary" disabled={sending || !detail.waiting || text.trim() === ""}>
+                    返答を送る
+                  </Button>
+                  <Button type="button" disabled={sending || !detail.waiting || text.trim() !== ""} onClick={() => void send(word)}>
+                    {sending ? "送っています" : `承認する（${word} を送る）`}
+                  </Button>
+                </div>
               ) : (
                 <Button type="submit" disabled={sending || !detail.waiting || text.trim() === ""} className="self-end">
                   {sending ? "送っています" : "返答を送る"}
