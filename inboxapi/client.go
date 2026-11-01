@@ -87,6 +87,21 @@ func (c *Client) AddProject(ctx context.Context, req AddProjectRequest) (*AddPro
 	return &out, nil
 }
 
+// IssueTargets returns the projects an issue can be opened in and the start labels it can carry.
+func (c *Client) IssueTargets(ctx context.Context) (*IssueTargets, error) {
+	var out IssueTargets
+	return &out, c.do(ctx, http.MethodGet, "/v1/issue-targets", nil, &out)
+}
+
+// CreateIssue opens an issue with the inbox token. It is refused with ErrUnknownProject, ErrInvalid or ErrTooLarge.
+func (c *Client) CreateIssue(ctx context.Context, req CreateIssueRequest) (*CreateIssueResponse, error) {
+	var out CreateIssueResponse
+	if err := c.do(ctx, http.MethodPost, "/v1/issues", req, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // Events follows GET /v1/events: it calls fn with the listing the inbox service sends first, then with each listing
 // that differs from the one before, until ctx ends (ctx.Err()) or the stream breaks (ErrUnavailable). Reconnecting
 // is the caller's.

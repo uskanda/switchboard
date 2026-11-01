@@ -21,6 +21,7 @@ type fakeInbox struct {
 	replies []inboxapi.ReplyRequest
 	saved   []inboxapi.SaveInstructionsRequest
 	added   []inboxapi.AddProjectRequest
+	created []inboxapi.CreateIssueRequest
 	err     error
 }
 
