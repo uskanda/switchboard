@@ -64,3 +64,53 @@ func TestRepos(t *testing.T) {
 		t.Errorf("LabelNames = %v, want [a b]", got)
 	}
 }
+
+func TestFailNthAndDelete(t *testing.T) {
+	ctx := context.Background()
+	f := New(nil)
+	alice := f.AddUser("alice", 1)
+	f.AddRepo("alice", "sandbox", true)
+	ref := f.AddIssue("alice", "sandbox", 1, "t", "b", alice)
+	boom := errors.New("502")
+
+	f.FailNthThread(2, boom)
+	if _, _, err := f.Thread(ctx, ref); err != nil {
+		t.Fatalf("1st Thread = %v", err)
+	}
+	if _, _, err := f.Thread(ctx, ref); !errors.Is(err, boom) {
+		t.Fatalf("2nd Thread = %v, want the injected error", err)
+	}
+	if _, _, err := f.Thread(ctx, ref); err != nil {
+		t.Fatalf("3rd Thread = %v", err)
+	}
+
+	hooked := 0
+	f.AfterPostComment = func(forge.IssueRef) { hooked++ }
+	f.FailNthPostComment(1, boom)
+	if _, err := f.PostComment(ctx, ref, "x"); !errors.Is(err, boom) {
+		t.Fatalf("1st PostComment = %v, want the injected error", err)
+	}
+	if _, err := f.PostComment(ctx, ref, "y"); err != nil {
+		t.Fatalf("2nd PostComment = %v", err)
+	}
+	if n := len(f.CommentsOf(ref)); n != 1 || hooked != 1 {
+		t.Fatalf("comments = %d, hook calls = %d; want 1 and 1", n, hooked)
+	}
+
+	other := f.AddIssue("alice", "sandbox", 2, "t", "b", alice)
+	f.FailNthThreadOf(ref, 1, boom)
+	if _, _, err := f.Thread(ctx, other); err != nil {
+		t.Fatalf("Thread of another issue = %v", err)
+	}
+	if _, _, err := f.Thread(ctx, ref); !errors.Is(err, boom) {
+		t.Fatalf("Thread of the issue = %v, want the injected error", err)
+	}
+
+	f.DeleteIssue(ref)
+	if _, _, err := f.Thread(ctx, ref); !errors.Is(err, forge.ErrNotFound) {
+		t.Fatalf("Thread of a deleted issue = %v, want ErrNotFound", err)
+	}
+	if list, _ := f.UpdatedIssues(ctx, "alice", "sandbox", time.Time{}); len(list) != 1 || list[0].Ref != other {
+		t.Fatalf("UpdatedIssues lists a deleted issue: %+v", list)
+	}
+}

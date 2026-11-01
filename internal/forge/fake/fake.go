@@ -33,6 +33,15 @@ type Forge struct {
 	// AfterSetLabels, when set, runs after each successful SetLabels, with the lock released. Tests use it to
 	// simulate a human changing labels right after the agent did.
 	AfterSetLabels func(ref forge.IssueRef)
+	// AfterPostComment, when set, runs after each successful PostComment, with the lock released. Tests use it to
+	// act while the agent is between two calls to the forge.
+	AfterPostComment func(ref forge.IssueRef)
+
+	failThread, failPost     int // FailNthThread, FailNthPostComment: calls left until the failing one
+	failThreadEr, failPostEr error
+	failThreadOf             *forge.IssueRef // FailNthThreadOf: only the calls for this issue count
+	// FailSearch, when set, is returned by the next SearchOpenIssuesWithLabel call and then cleared.
+	FailSearch error
 }
 
 type repo struct {
@@ -176,6 +185,13 @@ func (f *Forge) EditCommentAs(ref forge.IssueRef, id int64, body string, editor 
 }
 
 // Labels returns the issue's labels, sorted.
+// UpdatedAt is the issue's update time.
+func (f *Forge) UpdatedAt(ref forge.IssueRef) time.Time {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.issue(ref).data.UpdatedAt
+}
+
 func (f *Forge) Labels(ref forge.IssueRef) []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -254,10 +270,55 @@ func (f *Forge) UpdatedIssues(_ context.Context, owner, name string, since time.
 	return out, nil
 }
 
+// FailNthThread makes the n-th Thread call from now fail with err.
+func (f *Forge) FailNthThread(n int, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.failThread, f.failThreadEr, f.failThreadOf = n, err, nil
+}
+
+// FailNthThreadOf is FailNthThread counting only the calls that read ref.
+func (f *Forge) FailNthThreadOf(ref forge.IssueRef, n int, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.failThread, f.failThreadEr, f.failThreadOf = n, err, &ref
+}
+
+// FailNthPostComment makes the n-th PostComment call from now fail with err; the comment is not posted.
+func (f *Forge) FailNthPostComment(n int, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.failPost, f.failPostEr = n, err
+}
+
+// nth counts down *left and reports whether this call is the failing one. Call it with f.mu held.
+func nth(left *int) bool {
+	if *left <= 0 {
+		return false
+	}
+	*left--
+	return *left == 0
+}
+
+// DeleteIssue removes an issue, as a deletion or a transfer does: it is no longer listed, and reading it reports
+// forge.ErrNotFound.
+func (f *Forge) DeleteIssue(ref forge.IssueRef) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.issue(ref)
+	delete(f.repos[ref.Owner+"/"+ref.Repo].issues, ref.Number)
+}
+
 // Thread implements forge.Forge.
 func (f *Forge) Thread(_ context.Context, ref forge.IssueRef) (*forge.Issue, []forge.Comment, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if (f.failThreadOf == nil || *f.failThreadOf == ref) && nth(&f.failThread) {
+		return nil, nil, f.failThreadEr
+	}
+	if r, ok := f.repos[ref.Owner+"/"+ref.Repo]; ok && r.issues[ref.Number] == nil {
+		return nil, nil, forge.ErrNotFound
+	}
 	is := f.issue(ref)
 	d := is.data
 	d.Labels = append([]string(nil), d.Labels...)
@@ -325,9 +386,17 @@ func (f *Forge) PostComment(_ context.Context, ref forge.IssueRef, body string) 
 // one fake forge use it through As.
 func (f *Forge) PostCommentAs(ref forge.IssueRef, body, login string) (*forge.Comment, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
+	if nth(&f.failPost) {
+		f.mu.Unlock()
+		return nil, f.failPostEr
+	}
 	f.Comments++
 	c := f.addComment(ref, body, f.users[login])
+	hook := f.AfterPostComment
+	f.mu.Unlock()
+	if hook != nil {
+		hook(ref)
+	}
 	return &c, nil
 }
 
@@ -427,6 +496,10 @@ func (f *Forge) User(_ context.Context, login string) (*forge.User, error) {
 func (f *Forge) SearchOpenIssuesWithLabel(_ context.Context, scope string, labels ...string) ([]forge.IssueSummary, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if err := f.FailSearch; err != nil {
+		f.FailSearch = nil
+		return nil, err
+	}
 	var out []forge.IssueSummary
 	for name, r := range f.repos {
 		if f.kind == forge.GitLab && name != scope {

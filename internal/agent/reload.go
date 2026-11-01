@@ -85,13 +85,18 @@ func (a *Agent) applyDesired() {
 	}
 }
 
-// dropPending forgets the queued issues of a removed project.
+// dropPending forgets the queued issues of a removed project, and the issues it would have evaluated again.
 func (a *Agent) dropPending(p config.Project) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	for ref := range a.pending {
-		if ref.Kind() == p.Forge && ref.Owner == p.Owner && ref.Repo == p.Repo {
+		if inProject(ref, p) {
 			delete(a.pending, ref)
+		}
+	}
+	for ref := range a.unsettled {
+		if inProject(ref, p) {
+			delete(a.unsettled, ref)
 		}
 	}
 }
