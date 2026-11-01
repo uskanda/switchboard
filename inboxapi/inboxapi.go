@@ -109,6 +109,40 @@ type SaveInstructionsRequest struct {
 	Content string `json:"content"`
 }
 
+// Project is one project of the inbox service's machine, with what it needs before the agent can run it: a clone at
+// Path and the state labels. MissingLabels lists the state labels the repository lacks; LabelsError says why they
+// could not be read, and MissingLabels is then empty.
+type Project struct {
+	Ref           string   `json:"ref"`
+	Path          string   `json:"path"`
+	PlanFirst     bool     `json:"plan_first"`
+	Cloned        bool     `json:"cloned"`
+	MissingLabels []string `json:"missing_labels"`
+	LabelsError   string   `json:"labels_error,omitempty"`
+}
+
+// Projects is the answer to GET /v1/projects: the projects of Host, the machine of the inbox service, in the order
+// of the configuration. Enabled says whether POST /v1/projects may add one (inbox.project_root is set).
+type Projects struct {
+	Host    string    `json:"host"`
+	Enabled bool      `json:"enabled"`
+	Items   []Project `json:"items"`
+}
+
+// AddProjectRequest is the body of POST /v1/projects: the project, as gh:owner/repo or gl:group/project, and
+// whether its ready label starts with a plan. Everything else is decided by the inbox service.
+type AddProjectRequest struct {
+	Ref       string `json:"ref"`
+	PlanFirst bool   `json:"plan_first"`
+}
+
+// AddProjectResponse is the answer to a POST /v1/projects that added the project. Webhook, when set, is the command
+// that registers the relay's webhook of the project; the inbox service never registers one.
+type AddProjectResponse struct {
+	Project Project `json:"project"`
+	Webhook string  `json:"webhook,omitempty"`
+}
+
 // The codes of Error.
 const (
 	CodeInvalid        = "invalid"         // 400
@@ -118,6 +152,15 @@ const (
 	CodeSecret         = "secret"          // 422
 	CodeUnknownProject = "unknown_project" // 422
 	CodeForge          = "forge"           // 502
+
+	// The refusals of POST /v1/projects.
+	CodeAddingDisabled = "adding_disabled" // 403: inbox.project_root is not set
+	CodeProjectExists  = "project_exists"  // 409
+	CodeForgeNotUsed   = "forge_not_used"  // 422: no project of this machine is on the forge
+	CodeRepoUnreadable = "repo_unreadable" // 422: the inbox token cannot read the repository
+	CodePathTaken      = "path_taken"      // 409: another project is cloned at the path
+	CodeConfigInvalid  = "config_invalid"  // 422: the configuration would not validate
+	CodeConfigChanged  = "config_changed"  // 409: the file changed while the project was being added
 )
 
 // Error is how the API answers a request it could not serve.
@@ -143,6 +186,20 @@ func (e *Error) Is(target error) bool {
 		return e.Code == CodeSecret
 	case ErrUnknownProject:
 		return e.Code == CodeUnknownProject
+	case ErrAddingDisabled:
+		return e.Code == CodeAddingDisabled
+	case ErrProjectExists:
+		return e.Code == CodeProjectExists
+	case ErrForgeNotUsed:
+		return e.Code == CodeForgeNotUsed
+	case ErrRepoUnreadable:
+		return e.Code == CodeRepoUnreadable
+	case ErrPathTaken:
+		return e.Code == CodePathTaken
+	case ErrConfigInvalid:
+		return e.Code == CodeConfigInvalid
+	case ErrConfigChanged:
+		return e.Code == CodeConfigChanged
 	}
 	return false
 }
@@ -155,6 +212,14 @@ var (
 	ErrTooLarge       = errors.New("the instructions are too large")
 	ErrSecret         = errors.New("the instructions look like they hold a secret")
 	ErrUnknownProject = errors.New("the project is not in the configuration")
+	// The refusals of an addition of a project.
+	ErrAddingDisabled = errors.New("adding projects is disabled: set inbox.project_root")
+	ErrProjectExists  = errors.New("the project is in the configuration already")
+	ErrForgeNotUsed   = errors.New("no project of this machine is on the forge")
+	ErrRepoUnreadable = errors.New("the repository cannot be read with the inbox token")
+	ErrPathTaken      = errors.New("another project is cloned at the path")
+	ErrConfigInvalid  = errors.New("the configuration would not be valid")
+	ErrConfigChanged  = errors.New("the configuration file was changed while adding")
 	// ErrUnavailable is returned when the inbox service cannot be reached at all.
 	ErrUnavailable = errors.New("the inbox service is not reachable")
 )

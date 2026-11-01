@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { ProjectsSection } from "@/components/ProjectsSection";
 import { Shell } from "@/components/Shell";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -79,17 +80,19 @@ function Field({ item }: { item: Instruction }) {
   );
 }
 
-/** SettingsPage edits the additional instructions that the plan runs get, global and per project. */
+/** SettingsPage lists and adds the projects, and edits the additional instructions that the plan runs get, global and per project. */
 export function SettingsPage() {
   const [data, setData] = useState<Instructions | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const load = () => getInstructions().then(setData, (err) => setError(failure(err)));
   useEffect(() => {
-    getInstructions().then(setData, (err) => setError(failure(err)));
+    load();
   }, []);
 
   return (
     <Shell>
+      <ProjectsSection onAdded={load} />
       <div className="flex flex-col gap-xs">
         <h2 className="text-headline-md font-semibold">計画の実行への追加の指示</h2>
         <p className="text-muted">

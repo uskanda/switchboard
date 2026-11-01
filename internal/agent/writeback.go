@@ -144,7 +144,7 @@ func (a *Agent) checkComment(ref forge.IssueRef, run, name, body string) {
 // is; a run without one becomes waiting with reason error.
 func (a *Agent) recover(ctx context.Context) error {
 	var errs []error
-	for _, p := range a.projects {
+	for _, p := range a.projectList() {
 		scope := "repo:" + p.FullName()
 		if p.Forge == forge.GitLab {
 			scope = p.FullName() // GitLab searches one project, named by its path

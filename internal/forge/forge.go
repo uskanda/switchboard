@@ -32,6 +32,15 @@ type Hooks interface {
 	DeleteHook(ctx context.Context, owner, repo, url string) (bool, error)
 }
 
+// Repos reads what adding a project needs to know of a repository. It is kept apart from Forge: the inbox service
+// calls it with the inbox token.
+type Repos interface {
+	// DefaultBranch returns the repository's default branch; ErrNotFound when the token cannot see the repository.
+	DefaultBranch(ctx context.Context, owner, repo string) (string, error)
+	// LabelNames lists the names of every label of the repository.
+	LabelNames(ctx context.Context, owner, repo string) ([]string, error)
+}
+
 // The forge kinds, as written before the colon of a project reference.
 const (
 	GitHub = "gh"

@@ -20,6 +20,7 @@ const listen = "192.168.0.82:8783"
 type fakeInbox struct {
 	replies []inboxapi.ReplyRequest
 	saved   []inboxapi.SaveInstructionsRequest
+	added   []inboxapi.AddProjectRequest
 	err     error
 }
 

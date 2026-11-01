@@ -161,7 +161,12 @@ func agentRun(args []string, stdout, stderr io.Writer) int {
 			return fail(stderr, err)
 		}
 	}
-	a := &agent.Agent{Config: cfg, Routes: routes, State: d, Audit: audit, Log: stderr}
+	a := &agent.Agent{Config: cfg, Routes: routes, State: d, Audit: audit, Log: stderr, NewRoute: c.reloadRoute(routes)}
+	w, err := config.NewWatcher(cfg)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	go w.Run(ctx, stderr, a.Reload)
 	if r := cfg.Agent.Relay; r != nil {
 		res := secret.Resolver{Store: secret.Keyring{}, AllowEnv: cfg.Secrets.AllowEnv}
 		tok, err := res.Token(r.TokenRef)

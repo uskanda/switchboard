@@ -47,6 +47,7 @@ plan:
 
 inbox:
   refresh_interval: 30s               # how often inbox serve reads the forges while a web page is open; at least 10s
+  # project_root: ~/repos              # lets the web inbox add projects, cloned under this directory; off when unset
 
 agent:
   poll_interval: 60s

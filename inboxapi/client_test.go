@@ -202,3 +202,52 @@ func TestEventsRefusedIsAnError(t *testing.T) {
 		t.Fatalf("err = %v, want not found", err)
 	}
 }
+
+func TestProjects(t *testing.T) {
+	c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/projects" {
+			t.Errorf("%s %s", r.Method, r.URL.Path)
+		}
+		reply(w, http.StatusOK, Projects{Host: "here", Enabled: true, Items: []Project{{Ref: "gh:o/r", Path: "/src/r", PlanFirst: true, Cloned: true, MissingLabels: []string{"agent:go"}}}})
+	})
+	got, err := c.Projects(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Enabled || len(got.Items) != 1 || got.Items[0].Ref != "gh:o/r" || !got.Items[0].Cloned || got.Items[0].MissingLabels[0] != "agent:go" {
+		t.Fatalf("projects = %+v", got)
+	}
+}
+
+func TestAddProjectPostsJSON(t *testing.T) {
+	c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		var req AddProjectRequest
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/projects" || json.NewDecoder(r.Body).Decode(&req) != nil {
+			t.Errorf("%s %s", r.Method, r.URL.Path)
+		}
+		if req.Ref != "gh:o/notes" || !req.PlanFirst {
+			t.Errorf("request = %+v", req)
+		}
+		reply(w, http.StatusCreated, AddProjectResponse{Project: Project{Ref: req.Ref}, Webhook: "switchboard relay hook add gh:o/notes"})
+	})
+	got, err := c.AddProject(ctx, AddProjectRequest{Ref: "gh:o/notes", PlanFirst: true})
+	if err != nil || got.Project.Ref != "gh:o/notes" || got.Webhook == "" {
+		t.Fatalf("AddProject = %+v, %v", got, err)
+	}
+}
+
+func TestAddProjectRefusalsAreTyped(t *testing.T) {
+	for code, want := range map[string]error{
+		CodeAddingDisabled: ErrAddingDisabled, CodeInvalid: ErrInvalid, CodeProjectExists: ErrProjectExists,
+		CodeForgeNotUsed: ErrForgeNotUsed, CodeRepoUnreadable: ErrRepoUnreadable, CodePathTaken: ErrPathTaken,
+		CodeConfigInvalid: ErrConfigInvalid, CodeConfigChanged: ErrConfigChanged,
+	} {
+		c := serve(t, func(w http.ResponseWriter, _ *http.Request) {
+			reply(w, http.StatusConflict, Error{Code: code, Message: "no"})
+		})
+		_, err := c.AddProject(ctx, AddProjectRequest{Ref: "gh:o/notes"})
+		if !errors.Is(err, want) {
+			t.Errorf("code %s: err = %v, want %v", code, err, want)
+		}
+	}
+}

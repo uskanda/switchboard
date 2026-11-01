@@ -31,7 +31,7 @@ func (a *Agent) interval() time.Duration {
 // uncovered lists the projects the relay sends no event of.
 func (a *Agent) uncovered() []config.Project {
 	var out []config.Project
-	for _, p := range a.projects {
+	for _, p := range a.projectList() {
 		if !a.Config.Relay.Covers(p.Ref) {
 			out = append(out, p)
 		}
@@ -45,7 +45,7 @@ func (a *Agent) due(now time.Time) []config.Project {
 	a.rmu.Lock()
 	defer a.rmu.Unlock()
 	if !a.connected || now.Sub(a.reconciled) >= a.Config.Agent.ReconcileInterval {
-		return a.projects
+		return a.projectList()
 	}
 	return a.uncovered()
 }
@@ -106,7 +106,7 @@ func (a *Agent) onEvent(e relay.Event) {
 
 // projectOf finds this host's project an event is about. Project paths compare without case, as the forges do.
 func (a *Agent) projectOf(e relay.Event) (config.Project, bool) {
-	for _, p := range a.projects {
+	for _, p := range a.projectList() {
 		if p.Forge == e.Forge && strings.EqualFold(p.FullName(), e.Project) {
 			return p, true
 		}

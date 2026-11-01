@@ -70,6 +70,23 @@ func (c *Client) SaveInstructions(ctx context.Context, target, content string) e
 	return c.do(ctx, http.MethodPut, "/v1/instructions", SaveInstructionsRequest{Target: target, Content: content}, nil)
 }
 
+// Projects returns the projects of the inbox service's machine and their state.
+func (c *Client) Projects(ctx context.Context) (*Projects, error) {
+	var out Projects
+	return &out, c.do(ctx, http.MethodGet, "/v1/projects", nil, &out)
+}
+
+// AddProject adds a project to the configuration of the inbox service's machine. It is refused with
+// ErrAddingDisabled, ErrInvalid, ErrProjectExists, ErrForgeNotUsed, ErrRepoUnreadable, ErrPathTaken,
+// ErrConfigInvalid or ErrConfigChanged.
+func (c *Client) AddProject(ctx context.Context, req AddProjectRequest) (*AddProjectResponse, error) {
+	var out AddProjectResponse
+	if err := c.do(ctx, http.MethodPost, "/v1/projects", req, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // Events follows GET /v1/events: it calls fn with the listing the inbox service sends first, then with each listing
 // that differs from the one before, until ctx ends (ctx.Err()) or the stream breaks (ErrUnavailable). Reconnecting
 // is the caller's.

@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -53,12 +54,24 @@ type Agent struct {
 	ProgressEvery time.Duration
 	// Notifier, when set, is told each time the agent posts a waiting or a done comment.
 	Notifier Notifier
+	// NewRoute, when set, builds the route of a project that appears on a reload; without it, such a project uses
+	// the agent's defaults (Forge, Judge, GitToken).
+	NewRoute func(config.Project) (Route, error)
+	// CloneURL is the URL a project that appears on a reload is cloned from; the forge's https URL when nil.
+	CloneURL func(config.Project) string
 
-	ctx      context.Context // runs end when it does
-	unlock   func()
-	projects []config.Project
-	private  map[string]bool // by project full name
-	msg      texts
+	ctx    context.Context // runs end when it does
+	unlock func()
+	msg    texts
+
+	// pmu guards the projects and routes, which a reload changes while runs and relay refreshes read them.
+	pmu       sync.RWMutex
+	projects  []config.Project
+	private   map[string]bool           // by project ref
+	desired   []config.Project          // this host's projects of the last reload, until applied
+	reloaded  bool                      // desired holds a reload not applied yet
+	accepting map[string]config.Project // by ref: projects of a reload not yet cloned and labeled
+	failures  map[string]string         // by ref: the last acceptance failure logged
 
 	mu      sync.Mutex
 	active  map[forge.IssueRef]*active
@@ -85,10 +98,27 @@ type Route struct {
 
 // route is the issue's route: its project's, or the agent's defaults.
 func (a *Agent) route(ref forge.IssueRef) Route {
-	if r, ok := a.Routes[ref.Kind()+":"+ref.Project()]; ok {
+	a.pmu.RLock()
+	r, ok := a.Routes[ref.Kind()+":"+ref.Project()]
+	a.pmu.RUnlock()
+	if ok {
 		return r
 	}
 	return Route{Forge: a.Forge, Judge: a.Judge, GitToken: a.GitToken}
+}
+
+// projectList is a copy of the projects the agent handles now.
+func (a *Agent) projectList() []config.Project {
+	a.pmu.RLock()
+	defer a.pmu.RUnlock()
+	return slices.Clone(a.projects)
+}
+
+// isPrivate reports whether the project's repository was private when the agent took the project on.
+func (a *Agent) isPrivate(ref string) bool {
+	a.pmu.RLock()
+	defer a.pmu.RUnlock()
+	return a.private[ref]
 }
 
 func (a *Agent) routeOf(p config.Project) Route {
@@ -151,23 +181,28 @@ func (a *Agent) Start(ctx context.Context) error {
 	a.seen = map[forge.IssueRef]time.Time{}
 	a.notes = map[forge.IssueRef]int{}
 	a.closed = map[forge.IssueRef]bool{}
+	a.wake = make(chan struct{}, 1)
+	a.pmu.Lock()
 	a.private = map[string]bool{}
+	a.accepting = map[string]config.Project{}
+	a.failures = map[string]string{}
+	a.projects = nil
+	a.pmu.Unlock()
 	if err := a.State.WriteJSON("agent.json", agentInfo{PID: os.Getpid(), Host: a.Config.Host.Name, Started: time.Now().UTC()}); err != nil {
 		return err
 	}
-	a.projects = nil
 	for _, p := range a.Config.ProjectsFor(a.Config.Host.Name) {
 		private, err := a.routeOf(p).Forge.RepoPrivate(ctx, p.Owner, p.Repo)
 		if err != nil {
 			return fmt.Errorf("%s: %w", p.FullName(), err)
 		}
-		if _, err := trust.UntrustedPolicy(p.IncludeUntrusted, private); err != nil {
-			a.logf("%s: %v; its issues are not run", p.FullName(), err)
-			a.Audit.Log("project.refused", map[string]any{"project": p.FullName(), "reason": err.Error()})
+		if !a.allowed(p, private) {
 			continue
 		}
+		a.pmu.Lock()
 		a.private[p.Ref] = private
 		a.projects = append(a.projects, p)
+		a.pmu.Unlock()
 	}
 	return a.recover(ctx)
 }
@@ -191,33 +226,37 @@ func (a *Agent) Run(ctx context.Context) error {
 	}
 	defer a.Close()
 	defer a.Wait()
-	a.logf("polling %d project(s) every %s", len(a.projects), a.Config.Agent.PollInterval)
-	a.wake = make(chan struct{}, 1)
+	a.logf("polling %d project(s) every %s", len(a.projectList()), a.Config.Agent.PollInterval)
 	if a.Relay != nil {
 		defer a.stopRefreshes()
 		go a.Relay.Run(ctx, a.onEvent, a.onRelayState)
 	}
 	t := time.NewTicker(a.interval())
 	defer t.Stop()
-	ps := a.projects
+	next := a.projectList // what the coming poll fetches, decided after a reload is applied
 	for {
-		if err := a.poll(ctx, ps); err != nil && ctx.Err() == nil {
+		a.applyProjects(ctx)
+		if err := a.poll(ctx, next()); err != nil && ctx.Err() == nil {
 			a.logf("poll: %v", err)
 		}
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-t.C:
-			ps = a.due(time.Now())
+		case now := <-t.C:
+			next = func() []config.Project { return a.due(now) }
 		case <-a.wake: // poll every project at once, then at the interval of the new state
 			t.Reset(a.interval())
-			ps = a.projects
+			next = a.projectList
 		}
 	}
 }
 
-// Poll evaluates the issues updated since the last poll, then starts queued issues while slots are free.
-func (a *Agent) Poll(ctx context.Context) error { return a.poll(ctx, a.projects) }
+// Poll applies a pending reload, evaluates the issues updated since the last poll, then starts queued issues while
+// slots are free.
+func (a *Agent) Poll(ctx context.Context) error {
+	a.applyProjects(ctx)
+	return a.poll(ctx, a.projectList())
+}
 
 // poll is Poll for the projects ps. Fetching every project counts as a reconcile.
 func (a *Agent) poll(ctx context.Context, ps []config.Project) error {
@@ -227,7 +266,7 @@ func (a *Agent) poll(ctx context.Context, ps []config.Project) error {
 	for _, p := range ps {
 		errs = append(errs, a.pollProject(ctx, p)...)
 	}
-	if len(ps) == len(a.projects) {
+	if len(ps) == len(a.projectList()) {
 		a.rmu.Lock()
 		a.reconciled = time.Now()
 		a.rmu.Unlock()
@@ -613,7 +652,7 @@ func (a *Agent) cleanClosed(ctx context.Context) {
 	}
 	a.mu.Unlock()
 	for _, ref := range refs {
-		for _, p := range a.projects {
+		for _, p := range a.projectList() {
 			if ref.Kind() == p.Forge && ref.Owner == p.Owner && ref.Repo == p.Repo {
 				a.cleanUp(ctx, p, ref)
 			}
