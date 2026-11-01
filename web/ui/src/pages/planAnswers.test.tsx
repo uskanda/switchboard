@@ -122,6 +122,7 @@ describe("the questions of a plan", () => {
     await open();
     expect(screen.queryByText(/推奨どおりでよければ/)).toBeNull();
     expect(screen.getByText(/この内容で返答」を押します/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /承認する/ })).toBeNull();
   });
 });
 
@@ -201,5 +202,27 @@ describe("the reply to the questions", () => {
     expect(await screen.findByText("このissueは待ちではなくなりました。返答は送れません。")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "この内容で返答" })).toBeDisabled();
     expect(group("Q2の選択肢").getByRole("radio", { name: /^B / })).toBeChecked();
+  });
+});
+
+describe("the approval of a plan", () => {
+  const plan = "### 計画の承認のお願い\n\n1. フラグを足す。";
+  const planned = (over: Record<string, unknown> = {}) =>
+    detail({ reason: "plan", post: plan, comments: [{ ...asked(plan), kind: "waiting" }], ...over });
+
+  it("can no longer be sent once the issue stops waiting, even with the form kept by a draft", async () => {
+    const details: Record<string, unknown> = { "gh:o/r#80": planned() };
+    serve(details);
+    at("/issue/gh%3Ao%2Fr%2380");
+    const approve = await screen.findByRole("button", { name: "承認する（/ok を送る）" });
+    const es = FakeEventSource.last!;
+    es.emit("inbox", listing(item({ reason: "plan" })));
+    await userEvent.type(screen.getByRole("textbox", { name: "返答" }), " ");
+    expect(approve).toBeEnabled();
+
+    details["gh:o/r#80"] = planned({ waiting: false, state: "running", reason: "plan" });
+    es.emit("inbox", listing(item({ reason: "plan", state: "running", updated_at: "2026-11-01T10:05:00Z" })));
+    expect(await screen.findByText("このissueは待ちではなくなりました。返答は送れません。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "承認する（/ok を送る）" })).toBeDisabled();
   });
 });
