@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/uskanda/switchboard/internal/config"
 	"github.com/uskanda/switchboard/internal/forge"
 )
 
@@ -129,7 +130,7 @@ func TestRemovedProjectDropsItsReevaluations(t *testing.T) {
 	if !x.unsettled(x.ref) {
 		t.Fatal("the failed issue is not kept for another evaluation")
 	}
-	x.a.Reload(nil)
+	x.a.Reload(&config.Change{MaxParallel: x.cfg.Agent.MaxParallel})
 	x.poll()
 	if x.unsettled(x.ref) {
 		t.Fatal("an issue of a removed project is still evaluated again")

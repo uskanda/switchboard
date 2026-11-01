@@ -14,18 +14,19 @@ import (
 	"github.com/uskanda/switchboard/internal/workspace"
 )
 
-// Reload hands the agent the projects of a new configuration file. The agent applies them before its next poll:
-// it stops taking up the projects that are gone (their runs finish), takes the changed settings of the others, and
-// accepts the new ones of this host once they are cloned and have the state labels.
-func (a *Agent) Reload(ps []config.Project) {
+// Reload hands the agent the projects and agent.max_parallel of a new configuration file. The agent applies them
+// before its next poll: it stops taking up the projects that are gone (their runs finish), takes the changed
+// settings of the others, and accepts the new ones of this host once they are cloned and have the state labels. A
+// lower limit stops no run; the poll's drain starts queued issues under the new limits.
+func (a *Agent) Reload(ch *config.Change) {
 	var mine []config.Project
-	for _, p := range ps {
+	for _, p := range ch.Projects {
 		if p.Host == a.Config.Host.Name {
 			mine = append(mine, p)
 		}
 	}
 	a.pmu.Lock()
-	a.desired, a.reloaded = mine, true
+	a.desired, a.desiredMax, a.reloaded = mine, ch.MaxParallel, true
 	a.pmu.Unlock()
 	select {
 	case a.wake <- struct{}{}:
@@ -42,12 +43,22 @@ func (a *Agent) applyProjects(ctx context.Context) {
 	if a.reloaded {
 		a.reloaded = false
 		a.applyDesired()
+		if a.desiredMax > 0 {
+			a.mu.Lock()
+			a.maxParallel = a.desiredMax
+			a.mu.Unlock()
+		}
 	}
 	waiting := make([]config.Project, 0, len(a.accepting))
 	for _, p := range a.accepting {
 		waiting = append(waiting, p)
 	}
+	dropped := a.dropped
+	a.dropped = nil
 	a.pmu.Unlock()
+	for _, ref := range dropped {
+		a.unqueue(ctx, ref)
+	}
 	for _, p := range waiting {
 		if ctx.Err() != nil {
 			return
@@ -71,7 +82,7 @@ func (a *Agent) applyDesired() {
 		}
 		a.logf("%s: removed from the configuration; its running runs finish, and its issues are no longer taken up", p.Ref)
 		delete(a.private, p.Ref)
-		a.dropPending(p)
+		a.dropped = append(a.dropped, a.dropPending(p)...)
 	}
 	a.projects = kept
 	for ref := range a.accepting {
@@ -85,13 +96,16 @@ func (a *Agent) applyDesired() {
 	}
 }
 
-// dropPending forgets the queued issues of a removed project, and the issues it would have evaluated again.
-func (a *Agent) dropPending(p config.Project) {
+// dropPending forgets the queued issues of a removed project and the issues it would have evaluated again, and returns the queued ones, so that their queued comments can
+// be removed once pmu is released.
+func (a *Agent) dropPending(p config.Project) []forge.IssueRef {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	var out []forge.IssueRef
 	for ref := range a.pending {
 		if inProject(ref, p) {
 			delete(a.pending, ref)
+			out = append(out, ref)
 		}
 	}
 	for ref := range a.unsettled {
@@ -99,6 +113,7 @@ func (a *Agent) dropPending(p config.Project) {
 			delete(a.unsettled, ref)
 		}
 	}
+	return out
 }
 
 // accept takes on a project of a reload: its route, the repository's visibility, the clone and the state labels.

@@ -91,3 +91,23 @@ func TestWatcherNamesTheSectionsItDoesNotApply(t *testing.T) {
 		t.Errorf("projects = %+v, want the two configured", ch.Projects)
 	}
 }
+
+func TestWatcherAppliesTheAgentMaxParallel(t *testing.T) {
+	w, p := newWatcher(t, valid)
+	save(t, p, valid+"agent:\n  max_parallel: 2\n", time.Now().Add(time.Minute))
+	ch, err := w.Check()
+	if err != nil || ch == nil {
+		t.Fatalf("Check = %+v, %v; want a change", ch, err)
+	}
+	if ch.MaxParallel != 2 {
+		t.Errorf("max parallel = %d, want 2", ch.MaxParallel)
+	}
+	if len(ch.Ignored) != 0 {
+		t.Errorf("ignored = %v, want none: agent.max_parallel is applied", ch.Ignored)
+	}
+	save(t, p, valid+"agent:\n  max_parallel: 2\n  poll_interval: 2m\n", time.Now().Add(2*time.Minute))
+	ch, err = w.Check()
+	if err != nil || ch == nil || strings.Join(ch.Ignored, ",") != "agent" {
+		t.Errorf("Check = %+v, %v; want agent ignored for poll_interval", ch, err)
+	}
+}

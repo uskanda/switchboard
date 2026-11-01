@@ -187,6 +187,44 @@ func TestThreadMarksCommentsBeyondTheGraphQLPageUnknown(t *testing.T) {
 	}
 }
 
+// TestThreadReadsItsPartsAtOnce holds each of the three requests of a thread until all three have arrived: read
+// one after another, the first would wait out the timeout.
+func TestThreadReadsItsPartsAtOnce(t *testing.T) {
+	s, c := newServer(t)
+	routes := map[string]http.HandlerFunc{
+		"GET /repos/o/r/issues/7":          jsonReply(map[string]any{"number": 7, "user": map[string]any{"login": "alice", "id": 1}}),
+		"GET /repos/o/r/issues/7/comments": jsonReply([]map[string]any{{"id": 11, "user": map[string]any{"login": "alice", "id": 1}}}),
+		"POST /graphql": jsonReply(map[string]any{"data": map[string]any{"repository": map[string]any{"issue": map[string]any{
+			"comments": map[string]any{"pageInfo": map[string]any{"hasNextPage": false}, "nodes": []map[string]any{{"databaseId": 11}}},
+		}}}}),
+	}
+	all := make(chan struct{})
+	var mu sync.Mutex
+	arrived := 0
+	for route, h := range routes {
+		s.on(route, func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			if arrived++; arrived == len(routes) {
+				close(all)
+			}
+			mu.Unlock()
+			select {
+			case <-all:
+			case <-time.After(2 * time.Second):
+				t.Errorf("%s was not read alongside the other parts of the thread", route)
+			}
+			h(w, r)
+		})
+	}
+	_, comments, err := c.Thread(ctx, forge.IssueRef{Owner: "o", Repo: "r", Number: 7})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(comments) != 1 || comments[0].Edit.Unknown {
+		t.Fatalf("comments = %+v", comments)
+	}
+}
+
 func TestLabelActorTakesTheLastLabeledEvent(t *testing.T) {
 	s, c := newServer(t)
 	s.on("GET /repos/o/r/issues/7/events", jsonReply([]map[string]any{

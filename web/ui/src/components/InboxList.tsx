@@ -3,12 +3,22 @@ import { ReasonBadge } from "@/components/ReasonBadge";
 import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
 import { Table, TableCell, TableHead } from "@/components/ui/table";
-import { age, elapsed, isRunning, issuePath, type Item } from "@/lib/api";
+import { age, elapsed, isQueued, isRunning, issuePath, queueText, type Item } from "@/lib/api";
 import { useInbox } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
 
-/** What a row shows: a waiting issue its reason, question and wait; a running one its progress and how long it ran. */
+/**
+ * What a row shows: a waiting issue its reason, question and wait; a running one its progress and how long it ran; a
+ * queued one the limit it waits on and since when.
+ */
 function cells(it: Item) {
+  if (isQueued(it)) {
+    return {
+      tag: <span className="text-label-md font-medium">順番待ち</span>,
+      line: queueText(it.reason),
+      time: age(it.queued_since ?? null),
+    };
+  }
   if (isRunning(it)) {
     return {
       tag: <span className="text-label-md font-medium">実行中</span>,
@@ -89,11 +99,12 @@ function Items({ items, timeHead, selected }: { items: Item[]; timeHead: string;
   );
 }
 
-/** InboxList is the list of waiting issues, then the running ones under their own heading. */
+/** InboxList is the list of waiting issues, then the running and the queued ones under their own headings. */
 export function InboxList({ selected }: { selected?: string }) {
   const { inbox, error } = useInbox();
-  const waiting = inbox?.items.filter((it) => !isRunning(it)) ?? [];
+  const waiting = inbox?.items.filter((it) => !isRunning(it) && !isQueued(it)) ?? [];
   const running = inbox?.items.filter(isRunning) ?? [];
+  const queued = inbox?.items.filter(isQueued) ?? [];
   return (
     <div className="flex flex-col gap-lg">
       <h2 className="sr-only">一覧</h2>
@@ -109,6 +120,12 @@ export function InboxList({ selected }: { selected?: string }) {
         <section className="flex flex-col gap-sm">
           <h2 className="text-label-md font-semibold text-muted">実行中</h2>
           <Items items={running} timeHead="経過" selected={selected} />
+        </section>
+      )}
+      {queued.length > 0 && (
+        <section className="flex flex-col gap-sm">
+          <h2 className="text-label-md font-semibold text-muted">順番待ち</h2>
+          <Items items={queued} timeHead="順番待ち" selected={selected} />
         </section>
       )}
     </div>

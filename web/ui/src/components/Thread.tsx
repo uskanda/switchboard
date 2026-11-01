@@ -26,7 +26,7 @@ function Byline({ author, at, agent }: { author: string; at: string | null | und
 }
 
 /**
- * shown picks the comments to draw: a claim of a run folds to one line, and of the progress comments only the
+ * shown picks the comments to draw: a claim of a run and a queued comment fold to one line, and of the progress comments only the
  * latest stays. The latest question of the agent is marked to stand out.
  */
 function shown(comments: Comment[]) {
@@ -34,7 +34,7 @@ function shown(comments: Comment[]) {
   const lastProgress = last("progress");
   const lastQuestion = last("waiting");
   return comments
-    .map((c, i) => ({ c, i, folded: c.agent && c.kind === "running", latest: i === lastQuestion }))
+    .map((c, i) => ({ c, i, folded: c.agent && (c.kind === "running" || c.kind === "queued") ? c.kind : undefined, latest: i === lastQuestion }))
     .filter(({ c, i }) => !(c.agent && c.kind === "progress" && i !== lastProgress));
 }
 
@@ -55,7 +55,7 @@ export function Thread({ detail, answering }: { detail: Detail; answering?: { in
         folded ? (
           <li key={i} className="flex flex-wrap items-center gap-sm px-lg text-label-md text-muted">
             <AgentMark />
-            <span>着手しました</span>
+            <span>{folded === "queued" ? "順番待ちになりました" : "着手しました"}</span>
             <time dateTime={c.created_at}>{when(c.created_at)}</time>
           </li>
         ) : (

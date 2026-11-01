@@ -6,9 +6,11 @@ import { Thread } from "@/components/Thread";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
-import { ApiError, age, elapsed, getIssue, postReply, watchKey, type Detail } from "@/lib/api";
+import { ApiError, age, elapsed, getIssue, postReply, queueText, watchKey, type Detail } from "@/lib/api";
 import { useInbox } from "@/lib/inbox";
+import { cachedIssue, rememberIssue } from "@/lib/issueCache";
 import { composeReply, defaultAnswers, parsePlanQuestions, type Answer } from "@/lib/planQuestions";
 
 function failure(err: unknown): string {
@@ -64,6 +66,8 @@ function questionsOf(detail: Detail | null) {
  * moves (watchKey), keeping what is typed in the reply. An issue that left the list stays shown, marked as such.
  * While it waits on the questions of a plan, the questions are answered by choosing: the choices are kept while the
  * same question comment is shown, and start over with the next round's.
+ * An issue read before in this tab shows its last read at once, marked as being brought up to date until the read
+ * arrives; one never read shows that it is loading.
  */
 export function IssuePane({ issueRef }: { issueRef: string }) {
   const { inbox } = useInbox();
@@ -71,7 +75,9 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
   const key = item ? watchKey(item) : inbox ? "gone" : "first";
   const gone = inbox !== null && !item;
 
-  const [detail, setDetail] = useState<Detail | null>(null);
+  const [detail, setDetail] = useState<Detail | null>(() => cachedIssue(issueRef));
+  // reading is set while a read of the issue is on its way; the first one starts as the pane opens.
+  const [reading, setReading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -80,7 +86,7 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
 
   // A new issue starts with an empty reply.
   useEffect(() => {
-    setDetail(null);
+    setDetail(cachedIssue(issueRef));
     setText("");
     setSent(false);
     setError(null);
@@ -88,24 +94,35 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
   }, [issueRef]);
 
   const lastKey = useRef(key);
+  // readFor is the issue the last read that arrived was of; a read shown from the cache does not count.
+  const readFor = useRef<string | null>(null);
   useEffect(() => {
     const prev = lastKey.current;
     lastKey.current = key;
     // An issue that left the list is not read again: what was last shown stays. Nor is one whose first listing just
     // arrived: the read made before it is as new.
-    if (detail?.ref === issueRef && (key === "gone" || prev === "first")) return;
+    if (readFor.current === issueRef && (key === "gone" || prev === "first")) {
+      setReading(false);
+      return;
+    }
     let stale = false;
+    setReading(true);
     getIssue(issueRef).then(
       (d) => {
         if (stale) return;
+        readFor.current = issueRef;
+        rememberIssue(issueRef, d);
         setDetail(d);
         setError(null);
+        setReading(false);
       },
-      (err) => !stale && setError(failure(err)),
+      (err) => {
+        if (stale) return;
+        setReading(false);
+        setError(cachedIssue(issueRef) ? `${failure(err)} 前回読んだ内容を表示しています。` : failure(err));
+      },
     );
     return () => void (stale = true);
-    // detail is left out on purpose: reading again follows the list, not the answer itself.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [issueRef, key]);
 
   const found = useMemo(() => questionsOf(detail), [detail]);
@@ -136,6 +153,7 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
   }
 
   const running = detail?.state === "running";
+  const queued = detail?.state === "queued";
   // The form stays while something is typed or chosen, so a draft survives the issue leaving its wait.
   const showForm = detail && !sent && (detail.waiting || text !== "" || touched);
 
@@ -145,18 +163,37 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
         ← 一覧へ
       </Link>
       {error && <Alert>{error}</Alert>}
+      {!detail && reading && (
+        <p role="status" aria-label="読み込んでいます" className="flex items-center gap-sm text-muted">
+          <Spinner />
+          読み込んでいます
+        </p>
+      )}
       {detail && (
         <>
           <div className="flex flex-col gap-xs">
             <span className="font-mono text-mono-sm break-all">{detail.ref}</span>
             <h2 className="text-headline-md font-semibold break-words">{detail.title}</h2>
             <span className="flex flex-wrap items-center gap-sm text-label-md text-muted">
-              {running ? <span className="font-medium">実行中</span> : <ReasonBadge reason={detail.reason} />}
+              {running ? (
+                <span className="font-medium">実行中</span>
+              ) : queued ? (
+                <span className="font-medium">順番待ち</span>
+              ) : (
+                <ReasonBadge reason={detail.reason} />
+              )}
+              {queued && <span>{queueText(detail.reason)}</span>}
               <span>{detail.host}</span>
               <span>{running ? elapsed(detail.since) : age(detail.since)}</span>
               <a href={detail.url} className="inline-flex min-h-11 items-center underline" target="_blank" rel="noreferrer">
                 フォージで開く（新しいタブ）
               </a>
+              {reading && (
+                <span role="status" aria-label="更新を取得中" className="inline-flex items-center gap-xs">
+                  <Spinner />
+                  更新を取得中
+                </span>
+              )}
             </span>
           </div>
           {gone && <p className="text-muted">このissueは、待ちでも実行中でもなくなりました。</p>}
@@ -216,7 +253,8 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
             </form>
           )}
           {running && !sent && !showForm && <p className="text-muted">実行中のため返答できません</p>}
-          {!detail.waiting && !running && !sent && !showForm && <p className="text-muted">このissueは待ちではありません。返答は送れません。</p>}
+          {queued && !detail.waiting && !sent && !showForm && <p className="text-muted">順番待ちのため、まだ返答は要りません</p>}
+          {!detail.waiting && !running && !queued && !sent && !showForm && <p className="text-muted">このissueは待ちではありません。返答は送れません。</p>}
         </>
       )}
     </article>

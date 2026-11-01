@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { isRunning } from "@/lib/api";
+import { isQueued, isRunning } from "@/lib/api";
 import { useInbox, type Live } from "@/lib/inbox";
 
 const liveText: Record<Live, string> = {
@@ -10,13 +10,14 @@ const liveText: Record<Live, string> = {
 };
 
 /**
- * Header is the bar over every page: the name, the counts of waiting and running issues, the state of the automatic
- * updates, and the settings link. The name links to the list.
+ * Header is the bar over every page: the name, the counts of waiting and running issues (and of queued ones when there
+ * are any), the state of the automatic updates, and the settings link. The name links to the list.
  */
 export function Header() {
   const { inbox, live } = useInbox();
   const running = inbox?.items.filter(isRunning).length ?? 0;
-  const waiting = (inbox?.items.length ?? 0) - running;
+  const queued = inbox?.items.filter(isQueued).length ?? 0;
+  const waiting = (inbox?.items.length ?? 0) - running - queued;
   return (
     <header className="sticky top-0 z-10 border-b border-outline bg-surface">
       <div className="flex min-h-14 flex-wrap items-center gap-x-lg gap-y-xs px-lg py-sm">
@@ -26,8 +27,9 @@ export function Header() {
           </Link>
         </h1>
         {inbox && (
-          <p className="text-label-md text-muted" aria-label={`待ち${waiting}件、実行中${running}件`}>
+          <p className="text-label-md text-muted" aria-label={`待ち${waiting}件、実行中${running}件${queued > 0 ? `、順番待ち${queued}件` : ""}`}>
             待ち {waiting}・実行中 {running}
+            {queued > 0 && `・順番待ち ${queued}`}
           </p>
         )}
         <p aria-live="polite" className="flex items-center gap-xs text-label-md text-muted">

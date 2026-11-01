@@ -104,7 +104,7 @@ func inboxServe(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, err)
 	}
-	go w.Run(ctx, stderr, reload)
+	go w.Run(ctx, stderr, func(ch *config.Change) { reload(ch.Projects) })
 	// Requests end with ctx, so the event streams, which never go idle, close on a signal instead of holding the
 	// shutdown.
 	srv := &http.Server{Handler: api, ReadHeaderTimeout: 10 * time.Second, BaseContext: func(net.Listener) context.Context { return ctx }}

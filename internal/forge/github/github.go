@@ -4,6 +4,7 @@ package github
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -254,25 +255,40 @@ type ghComment struct {
 }
 
 // Thread implements forge.Forge.
+// The issue, its comments and who edited them are three requests that need nothing of one another, so they are sent
+// at once.
 func (c *Client) Thread(ctx context.Context, ref forge.IssueRef) (*forge.Issue, []forge.Comment, error) {
-	var gi ghIssue
-	if _, err := c.do(ctx, http.MethodGet, c.url(fmt.Sprintf("/repos/%s/%s/issues/%d", ref.Owner, ref.Repo, ref.Number), nil), nil, &gi, nil); err != nil {
+	var (
+		wg                         sync.WaitGroup
+		gi                         ghIssue
+		comments                   []forge.Comment
+		ed                         *edits
+		issueErr, commentErr, eErr error
+	)
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		_, issueErr = c.do(ctx, http.MethodGet, c.url(fmt.Sprintf("/repos/%s/%s/issues/%d", ref.Owner, ref.Repo, ref.Number), nil), nil, &gi, nil)
+	}()
+	go func() {
+		defer wg.Done()
+		commentErr = pages(ctx, c, c.url(fmt.Sprintf("/repos/%s/%s/issues/%d/comments", ref.Owner, ref.Repo, ref.Number), url.Values{"per_page": {"100"}}),
+			func(p []ghComment) {
+				for _, gc := range p {
+					comments = append(comments, forge.Comment{ID: gc.ID, Body: gc.Body, Author: gc.User.user(), CreatedAt: gc.CreatedAt})
+				}
+			})
+	}()
+	go func() {
+		defer wg.Done()
+		ed, eErr = c.edits(ctx, ref)
+	}()
+	wg.Wait()
+	if err := cmp.Or(issueErr, commentErr, eErr); err != nil {
 		return nil, nil, err
 	}
 	is := &forge.Issue{IssueSummary: gi.summary(ref.Owner, ref.Repo), Body: gi.Body, Author: gi.User.user(), CreatedAt: gi.CreatedAt}
-	var comments []forge.Comment
-	err := pages(ctx, c, c.url(fmt.Sprintf("/repos/%s/%s/issues/%d/comments", ref.Owner, ref.Repo, ref.Number), url.Values{"per_page": {"100"}}),
-		func(p []ghComment) {
-			for _, gc := range p {
-				comments = append(comments, forge.Comment{ID: gc.ID, Body: gc.Body, Author: gc.User.user(), CreatedAt: gc.CreatedAt})
-			}
-		})
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := c.addEdits(ctx, ref, is, comments); err != nil {
-		return nil, nil, err
-	}
+	ed.apply(is, comments)
 	return is, comments, nil
 }
 
@@ -310,9 +326,27 @@ func (e gqlEdited) edit() forge.Edit {
 	return forge.Edit{Edited: true, Editor: &forge.User{Login: e.Editor.Login, ID: e.Editor.DatabaseID}}
 }
 
-// addEdits fills in who last edited the body and each comment. A comment the query did not return (beyond its
-// first page) is marked Unknown, so that trust decisions treat it as edited by an untrusted user.
-func (c *Client) addEdits(ctx context.Context, ref forge.IssueRef, is *forge.Issue, comments []forge.Comment) error {
+// edits is who last edited the body of an issue and each comment the edit query returned, by comment ID.
+type edits struct {
+	body     forge.Edit
+	comments map[int64]forge.Edit
+}
+
+// apply fills in who last edited the body and each comment. A comment the query did not return (beyond its first
+// page) is marked Unknown, so that trust decisions treat it as edited by an untrusted user.
+func (e *edits) apply(is *forge.Issue, comments []forge.Comment) {
+	is.BodyEdit = e.body
+	for i := range comments {
+		ed, ok := e.comments[comments[i].ID]
+		if !ok {
+			ed = forge.Edit{Edited: true, Unknown: true}
+		}
+		comments[i].Edit = ed
+	}
+}
+
+// edits reads who last edited the body and the first page of comments of an issue.
+func (c *Client) edits(ctx context.Context, ref forge.IssueRef) (*edits, error) {
 	in := map[string]any{"query": editQuery, "variables": map[string]any{"owner": ref.Owner, "repo": ref.Repo, "number": ref.Number}}
 	var out struct {
 		Data struct {
@@ -330,25 +364,17 @@ func (c *Client) addEdits(ctx context.Context, ref forge.IssueRef, is *forge.Iss
 		} `json:"errors"`
 	}
 	if _, err := c.do(ctx, http.MethodPost, c.graphqlURL, in, &out, nil); err != nil {
-		return err
+		return nil, err
 	}
 	if len(out.Errors) > 0 {
-		return fmt.Errorf("github: graphql: %s", out.Errors[0].Message)
+		return nil, fmt.Errorf("github: graphql: %s", out.Errors[0].Message)
 	}
 	gi := out.Data.Repository.Issue
-	is.BodyEdit = gi.edit()
-	byID := map[int64]forge.Edit{}
+	e := &edits{body: gi.edit(), comments: map[int64]forge.Edit{}}
 	for _, n := range gi.Comments.Nodes {
-		byID[n.DatabaseID] = n.edit()
+		e.comments[n.DatabaseID] = n.edit()
 	}
-	for i := range comments {
-		e, ok := byID[comments[i].ID]
-		if !ok {
-			e = forge.Edit{Edited: true, Unknown: true}
-		}
-		comments[i].Edit = e
-	}
-	return nil
+	return e, nil
 }
 
 type ghEvent struct {

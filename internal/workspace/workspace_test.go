@@ -201,3 +201,24 @@ func TestCheckOutputRefusesAnotherBranch(t *testing.T) {
 		t.Fatalf("problems = %v", problems)
 	}
 }
+
+// Runs of one project prepare their worktrees from the same clone at once; git locks the clone's config, so
+// unserialized, one of them fails.
+func TestPrepareOfOneCloneAtOnce(t *testing.T) {
+	clone, _ := repo(t)
+	root := t.TempDir()
+	const n = 6
+	errs := make(chan error, n)
+	for i := range n {
+		s := &Space{Repo: clone, Root: root, Base: "main", Number: 100 + i, Env: os.Environ()}
+		go func() {
+			_, err := s.Prepare(ctx)
+			errs <- err
+		}()
+	}
+	for range n {
+		if err := <-errs; err != nil {
+			t.Error(err)
+		}
+	}
+}

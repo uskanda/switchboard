@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/uskanda/switchboard/internal/config"
 	"github.com/uskanda/switchboard/internal/marker"
 )
 
@@ -105,7 +106,7 @@ func TestRemovedProjectKeepsRetryingItsWriteBack(t *testing.T) {
 	x.poll()
 	x.settle()
 	x.f.AddComment(x.ref, "Use off.", x.master)
-	x.a.Reload(nil)
+	x.a.Reload(&config.Change{MaxParallel: x.cfg.Agent.MaxParallel})
 	x.poll()
 	x.settle()
 	if x.labels(x.ref) != "agent:waiting" || x.starts() != 1 || x.pendingWriteBacks() != 0 {

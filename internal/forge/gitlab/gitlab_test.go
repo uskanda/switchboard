@@ -206,6 +206,35 @@ func TestThreadMarksCommentsGraphQLMissedUnknown(t *testing.T) {
 	}
 }
 
+// TestThreadReadsItsPartsAtOnce holds each of the three requests of a thread until all three have arrived: read
+// one after another, the first would wait out the timeout.
+func TestThreadReadsItsPartsAtOnce(t *testing.T) {
+	s, c := threadServer(t, []any{map[string]any{"id": "gid://gitlab/Note/81", "lastEditedBy": nil}})
+	all := make(chan struct{})
+	var mu sync.Mutex
+	arrived := 0
+	routes := []string{"GET " + proj + "/issues/3", "GET " + proj + "/issues/3/notes", "POST /api/graphql"}
+	for _, route := range routes {
+		h := s.handlers[route]
+		s.on(route, func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			if arrived++; arrived == len(routes) {
+				close(all)
+			}
+			mu.Unlock()
+			select {
+			case <-all:
+			case <-time.After(2 * time.Second):
+				t.Errorf("%s was not read alongside the other parts of the thread", route)
+			}
+			h(w, r)
+		})
+	}
+	if _, _, err := c.Thread(ctx, ref); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestThreadWithoutDescriptionNoteIsUnedited(t *testing.T) {
 	s, c := newServer(t)
 	s.on("GET "+proj+"/issues/3", jsonReply(map[string]any{"iid": 3, "title": "t", "description": "b", "state": "opened", "author": user(1, "alice")}))

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/uskanda/switchboard/internal/config"
 	"github.com/uskanda/switchboard/internal/forge"
 	"github.com/uskanda/switchboard/internal/marker"
 )
@@ -66,7 +67,7 @@ func TestRemovedProjectDoesNotResumeOnAReply(t *testing.T) {
 	x.poll()
 	x.waitStarted(1)
 	x.f.AddComment(x.ref, "Use off.", x.master)
-	x.a.Reload(nil)
+	x.a.Reload(&config.Change{MaxParallel: x.cfg.Agent.MaxParallel})
 	x.poll()
 	x.release(1)
 	x.settle()

@@ -38,6 +38,11 @@ type Inbox struct {
 	// Cache is the file the row numbers of the last listing are kept in.
 	Cache string
 	Now   func() time.Time
+
+	// ids holds the account IDs of the agent identities resolved so far, keyed by forge kind and login. An account
+	// keeps its ID, so one lookup serves every later listing and detail.
+	idMu sync.Mutex
+	ids  map[string]int64
 }
 
 // DefaultCache is $XDG_CACHE_HOME/switchboard/inbox.json, with ~/.cache when XDG_CACHE_HOME is unset.
@@ -49,13 +54,14 @@ func DefaultCache() string {
 	return filepath.Join(base, "switchboard", "inbox.json")
 }
 
-// Item is one waiting or running issue. On a waiting issue, Host, WaitingSince and Reason come only from the marker
-// of the agent's latest post; "?" (or null) when there is none. On a running issue, Host and RunningSince come from
-// the marker of the claim of the run, and Progress is the last line of its progress comment ("?" without one).
+// Item is one waiting, running or queued issue. On a waiting issue, Host, WaitingSince and Reason come only from the
+// marker of the agent's latest post; "?" (or null) when there is none. On a running issue, Host and RunningSince come
+// from the marker of the claim of the run, and Progress is the last line of its progress comment ("?" without one).
+// On a queued issue, Host, QueuedSince and Reason (the limit reached) come from the marker of its queued comment.
 // Only waiting issues are numbered.
 type Item struct {
 	N            int        `json:"n,omitempty"`
-	State        string     `json:"state"` // waiting or running
+	State        string     `json:"state"` // waiting, running or queued
 	Ref          string     `json:"ref"`
 	Project      string     `json:"project"`
 	Number       int        `json:"number"`
@@ -67,6 +73,7 @@ type Item struct {
 	Question     string     `json:"question"`
 	RunningSince *time.Time `json:"running_since,omitempty"`
 	Progress     string     `json:"progress,omitempty"`
+	QueuedSince  *time.Time `json:"queued_since,omitempty"`
 	// UpdatedAt and Notes are the forge's update time and count of people's comments (GitLab's user_notes_count, 0
 	// on GitHub): a page watching one issue reads it again when either moves.
 	UpdatedAt *time.Time `json:"updated_at"`
@@ -77,7 +84,11 @@ type Item struct {
 const (
 	Waiting = "waiting"
 	Running = "running"
+	Queued  = "queued"
 )
+
+// stateRank orders the listing: waiting, then running, then queued.
+var stateRank = map[string]int{Waiting: 0, Running: 1, Queued: 2}
 
 func refString(r forge.IssueRef) string { return r.String() }
 
@@ -115,10 +126,23 @@ func (b *Inbox) agentID(ctx context.Context, ref forge.IssueRef) (int64, error) 
 	p, _ := b.project(ref.Kind(), ref.Owner, ref.Repo)
 	p.Forge = ref.Kind()
 	login := b.Config.AgentIdentity(p)
+	key := ref.Kind() + "\x00" + strings.ToLower(login)
+	b.idMu.Lock()
+	id, ok := b.ids[key]
+	b.idMu.Unlock()
+	if ok {
+		return id, nil
+	}
 	u, err := b.forgeOf(ref.Kind()).User(ctx, login)
 	if err != nil {
 		return 0, fmt.Errorf("resolve agent_identity %s: %w", login, err)
 	}
+	b.idMu.Lock()
+	if b.ids == nil {
+		b.ids = map[string]int64{}
+	}
+	b.ids[key] = u.ID
+	b.idMu.Unlock()
 	return u.ID, nil
 }
 
@@ -202,11 +226,14 @@ func (b *Inbox) Collect(ctx context.Context) ([]Item, []ForgeError) {
 	}
 	sort.SliceStable(items, func(i, j int) bool {
 		if items[i].State != items[j].State {
-			return items[i].State == Waiting
+			return stateRank[items[i].State] < stateRank[items[j].State]
 		}
 		a, c := items[i].WaitingSince, items[j].WaitingSince
-		if items[i].State == Running {
+		switch items[i].State {
+		case Running:
 			a, c = items[i].RunningSince, items[j].RunningSince
+		case Queued:
+			a, c = items[i].QueuedSince, items[j].QueuedSince
 		}
 		switch {
 		case a == nil || c == nil:
@@ -240,8 +267,9 @@ func (b *Inbox) uses(kind string) bool {
 	return false
 }
 
-// list reads one forge's waiting and running issues. GitHub is searched once over search_scope; GitLab is read
-// project by project, since it has no search over the configured projects alone.
+// list reads one forge's waiting, running and queued issues. GitHub is searched once over search_scope; GitLab is
+// read project by project, since it has no search over the configured projects alone. An issue with a start label
+// is listed only once the agent has queued it.
 func (b *Inbox) list(ctx context.Context, kind string) ([]Item, error) {
 	f := b.forgeOf(kind)
 	if f == nil {
@@ -249,7 +277,7 @@ func (b *Inbox) list(ctx context.Context, kind string) ([]Item, error) {
 	}
 	var found []forge.IssueSummary
 	if kind == forge.GitHub {
-		s, err := f.SearchOpenIssuesWithLabel(ctx, b.Config.Forges.GitHub.SearchScope, b.Config.Labels.Waiting, b.Config.Labels.Running)
+		s, err := f.SearchOpenIssuesWithLabel(ctx, b.Config.Forges.GitHub.SearchScope, b.listed()...)
 		if err != nil {
 			return nil, err
 		}
@@ -259,7 +287,7 @@ func (b *Inbox) list(ctx context.Context, kind string) ([]Item, error) {
 			if kindOf(p) != kind {
 				continue
 			}
-			s, err := f.SearchOpenIssuesWithLabel(ctx, p.FullName(), b.Config.Labels.Waiting, b.Config.Labels.Running)
+			s, err := f.SearchOpenIssuesWithLabel(ctx, p.FullName(), b.listed()...)
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", p.Ref, err)
 			}
@@ -284,9 +312,17 @@ func (b *Inbox) list(ctx context.Context, kind string) ([]Item, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", s.Ref, err)
 		}
-		if labels.StateOf(s.Labels, b.Config.Labels) == b.Config.Labels.Running {
+		st := labels.StateOf(s.Labels, b.Config.Labels)
+		if st == b.Config.Labels.Running {
 			items = append(items, withUpdate(runningItem(s, comments, agentID), s))
 			continue
+		}
+		if q, qm := latestOf(comments, agentID, marker.Queued); q != nil {
+			items = append(items, withUpdate(queuedItem(s, qm), s))
+			continue
+		}
+		if st != b.Config.Labels.Waiting {
+			continue // a start label the agent has not taken up yet
 		}
 		it := withUpdate(Item{State: Waiting, Ref: refString(s.Ref), Project: s.Ref.Project(), Number: s.Ref.Number, Title: s.Title, URL: s.URL, Host: "?", Reason: "?", Question: "?"}, s)
 		if c, m := latestPost(comments, agentID); c != nil {
@@ -299,6 +335,29 @@ func (b *Inbox) list(ctx context.Context, kind string) ([]Item, error) {
 		items = append(items, it)
 	}
 	return items, nil
+}
+
+// listed are the labels the listing searches: waiting, running, and the start labels, under which an issue may be
+// queued.
+func (b *Inbox) listed() []string {
+	n := b.Config.Labels
+	var out []string
+	for _, l := range []string{n.Waiting, n.Running, n.Ready, n.Plan, n.Go} {
+		if l != "" {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// queuedItem is the row of a queued issue, from the marker of its queued comment.
+func queuedItem(s forge.IssueSummary, m *marker.Marker) Item {
+	it := Item{State: Queued, Ref: refString(s.Ref), Project: s.Ref.Project(), Number: s.Ref.Number, Title: s.Title, URL: s.URL, Host: orQ(m.Host), Reason: orQ(m.Reason)}
+	if !m.At.IsZero() {
+		at := m.At
+		it.QueuedSince = &at
+	}
+	return it
 }
 
 // withUpdate sets what tells a watcher that the issue changed.
@@ -398,13 +457,17 @@ func age(since *time.Time, now time.Time) string {
 	return fmt.Sprintf("%dd", int(d.Hours()/24))
 }
 
-// Print writes the listing as aligned columns: the waiting issues, then the running ones under their own heading.
+// Print writes the listing as aligned columns: the waiting issues, then the running and the queued ones under their
+// own headings.
 func Print(w io.Writer, items []Item, now time.Time) {
-	var waiting, running []Item
+	var waiting, running, queued []Item
 	for _, it := range items {
-		if it.State == Running {
+		switch it.State {
+		case Running:
 			running = append(running, it)
-		} else {
+		case Queued:
+			queued = append(queued, it)
+		default:
 			waiting = append(waiting, it)
 		}
 	}
@@ -418,16 +481,24 @@ func Print(w io.Writer, items []Item, now time.Time) {
 		}
 		tw.Flush()
 	}
-	if len(running) == 0 {
-		return
+	if len(running) > 0 {
+		fmt.Fprintln(w, "\nRunning")
+		tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(tw, "ISSUE\tHOST\tRUNNING\tPROGRESS")
+		for _, it := range running {
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", it.Ref, it.Host, age(it.RunningSince, now), it.Progress)
+		}
+		tw.Flush()
 	}
-	fmt.Fprintln(w, "\nRunning")
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ISSUE\tHOST\tRUNNING\tPROGRESS")
-	for _, it := range running {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", it.Ref, it.Host, age(it.RunningSince, now), it.Progress)
+	if len(queued) > 0 {
+		fmt.Fprintln(w, "\nQueued")
+		tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(tw, "ISSUE\tHOST\tQUEUED\tLIMIT")
+		for _, it := range queued {
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", it.Ref, it.Host, age(it.QueuedSince, now), it.Reason)
+		}
+		tw.Flush()
 	}
-	tw.Flush()
 }
 
 // PrintJSON writes the listing as a JSON array.
@@ -523,7 +594,7 @@ type Detail struct {
 	URL     string     `json:"url"`
 	Waiting bool       `json:"waiting"` // open and labeled waiting
 	Host    string     `json:"host"`
-	State   string     `json:"state"` // the state of the agent's latest post, or running while the issue runs
+	State   string     `json:"state"` // the state of the agent's latest post, running while the issue runs, or queued
 	Reason  string     `json:"reason"`
 	Since   *time.Time `json:"since"`
 	Post    string     `json:"post"` // the agent's latest post, without its marker
@@ -537,7 +608,7 @@ type Detail struct {
 }
 
 // ThreadComment is one comment of an issue. Agent is set on a post of the agent (its identity, ending in a marker);
-// Kind is then the marker's state (running, progress, waiting, done) and Body is without the marker. A person's
+// Kind is then the marker's state (running, progress, queued, waiting, done) and Body is without the marker. A person's
 // comment is returned as written: it is data, and a marker-shaped line in it does not make it the agent's.
 type ThreadComment struct {
 	Author    string    `json:"author"`
@@ -569,11 +640,19 @@ func withThread(d *Detail, is *forge.Issue, comments []forge.Comment, agentID in
 
 // Detail reads the issue and the agent's latest post on it.
 func (b *Inbox) Detail(ctx context.Context, ref forge.IssueRef) (*Detail, error) {
-	agentID, err := b.agentID(ctx, ref)
-	if err != nil {
-		return nil, err
-	}
+	// The agent's account and the thread are read at the same time: neither needs the other.
+	var agentID int64
+	var idErr error
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		agentID, idErr = b.agentID(ctx, ref)
+	}()
 	is, comments, err := b.forgeOf(ref.Kind()).Thread(ctx, ref)
+	<-done
+	if idErr != nil {
+		return nil, idErr
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -582,19 +661,33 @@ func (b *Inbox) Detail(ctx context.Context, ref forge.IssueRef) (*Detail, error)
 			return withThread(d, is, comments, agentID), nil
 		}
 	}
+	waiting := is.State == "open" && labels.StateOf(is.Labels, b.Config.Labels) == b.Config.Labels.Waiting
 	c, m := latestPost(comments, agentID)
-	if c == nil {
+	q, qm := latestOf(comments, agentID, marker.Queued)
+	if is.State != "open" {
+		q = nil
+	}
+	if c == nil && q == nil {
 		return nil, wrap(ErrNotFound, fmt.Errorf("%s has no post from the agent", refString(ref)))
 	}
-	d := &Detail{
-		Ref: refString(ref), Title: is.Title, URL: is.URL,
-		Waiting: is.State == "open" && labels.StateOf(is.Labels, b.Config.Labels) == b.Config.Labels.Waiting,
-		Host:    orQ(m.Host), State: orQ(m.State), Reason: orQ(m.Reason), Post: body(c.Body),
-		ApproveWord: b.Config.Plan.ApproveWord,
+	d := &Detail{Ref: refString(ref), Title: is.Title, URL: is.URL, Waiting: waiting, ApproveWord: b.Config.Plan.ApproveWord}
+	if c != nil {
+		d.Host, d.State, d.Reason, d.Post = orQ(m.Host), orQ(m.State), orQ(m.Reason), body(c.Body)
+		if !m.At.IsZero() {
+			at := m.At
+			d.Since = &at
+		}
 	}
-	if !m.At.IsZero() {
-		at := m.At
-		d.Since = &at
+	if q != nil {
+		// Queued: the limit and since when, with the last wait's post while it still waits for a reply.
+		d.Host, d.State, d.Reason, d.Since = orQ(qm.Host), Queued, orQ(qm.Reason), nil
+		if !qm.At.IsZero() {
+			at := qm.At
+			d.Since = &at
+		}
+		if c == nil || !waiting {
+			d.Post = body(q.Body)
+		}
 	}
 	return withThread(d, is, comments, agentID), nil
 }

@@ -68,8 +68,11 @@ func (r *recorder) has(event string, match func(map[string]any) bool) bool {
 
 const fakeClaude = `#!/bin/bash
 ctl='__CTL__'
+# Runs may start at once: the count is taken under a lock directory, so that each start gets its own number.
+while ! mkdir "$ctl/count.lock" 2>/dev/null; do sleep 0.01; done
 n=$(( $(cat "$ctl/count" 2>/dev/null || echo 0) + 1 ))
 echo $n > "$ctl/count"
+rmdir "$ctl/count.lock"
 session=""
 prev=""
 for a in "$@"; do

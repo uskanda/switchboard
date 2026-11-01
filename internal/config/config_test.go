@@ -276,3 +276,25 @@ func TestMissingFileIsReported(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestProjectMaxParallel(t *testing.T) {
+	body := strings.Replace(valid, "    path: ~/repos/sandbox\n", "    path: ~/repos/sandbox\n    max_parallel: 3\n", 1)
+	c, err := Load(write(t, body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Projects[0].ParallelLimit(); got != 3 {
+		t.Errorf("sandbox limit = %d, want 3, above agent.max_parallel and still accepted", got)
+	}
+	if got := c.Projects[1].ParallelLimit(); got != 0 {
+		t.Errorf("other limit = %d, want 0 (none of its own)", got)
+	}
+}
+
+func TestProjectMaxParallelBelowOneIsRefused(t *testing.T) {
+	body := strings.Replace(valid, "    path: ~/repos/sandbox\n", "    path: ~/repos/sandbox\n    max_parallel: 0\n", 1)
+	_, err := Load(write(t, body))
+	if err == nil || !strings.Contains(err.Error(), "projects[0].max_parallel") {
+		t.Fatalf("err = %v, want projects[0].max_parallel reported", err)
+	}
+}
