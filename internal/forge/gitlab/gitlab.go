@@ -397,8 +397,9 @@ func (c *Client) CreateChangeRequest(ctx context.Context, cr forge.ChangeRequest
 }
 
 type glProject struct {
-	ID         int64  `json:"id"`
-	Visibility string `json:"visibility"`
+	ID            int64  `json:"id"`
+	Visibility    string `json:"visibility"`
+	DefaultBranch string `json:"default_branch"`
 }
 
 func (c *Client) project(ctx context.Context, owner, repo string) (*glProject, error) {

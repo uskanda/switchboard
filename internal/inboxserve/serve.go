@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/uskanda/switchboard/inboxapi"
+	"github.com/uskanda/switchboard/internal/config"
 	"github.com/uskanda/switchboard/internal/forge"
 	"github.com/uskanda/switchboard/internal/inbox"
 	"github.com/uskanda/switchboard/internal/instructions"
@@ -54,6 +55,11 @@ type Server struct {
 	Instructions *Instructions
 	// Interval is how often the forges are read while someone listens on /v1/events; DefaultInterval when zero.
 	Interval time.Duration
+	// Projects, when set, serves /v1/projects.
+	Projects *Projects
+
+	// vmu guards Inbox, Instructions.Projects and Projects.Config, which Reload replaces while requests read them.
+	vmu sync.RWMutex
 
 	mu     sync.Mutex
 	cached *inboxapi.Inbox
@@ -64,6 +70,40 @@ type Server struct {
 	stop    context.CancelFunc
 	refresh chan struct{}
 	last    *inboxapi.Inbox
+}
+
+// inbox is the inbox in use.
+func (s *Server) inbox() Inbox {
+	s.vmu.RLock()
+	defer s.vmu.RUnlock()
+	return s.Inbox
+}
+
+// Reload takes a configuration with new projects and the inbox b made for it: the listing, the instructions and
+// the projects of the API follow it from the next request, and the cached listing is dropped.
+func (s *Server) Reload(cfg *config.Config, b Inbox) {
+	s.vmu.Lock()
+	s.Inbox = b
+	if s.Instructions != nil {
+		s.Instructions.Projects = refs(cfg.Projects)
+	}
+	if s.Projects != nil {
+		s.Projects.Config = cfg
+	}
+	s.vmu.Unlock()
+	s.mu.Lock()
+	s.cached = nil
+	s.mu.Unlock()
+	s.readAgain()
+}
+
+// refs lists the references of projects, in order.
+func refs(projects []config.Project) []string {
+	out := make([]string, 0, len(projects))
+	for _, p := range projects {
+		out = append(out, p.Ref)
+	}
+	return out
 }
 
 func (s *Server) now() time.Time {
@@ -86,6 +126,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.Instructions != nil {
 		routes["/v1/instructions"] = route{"", s.instructions}
+	}
+	if s.Projects != nil {
+		routes["/v1/projects"] = route{"", s.projects}
 	}
 	rt := routes[r.URL.Path]
 	switch {
@@ -124,7 +167,7 @@ func (s *Server) fetch(ctx context.Context) *inboxapi.Inbox {
 func (s *Server) fetchLocked(ctx context.Context) *inboxapi.Inbox {
 	ctx, cancel := context.WithTimeout(ctx, FetchTimeout)
 	defer cancel()
-	items, errs := s.Inbox.Collect(ctx)
+	items, errs := s.inbox().Collect(ctx)
 	out := &inboxapi.Inbox{Items: []inboxapi.Item{}, Errors: []inboxapi.ForgeError{}, FetchedAt: s.now()}
 	for _, it := range items {
 		out.Items = append(out.Items, inboxapi.Item(it))
@@ -281,12 +324,12 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) issue(w http.ResponseWriter, r *http.Request) {
-	ref, err := s.Inbox.ParseRef(r.URL.Query().Get("ref"))
+	ref, err := s.inbox().ParseRef(r.URL.Query().Get("ref"))
 	if err != nil {
 		failWith(w, err)
 		return
 	}
-	d, err := s.Inbox.Detail(r.Context(), ref)
+	d, err := s.inbox().Detail(r.Context(), ref)
 	if err != nil {
 		failWith(w, err)
 		return
@@ -313,12 +356,12 @@ func (s *Server) reply(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, inboxapi.CodeInvalid, "the body is not a reply request")
 		return
 	}
-	ref, err := s.Inbox.ParseRef(req.Ref)
+	ref, err := s.inbox().ParseRef(req.Ref)
 	if err != nil {
 		failWith(w, err)
 		return
 	}
-	if err := s.Inbox.Reply(r.Context(), ref, req.Text, req.Force); err != nil {
+	if err := s.inbox().Reply(r.Context(), ref, req.Text, req.Force); err != nil {
 		failWith(w, err)
 		return
 	}
@@ -332,10 +375,13 @@ func (s *Server) reply(w http.ResponseWriter, r *http.Request) {
 // instructions serves GET (the global and every project's instructions) and PUT (save one) of /v1/instructions.
 func (s *Server) instructions(w http.ResponseWriter, r *http.Request) {
 	in := s.Instructions
+	s.vmu.RLock()
+	projects := slices.Clone(in.Projects)
+	s.vmu.RUnlock()
 	switch r.Method {
 	case http.MethodGet:
 		out := inboxapi.Instructions{Host: in.Host, Items: []inboxapi.Instruction{}}
-		for _, t := range append([]string{instructions.Global}, in.Projects...) {
+		for _, t := range append([]string{instructions.Global}, projects...) {
 			text, err := in.Store.Read(t)
 			if err != nil {
 				fail(w, http.StatusInternalServerError, inboxapi.CodeForge, err.Error())
@@ -350,7 +396,7 @@ func (s *Server) instructions(w http.ResponseWriter, r *http.Request) {
 			fail(w, http.StatusBadRequest, inboxapi.CodeInvalid, "the body is not a save of instructions")
 			return
 		}
-		if req.Target != instructions.Global && !slices.Contains(in.Projects, req.Target) {
+		if req.Target != instructions.Global && !slices.Contains(projects, req.Target) {
 			fail(w, http.StatusUnprocessableEntity, inboxapi.CodeUnknownProject, req.Target+" is not a project in the configuration")
 			return
 		}

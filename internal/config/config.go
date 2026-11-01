@@ -120,10 +120,15 @@ type Plan struct {
 }
 
 // Inbox controls the inbox service (switchboard inbox serve). RefreshInterval is how often it reads the forges
-// again while a page listens for changes; 30s when unset, at least MinRefreshInterval.
+// again while a page listens for changes; 30s when unset, at least MinRefreshInterval. ProjectRoot is the directory
+// the projects added from the web inbox are cloned under; adding is disabled without it.
 type Inbox struct {
 	RefreshInterval time.Duration `yaml:"refresh_interval"`
+	ProjectRoot     string        `yaml:"project_root"`
 }
+
+// ProjectAddEnabled reports whether projects may be added through the inbox service.
+func (i Inbox) ProjectAddEnabled() bool { return i.ProjectRoot != "" }
 
 // MinRefreshInterval keeps the inbox's reads well under GitHub's search limit of 30 a minute.
 const MinRefreshInterval = 10 * time.Second
@@ -171,6 +176,11 @@ func Load(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read configuration: %w", err)
 	}
+	return parse(path, data)
+}
+
+// parse validates and completes the configuration data read from path.
+func parse(path string, data []byte) (*Config, error) {
 	var root yaml.Node
 	if err := yaml.Unmarshal(data, &root); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
@@ -330,6 +340,7 @@ func (c *Config) applyDefaults(approveWritten bool) {
 	if c.Inbox.RefreshInterval == 0 {
 		c.Inbox.RefreshInterval = 30 * time.Second
 	}
+	c.Inbox.ProjectRoot = expandHome(c.Inbox.ProjectRoot)
 	if c.Agent.PollInterval == 0 {
 		c.Agent.PollInterval = 60 * time.Second
 	}
@@ -375,6 +386,9 @@ func (c *Config) validate() error {
 	need(c.Host.Name, "host.name")
 	if c.Inbox.RefreshInterval < MinRefreshInterval {
 		errs = append(errs, fmt.Errorf("inbox.refresh_interval must be at least %v, got %v", MinRefreshInterval, c.Inbox.RefreshInterval))
+	}
+	if r := c.Inbox.ProjectRoot; r != "" && !filepath.IsAbs(r) {
+		errs = append(errs, fmt.Errorf("inbox.project_root must be an absolute path or start with ~/, got %q", r))
 	}
 	if w := c.Plan.ApproveWord; strings.TrimSpace(w) == "" || strings.ContainsAny(w, " \t\r\n") {
 		errs = append(errs, fmt.Errorf("plan.approve_word must be one word without spaces, got %q", w))
@@ -442,6 +456,14 @@ var (
 	repoRef    = regexp.MustCompile(`^gh:([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)$`)
 	projectRef = regexp.MustCompile(`^gl:((?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)$`)
 )
+
+// ParseRef reads a project reference, gh:owner/repo or gl:group/project, into a Project with Ref, Forge, Owner and
+// Repo set.
+func ParseRef(ref string) (Project, error) {
+	p := Project{Ref: ref}
+	err := p.parseRef()
+	return p, err
+}
 
 func (p *Project) parseRef() error {
 	if strings.HasPrefix(p.Ref, "gl:") {

@@ -3,11 +3,13 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/uskanda/switchboard/internal/config"
 	"github.com/uskanda/switchboard/internal/forge/github"
 	"github.com/uskanda/switchboard/internal/forge/gitlab"
+	"github.com/uskanda/switchboard/internal/trust"
 )
 
 func load(t *testing.T, yml string) *config.Config {
@@ -90,5 +92,41 @@ projects:
 		if r == "gl-other" {
 			t.Fatal("asked for the token of another host's project")
 		}
+	}
+}
+
+func TestReloadRouteUsesTheForgesTokenAndJudge(t *testing.T) {
+	cfg := load(t, `version: 1
+host: {name: here}
+forges:
+  github: {token_ref: gh-agent, inbox_token_ref: gh-inbox, agent_identity: bot}
+trusted_authors: {github: [me]}
+projects:
+  - {ref: "gh:o/r", path: /src/r, host: here}
+`)
+	var asked []string
+	c := newConn(cfg, tokens(&asked))
+	routes, err := c.agentRoutes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	j := &trust.Judge{}
+	r := routes["gh:o/r"]
+	r.Judge = j
+	routes["gh:o/r"] = r
+	newRoute := c.reloadRoute(routes)
+
+	got, err := newRoute(config.Project{Ref: "gh:o/notes", Forge: "gh", Owner: "o", Repo: "notes", Host: "here"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Judge != j || got.GitToken != "token-gh-agent" {
+		t.Errorf("route = %+v, want the judge of GitHub and the agent token", got)
+	}
+	if _, err := newRoute(config.Project{Ref: "gl:g/p", Forge: "gl", Owner: "g", Repo: "p", Host: "here"}); err == nil || !strings.Contains(err.Error(), "service install") {
+		t.Errorf("err = %v, want a forge new to this host refused with a hint to run service install", err)
+	}
+	if _, err := newRoute(config.Project{Ref: "gh:o/bot", Forge: "gh", Owner: "o", Repo: "bot", Host: "here", TokenRef: "x", AgentIdentity: "y"}); err == nil || !strings.Contains(err.Error(), "restart") {
+		t.Errorf("err = %v, want an identity override refused until a restart", err)
 	}
 }

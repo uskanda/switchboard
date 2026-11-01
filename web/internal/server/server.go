@@ -24,6 +24,8 @@ type Inbox interface {
 	Reply(ctx context.Context, ref, text string, force bool) error
 	Instructions(ctx context.Context) (*inboxapi.Instructions, error)
 	SaveInstructions(ctx context.Context, target, content string) error
+	Projects(ctx context.Context) (*inboxapi.Projects, error)
+	AddProject(ctx context.Context, req inboxapi.AddProjectRequest) (*inboxapi.AddProjectResponse, error)
 	Events(ctx context.Context, fn func(*inboxapi.Inbox)) error
 }
 
@@ -61,6 +63,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.answer(w, out, err)
 	case r.URL.Path == "/api/instructions" && r.Method == http.MethodPost:
 		s.saveInstructions(w, r)
+	case r.URL.Path == "/api/projects" && r.Method == http.MethodGet:
+		out, err := s.Inbox.Projects(r.Context())
+		s.answer(w, out, err)
+	case r.URL.Path == "/api/projects" && r.Method == http.MethodPost:
+		s.addProject(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/"):
 		send(w, http.StatusNotFound, inboxapi.Error{Code: inboxapi.CodeNotFound, Message: "no such endpoint"})
 	case r.Method == http.MethodGet || r.Method == http.MethodHead:
@@ -70,7 +77,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// sameOrigin tells whether a reply or a save comes from the web inbox's own page: a JSON body (a page elsewhere cannot send
+// sameOrigin tells whether a reply, a save or an addition comes from the web inbox's own page: a JSON body (a page elsewhere cannot send
 // one without a preflight, which this server never answers), an Origin of exactly this address, and a Host of
 // exactly this address (a page that rebinds its own name to this address still sends its own name).
 func (s *Server) sameOrigin(r *http.Request) (int, string) {
@@ -119,6 +126,25 @@ func (s *Server) saveInstructions(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// addProject passes the addition of a project on, from the web inbox's own page only.
+func (s *Server) addProject(w http.ResponseWriter, r *http.Request) {
+	if code, why := s.sameOrigin(r); code != 0 {
+		send(w, code, inboxapi.Error{Code: inboxapi.CodeInvalid, Message: why})
+		return
+	}
+	var req inboxapi.AddProjectRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
+		send(w, http.StatusBadRequest, inboxapi.Error{Code: inboxapi.CodeInvalid, Message: "the body is not a project to add"})
+		return
+	}
+	out, err := s.Inbox.AddProject(r.Context(), req)
+	if err != nil {
+		s.answer(w, nil, err)
+		return
+	}
+	send(w, http.StatusCreated, out)
+}
+
 // events passes the inbox service's listings on to the browser as server-sent events (event inbox, the Inbox as
 // data). When the service cannot be reached, or its stream breaks, it sends event unavailable and ends: the
 // browser's EventSource reconnects after the retry it was given, which it would not do after an error status.
@@ -161,6 +187,13 @@ var status = map[string]int{
 	inboxapi.CodeSecret:         http.StatusUnprocessableEntity,
 	inboxapi.CodeUnknownProject: http.StatusUnprocessableEntity,
 	inboxapi.CodeForge:          http.StatusBadGateway,
+	inboxapi.CodeAddingDisabled: http.StatusForbidden,
+	inboxapi.CodeProjectExists:  http.StatusConflict,
+	inboxapi.CodeForgeNotUsed:   http.StatusUnprocessableEntity,
+	inboxapi.CodeRepoUnreadable: http.StatusUnprocessableEntity,
+	inboxapi.CodePathTaken:      http.StatusConflict,
+	inboxapi.CodeConfigInvalid:  http.StatusUnprocessableEntity,
+	inboxapi.CodeConfigChanged:  http.StatusConflict,
 }
 
 func (s *Server) answer(w http.ResponseWriter, out any, err error) {

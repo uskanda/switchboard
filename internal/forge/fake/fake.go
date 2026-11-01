@@ -26,8 +26,10 @@ type Forge struct {
 	PostAs string
 	// FailSetLabels, when set, is returned by the next SetLabels call and then cleared.
 	FailSetLabels error
-	failNth       int // FailNthSetLabels: calls left until the failing one
-	failNthEr     error
+	// FailEnsureLabel, when set, is returned by the next EnsureLabel call and then cleared.
+	FailEnsureLabel error
+	failNth         int // FailNthSetLabels: calls left until the failing one
+	failNthEr       error
 	// AfterSetLabels, when set, runs after each successful SetLabels, with the lock released. Tests use it to
 	// simulate a human changing labels right after the agent did.
 	AfterSetLabels func(ref forge.IssueRef)
@@ -35,6 +37,7 @@ type Forge struct {
 
 type repo struct {
 	private bool
+	branch  string // the default branch; main when empty
 	labels  map[string]bool
 	issues  map[int]*issue
 }
@@ -377,6 +380,10 @@ func (c client) PostComment(_ context.Context, ref forge.IssueRef, body string) 
 func (f *Forge) EnsureLabel(_ context.Context, owner, name, label, _, _ string) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if err := f.FailEnsureLabel; err != nil {
+		f.FailEnsureLabel = nil
+		return false, err
+	}
 	r := f.repos[owner+"/"+name]
 	if r.labels[label] {
 		return false, nil

@@ -181,7 +181,7 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) *outcome {
 		}
 		return o.verify(fmt.Sprintf(a.msg.configChanged, err))
 	}
-	include := p.IncludeUntrusted && a.private[p.Ref]
+	include := p.IncludeUntrusted && a.isPrivate(p.Ref)
 	in := prompt.Input{Ref: is.Ref, Title: is.Title, Body: is.Body, IncludeUntrusted: include, Nonce: newID()}
 	for i, c := range pl.comments {
 		var k prompt.Kind

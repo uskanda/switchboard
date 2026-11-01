@@ -68,6 +68,25 @@ export type Instruction = { target: string; content: string };
 /** Instructions are read on host, the machine of the inbox service. */
 export type Instructions = { host: string; items: Instruction[] };
 
+/**
+ * Project is one project of the inbox service's machine: whether its clone is at path, and the state labels its
+ * repository lacks. labels_error says why the labels could not be read; missing_labels is then empty.
+ */
+export type Project = {
+  ref: string;
+  path: string;
+  plan_first: boolean;
+  cloned: boolean;
+  missing_labels: string[];
+  labels_error?: string;
+};
+
+/** Projects are host's; enabled says whether one may be added (inbox.project_root is set). */
+export type Projects = { host: string; enabled: boolean; items: Project[] };
+
+/** AddedProject is the answer to an addition; webhook, when set, is the command that registers the relay's webhook. */
+export type AddedProject = { project: Project; webhook?: string };
+
 export class ApiError extends Error {
   constructor(
     readonly code: string,
@@ -104,6 +123,15 @@ export const saveInstructions = (target: string, content: string) =>
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ target, content }),
+  });
+
+export const getProjects = () => call<Projects>("/api/projects");
+
+export const addProject = (ref: string, planFirst: boolean) =>
+  call<AddedProject>("/api/projects", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ref, plan_first: planFirst }),
   });
 
 /** issuePath is the page of one issue; the ref is one path segment. */

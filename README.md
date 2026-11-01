@@ -390,6 +390,28 @@ Web表示は、端末で受信ポートを開く唯一の部品である（ADR-0
    sudo firewall-cmd --reload
    ```
 
+#### 画面からプロジェクトを足す
+
+設定の画面の「プロジェクト」の節に、この端末のプロジェクトが並ぶ。それぞれ、クローンの有無と、足りない状態ラベルが出る。`config.yaml` に `inbox.project_root` を書くと、この節からプロジェクトを足せるようになる。
+
+```yaml
+inbox:
+  project_root: ~/repos               # 足したプロジェクトのクローンを置く親のディレクトリ
+```
+
+入力するのは、参照（`gh:owner/repo` または `gl:group/project`）と、計画から始めるかどうか（初期値はオン）だけである。受信箱のサービスは、受信箱のトークンでリポジトリを読めることと既定のブランチを確かめ、`config.yaml` の `projects` の最後に1項目を足す。`path` は `<project_root>/<リポジトリ名>`、`host` はこの端末、`base_branch` は既定のブランチになる。コメントとほかの項目はそのまま残り、元のファイルは `config.yaml.bak` に残る。`verify_command` などのほかの項目は、`config.yaml` を手で編集して書く。
+
+エージェントと受信箱のサービスは、10秒ごとに `config.yaml` を確かめ、`projects` だけを読み直す。再起動は要らない。新しいプロジェクトは、エージェントが自分のトークンでcloneし、状態ラベルを作ってから扱い始める。失敗したら、次の照合でやり直す。cloneできないときは、エージェントのトークン（fine-grainedのPATなら、その対象のリポジトリ）を確かめる。`projects` 以外の変更は、今までどおり再起動で反映する。
+
+次の場合は追加を拒む。
+
+- 同じプロジェクトが既に設定にある
+- この端末のプロジェクトが、まだそのフォージを使っていない。`config.yaml` に手で足して、`switchboard service install` を実行し直す。エージェントにそのフォージのトークンを渡すためである
+- 受信箱のトークンでリポジトリを読めない
+- 別のプロジェクトが、同じ場所にクローンされている
+
+中継を使う端末では、足したあとに画面が `switchboard relay hook add <ref>` の実行を案内する。webhookを登録するまでは、そのプロジェクトはポーリングで扱われる。
+
 状態は `switchboard service status --inbox` と `--web` で見る。手で試すときは、`switchboard inbox serve` を動かしてから `switchboard-web serve` を動かす。このときソケットは `$XDG_RUNTIME_DIR/switchboard/inbox.sock` にでき、`web.yaml` の `socket` で場所を指定できる。
 
 ## 開発

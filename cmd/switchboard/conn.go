@@ -107,6 +107,33 @@ func (c *conn) judge(ctx context.Context, kind string, routes map[string]agent.R
 	return nil
 }
 
+// reloadRoute returns the agent's NewRoute: a project that appears on a reload gets its forge's agent token and the
+// judge resolved at start for that forge. The agent's tokens and judges are settled when it starts, so a forge no
+// project of this host used then, or an agent identity of the project's own, waits for a restart.
+func (c *conn) reloadRoute(routes map[string]agent.Route) func(config.Project) (agent.Route, error) {
+	judges := map[string]*trust.Judge{}
+	for ref, r := range routes {
+		if p := c.project(ref); p != nil && r.Judge != nil {
+			judges[p.Forge] = r.Judge
+		}
+	}
+	return func(p config.Project) (agent.Route, error) {
+		if p.TokenRef != "" || p.AgentIdentity != "" {
+			return agent.Route{}, fmt.Errorf("%s has an agent identity of its own; restart the agent to take it on", p.Ref)
+		}
+		j, ok := judges[p.Forge]
+		if !ok {
+			return agent.Route{}, fmt.Errorf("no project of this host was on the forge of %s when the agent started; run switchboard service install again to give the agent its token", p.Ref)
+		}
+		r, err := c.agentClient(p)
+		if err != nil {
+			return agent.Route{}, err
+		}
+		r.Judge = j
+		return r, nil
+	}
+}
+
 func (c *conn) project(ref string) *config.Project {
 	for i, p := range c.cfg.Projects {
 		if p.Ref == ref {

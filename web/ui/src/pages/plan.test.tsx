@@ -16,6 +16,7 @@ function answer(routes: Record<string, Answer | Answer[]>) {
       const r = routes[key];
       const a = Array.isArray(r) ? r.shift() : r;
       if (!a && key === "GET /api/inbox") return new Response(JSON.stringify({ items: [], errors: [], fetched_at: "" }), { status: 200 });
+      if (!a && key === "GET /api/projects") return new Response(JSON.stringify({ host: "ubuntu-a", enabled: false, items: [] }), { status: 200 });
       if (!a) return new Response(JSON.stringify({ code: "not_found", message: key }), { status: 404 });
       return new Response(a.status === 204 ? null : JSON.stringify(a.body), { status: a.status });
     }),
@@ -55,7 +56,7 @@ describe("the settings", () => {
     expect(await screen.findByRole("textbox", { name: "すべてのプロジェクト" })).toHaveValue("");
     expect(screen.getByRole("textbox", { name: "gh:o/r" })).toHaveValue("Mind the API names.");
     expect(screen.getByRole("textbox", { name: "gl:nas/sb" })).toBeInTheDocument();
-    expect(screen.getByText(/ubuntu-a/)).toBeInTheDocument();
+    expect(screen.getByText(/のファイルです/)).toHaveTextContent("ubuntu-a");
   });
 
   it("save one field and say so in it", async () => {
