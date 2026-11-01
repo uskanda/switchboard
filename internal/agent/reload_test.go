@@ -75,7 +75,7 @@ func newReloadH(t *testing.T) *reloadH {
 
 // reload hands the agent the configured projects plus extra, as a new configuration file does.
 func (x *reloadH) reload(extra ...config.Project) {
-	x.a.Reload(append(slices.Clone(x.cfg.Projects), extra...))
+	x.a.Reload(&config.Change{Projects: append(slices.Clone(x.cfg.Projects), extra...), MaxParallel: x.cfg.Agent.MaxParallel})
 }
 
 func TestReloadAcceptsANewProject(t *testing.T) {
@@ -201,7 +201,7 @@ func TestReloadDropsARemovedProjectButFinishesItsRun(t *testing.T) {
 	x.f.AddLabel(x.ref, "agent:ready", x.master)
 	x.poll()
 	x.waitStarted(1)
-	x.a.Reload(nil)
+	x.a.Reload(&config.Change{MaxParallel: x.cfg.Agent.MaxParallel})
 	x.poll()
 	x.release(1)
 	x.settle()

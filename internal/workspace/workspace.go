@@ -15,7 +15,21 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
+
+// cloneLocks serializes the git commands that write a clone's own files (its config, its worktree list, its
+// branches): runs of one project create and remove their worktrees from the same clone, and git refuses a second
+// writer of .git/config. By the clone's path.
+var cloneLocks sync.Map
+
+// lockClone holds the clone of s until the returned function is called.
+func (s *Space) lockClone() func() {
+	m, _ := cloneLocks.LoadOrStore(filepath.Clean(s.Repo), &sync.Mutex{})
+	mu := m.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
+}
 
 // Space is the worktree of one issue.
 type Space struct {
@@ -65,6 +79,7 @@ func (s *Space) Prepare(ctx context.Context) (string, error) {
 		return "", err
 	}
 	defer cleanup()
+	defer s.lockClone()()
 	if _, err := s.git(ctx, s.Repo, env, "fetch", "-q", "origin", s.Base); err != nil {
 		return "", err
 	}
@@ -274,6 +289,7 @@ func (s *Space) Remove(ctx context.Context) (bool, error) {
 	if out != "" {
 		return false, ErrUncommitted
 	}
+	defer s.lockClone()()
 	if _, err := s.git(ctx, s.Repo, nil, "worktree", "remove", dir); err != nil {
 		return false, err
 	}

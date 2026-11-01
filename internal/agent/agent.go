@@ -65,21 +65,23 @@ type Agent struct {
 	msg    texts
 
 	// pmu guards the projects and routes, which a reload changes while runs and relay refreshes read them.
-	pmu       sync.RWMutex
-	projects  []config.Project
-	private   map[string]bool           // by project ref
-	desired   []config.Project          // this host's projects of the last reload, until applied
-	reloaded  bool                      // desired holds a reload not applied yet
-	accepting map[string]config.Project // by ref: projects of a reload not yet cloned and labeled
-	failures  map[string]string         // by ref: the last acceptance failure logged
+	pmu        sync.RWMutex
+	projects   []config.Project
+	private    map[string]bool           // by project ref
+	desired    []config.Project          // this host's projects of the last reload, until applied
+	desiredMax int                       // agent.max_parallel of the last reload, until applied
+	reloaded   bool                      // desired holds a reload not applied yet
+	accepting  map[string]config.Project // by ref: projects of a reload not yet cloned and labeled
+	failures   map[string]string         // by ref: the last acceptance failure logged
 
-	mu      sync.Mutex
-	active  map[forge.IssueRef]*active
-	pending map[forge.IssueRef]config.Project
-	seen    map[forge.IssueRef]time.Time
-	notes   map[forge.IssueRef]int  // GitLab: the comment count of each waiting issue at its last evaluation
-	closed  map[forge.IssueRef]bool // closed issues whose worktree waits for their run to stop
-	wg      sync.WaitGroup
+	mu          sync.Mutex
+	maxParallel int // agent.max_parallel, which a reload changes
+	active      map[forge.IssueRef]*active
+	pending     map[forge.IssueRef]config.Project
+	seen        map[forge.IssueRef]time.Time
+	notes       map[forge.IssueRef]int  // GitLab: the comment count of each waiting issue at its last evaluation
+	closed      map[forge.IssueRef]bool // closed issues whose worktree waits for their run to stop
+	wg          sync.WaitGroup
 
 	pollMu     sync.Mutex // one poll or relay refresh at a time
 	rmu        sync.Mutex
@@ -176,6 +178,7 @@ func (a *Agent) Start(ctx context.Context) error {
 	a.unlock = unlock
 	a.ctx = ctx
 	a.msg = textsFor(a.Config.Comments.Language)
+	a.maxParallel = a.Config.Agent.MaxParallel
 	a.active = map[forge.IssueRef]*active{}
 	a.pending = map[forge.IssueRef]config.Project{}
 	a.seen = map[forge.IssueRef]time.Time{}
@@ -552,12 +555,13 @@ func (pl *plan) hasReply() bool {
 // holds the issue's lock (state.ErrLocked).
 func (a *Agent) launch(ctx context.Context, pl *plan) error {
 	ref := pl.issue.Ref
+	limit := a.projectLimit(ref)
 	a.mu.Lock()
 	if a.active[ref] != nil {
 		a.mu.Unlock()
 		return nil
 	}
-	if len(a.active) >= a.Config.Agent.MaxParallel {
+	if !a.hasSlot(ref, limit) {
 		a.pending[ref] = pl.project
 		a.mu.Unlock()
 		return errQueued
@@ -612,7 +616,8 @@ func (a *Agent) launch(ctx context.Context, pl *plan) error {
 	return nil
 }
 
-// drain starts queued issues while slots are free.
+// drain starts queued issues while slots are free. An issue whose project is at its limit stays queued and does
+// not hold up the issues of other projects.
 func (a *Agent) drain(ctx context.Context) {
 	a.mu.Lock()
 	refs := make([]forge.IssueRef, 0, len(a.pending))
@@ -622,23 +627,54 @@ func (a *Agent) drain(ctx context.Context) {
 	a.mu.Unlock()
 	sort.Slice(refs, func(i, j int) bool { return refs[i].String() < refs[j].String() })
 	for _, ref := range refs {
+		limit := a.projectLimit(ref)
 		a.mu.Lock()
-		full := len(a.active) >= a.Config.Agent.MaxParallel
+		full := len(a.active) >= a.maxParallel
 		p, ok := a.pending[ref]
-		if !full && ok {
+		free := ok && !full && a.hasSlot(ref, limit)
+		if free {
 			delete(a.pending, ref)
 		}
 		a.mu.Unlock()
 		if full || ctx.Err() != nil {
 			return
 		}
-		if !ok {
+		if !free {
 			continue
 		}
 		if err := a.consider(ctx, p, ref); err != nil && !errors.Is(err, errQueued) {
 			a.logf("%s: %v", ref, err)
 		}
 	}
+}
+
+// hasSlot reports whether a run of ref may start now: the agent is under agent.max_parallel, and the issue's project
+// under limit, its own limit (0: none). Call it with mu held.
+func (a *Agent) hasSlot(ref forge.IssueRef, limit int) bool {
+	if len(a.active) >= a.maxParallel {
+		return false
+	}
+	if limit == 0 {
+		return true
+	}
+	n := 0
+	for r := range a.active {
+		if r.Kind() == ref.Kind() && r.Owner == ref.Owner && r.Repo == ref.Repo {
+			n++
+		}
+	}
+	return n < limit
+}
+
+// projectLimit is the limit of ref's project as configured now, or 0 when it has none. Projects are read under pmu,
+// which is never taken with mu held.
+func (a *Agent) projectLimit(ref forge.IssueRef) int {
+	for _, p := range a.projectList() {
+		if ref.Kind() == p.Forge && ref.Owner == p.Owner && ref.Repo == p.Repo {
+			return p.ParallelLimit()
+		}
+	}
+	return 0
 }
 
 // cleanClosed cleans up the closed issues whose run has stopped since they were found closed.
