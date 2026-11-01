@@ -3,14 +3,19 @@ import remarkGfm from "remark-gfm";
 
 type Node = { type: string; value?: string; children?: Node[] };
 
+const isComment = (n: Node) => n.type === "html" && /^<!--[\s\S]*-->$/.test(n.value?.trim() ?? "");
+
 /**
  * rawHTMLAsText turns every piece of raw HTML in the Markdown into plain text: issue text is data, so a tag in it is
- * shown as the characters it is made of, never parsed.
+ * shown as the characters it is made of, never parsed. HTML comments, which issue templates are full of, are dropped.
  */
 function rawHTMLAsText() {
   const walk = (n: Node) => {
     if (n.type === "html") n.type = "text";
-    n.children?.forEach(walk);
+    if (n.children) {
+      n.children = n.children.filter((c) => !isComment(c));
+      n.children.forEach(walk);
+    }
   };
   return walk;
 }
@@ -29,7 +34,7 @@ const components: Components = {
   ),
 };
 
-/** Markdown draws issue text as Markdown, with raw HTML shown as text and images as links. */
+/** Markdown draws issue text as Markdown, with raw HTML shown as text, HTML comments hidden and images as links. */
 export function Markdown({ text }: { text: string }) {
   return (
     <div className="md break-words">

@@ -27,6 +27,8 @@ function failure(err: unknown): string {
 /**
  * InboxProvider reads the listing once, then follows /api/events: each listing the stream sends replaces the one
  * shown. EventSource reconnects by itself after an error or an unavailable event; the state says so meanwhile.
+ * While the page is hidden the stream is closed, so a tab left in the background keeps the inbox service from asking
+ * the forges; when it shows again a new stream opens, and its first event is the listing of that moment.
  */
 export function InboxProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<InboxState>({ inbox: null, error: null, live: "off" });
@@ -38,17 +40,32 @@ export function InboxProvider({ children }: { children: ReactNode }) {
       (err) => !closed && setState((s) => (s.inbox ? s : { ...s, error: failure(err) })),
     );
     if (typeof EventSource === "undefined") return () => void (closed = true);
-    const es = new EventSource("/api/events");
-    setState((s) => ({ ...s, live: "connecting" }));
-    es.addEventListener("inbox", (e) => {
-      const inbox = JSON.parse((e as MessageEvent).data) as Inbox;
-      setState({ inbox, error: null, live: "live" });
-    });
-    es.addEventListener("unavailable", () => setState((s) => ({ ...s, live: "reconnecting" })));
-    es.onerror = () => setState((s) => ({ ...s, live: "reconnecting" }));
+
+    let es: EventSource | null = null;
+    const open = () => {
+      if (es) return;
+      const source = new EventSource("/api/events");
+      es = source;
+      setState((s) => ({ ...s, live: "connecting" }));
+      source.addEventListener("inbox", (e) => {
+        const inbox = JSON.parse((e as MessageEvent).data) as Inbox;
+        setState({ inbox, error: null, live: "live" });
+      });
+      source.addEventListener("unavailable", () => setState((s) => ({ ...s, live: "reconnecting" })));
+      source.onerror = () => setState((s) => ({ ...s, live: "reconnecting" }));
+    };
+    const close = () => {
+      es?.close();
+      es = null;
+    };
+    const follow = () => (document.visibilityState === "hidden" ? close() : open());
+
+    follow();
+    document.addEventListener("visibilitychange", follow);
     return () => {
       closed = true;
-      es.close();
+      document.removeEventListener("visibilitychange", follow);
+      close();
     };
   }, []);
 

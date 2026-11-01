@@ -100,6 +100,49 @@ describe("the header", () => {
   });
 });
 
+describe("a tab in the background", () => {
+  let visibility: DocumentVisibilityState = "visible";
+  beforeEach(() => {
+    visibility = "visible";
+    vi.spyOn(document, "visibilityState", "get").mockImplementation(() => visibility);
+  });
+  afterEach(() => vi.restoreAllMocks());
+  const turn = (to: DocumentVisibilityState) =>
+    act(() => {
+      visibility = to;
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+  it("closes the stream while hidden and opens a new one when shown again", async () => {
+    serve({}, listing());
+    at("/");
+    const first = FakeEventSource.last!;
+    first.emit("inbox", listing(item()));
+    expect(await screen.findByText("待ち 1・実行中 0")).toBeInTheDocument();
+
+    turn("hidden");
+    expect(first.closed).toBe(true);
+
+    turn("visible");
+    const second = FakeEventSource.last!;
+    expect(second).not.toBe(first);
+    expect(second.closed).toBe(false);
+    expect(screen.getByText("自動更新に接続しています")).toBeInTheDocument();
+    second.emit("inbox", listing(item(), item({ n: 2, ref: "gh:o/r#13" })));
+    expect(await screen.findByText("待ち 2・実行中 0")).toBeInTheDocument();
+  });
+
+  it("reads the listing but does not connect when opened in the background", async () => {
+    visibility = "hidden";
+    serve({}, listing(item()));
+    at("/");
+    expect(await screen.findByText("待ち 1・実行中 0")).toBeInTheDocument();
+    expect(FakeEventSource.last).toBeNull();
+    turn("visible");
+    expect(FakeEventSource.last).not.toBeNull();
+  });
+});
+
 describe("the list", () => {
   it("takes each listing the stream sends without a reload", async () => {
     serve({}, listing(item()));
@@ -204,6 +247,17 @@ describe("the thread", () => {
     const guide = screen.getByRole("link", { name: "the guide" });
     expect(guide).toHaveAttribute("target", "_blank");
     expect(guide).toHaveAttribute("rel", "noreferrer");
+  });
+
+  it("hides HTML comments, though other raw HTML stays as text", async () => {
+    const body = "<!-- Describe the steps -->\n\nRun it twice.\n\n<!--\nmore\n-->\n\nSee <b>this</b>.";
+    serve({ "gh:o/r#12": detail({ body }) }, listing(item()));
+    at("/issue/gh%3Ao%2Fr%2312");
+    expect(await screen.findByText("Run it twice.")).toBeInTheDocument();
+    expect(screen.queryByText(/Describe the steps/)).toBeNull();
+    expect(screen.queryByText(/<!--/)).toBeNull();
+    expect(screen.queryByText(/more/)).toBeNull();
+    expect(screen.getByText("<b>", { exact: false })).toBeInTheDocument();
   });
 
   it("marks the agent, folds its claim, and keeps only the latest progress", async () => {
