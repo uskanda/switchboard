@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -35,6 +36,7 @@ type h struct {
 	stop                 context.CancelFunc
 	ref                  forge.IssueRef
 	envExtra             []string
+	skew                 atomic.Int64 // how far the fake forge's clock runs ahead of the real one
 }
 
 // recorder is an in-memory audit log.
@@ -102,7 +104,8 @@ func run(t *testing.T, dir string, name string, args ...string) string {
 func newH(t *testing.T, yamlExtra string, edit func(*config.Config)) *h {
 	t.Helper()
 	root := t.TempDir()
-	x := &h{t: t, f: fake.New(nil), audit: &recorder{}}
+	x := &h{t: t, audit: &recorder{}}
+	x.f = fake.New(func() time.Time { return time.Now().Add(time.Duration(x.skew.Load())) })
 	x.master = x.f.AddUser("master", 1)
 	x.bot = x.f.AddUser("agent", 2)
 	x.mallory = x.f.AddUser("mallory", 3)
@@ -207,6 +210,17 @@ func (x *h) poll() {
 	if err := x.a.Poll(x.ctx); err != nil {
 		x.t.Fatal(err)
 	}
+}
+
+// advance moves the fake forge's clock forward by d.
+func (x *h) advance(d time.Duration) { x.skew.Add(int64(d)) }
+
+// pollErr polls and returns what the poll reports, for tests in which the forge fails on purpose.
+func (x *h) pollErr() error {
+	if x.a == nil {
+		x.agent()
+	}
+	return x.a.Poll(x.ctx)
 }
 
 // settle waits for every run, including the ones a finishing run starts.

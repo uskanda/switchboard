@@ -86,3 +86,13 @@ func TestOldMarkerHasNoMode(t *testing.T) {
 		t.Fatalf("Parse = %+v, %v", got, ok)
 	}
 }
+
+func TestQueuedMarker(t *testing.T) {
+	m, ok := Parse("queued\n\n" + Marker{Host: "desk", State: Queued, Reason: QueuedHost, At: at}.Format())
+	if !ok || m.State != "queued" || m.Reason != "max-parallel" || m.Host != "desk" || !m.Transient() {
+		t.Fatalf("Parse = %+v, %v; want a transient queued marker", m, ok)
+	}
+	if QueuedProject != "project-max-parallel" {
+		t.Errorf("QueuedProject = %q", QueuedProject)
+	}
+}

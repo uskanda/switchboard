@@ -141,17 +141,27 @@ func (a *Agent) execute(ctx context.Context, pl *plan, act *active) string {
 		return ""
 	}
 	if err := a.writeBack(a.ctx, ref, o); err != nil {
-		a.logf("%s: write back run %s: %v; it is finished when the agent starts again", ref, rec.Run, err)
+		if a.ctx.Err() != nil {
+			a.logf("%s: write back run %s: %v; it is finished when the agent starts again", ref, rec.Run, err)
+			return ""
+		}
+		a.keepWriteBack(ref, &pendingWriteBack{project: pl.project, o: o}, rec, err)
+		a.retune() // tried again within poll_interval, also while the loop waits for reconcile_interval
 		return ""
 	}
+	a.ended(pl.project, ref, rec, o)
+	return o.State
+}
+
+// ended records a run whose outcome was written back.
+func (a *Agent) ended(p config.Project, ref forge.IssueRef, rec record, o *outcome) {
 	if o.State == "waiting" && ref.Kind() == forge.GitLab {
-		a.keepNotes(a.ctx, pl.project, ref)
+		a.keepNotes(a.ctx, p, ref)
 	}
 	rec.State, rec.Ended, rec.Result = "finished", time.Now().UTC(), o.result()
 	a.saveRecord(ref, rec)
 	_ = a.State.WriteJSON("last.json", rec)
 	a.logf("%s: run %s ended: %s", ref, rec.Run, rec.Result)
-	return o.State
 }
 
 // work prepares the worktree, runs claude and judges the result. It returns nil when the run was canceled.
