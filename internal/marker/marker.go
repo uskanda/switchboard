@@ -24,8 +24,8 @@ type Marker struct {
 	Host    string
 	Session string
 	Run     string
-	State   string // running (the claim of a run), progress (its progress comment), waiting, done
-	Reason  string // for waiting: question, permission, error, verify, limit, plan-questions, plan
+	State   string // running (the claim of a run), progress (its progress comment), queued, waiting, done
+	Reason  string // for waiting: question, permission, error, verify, limit, plan-questions, plan; for queued: the limit
 	Ack     int64  // the last comment ID the run took in
 	At      time.Time
 	Mode    string // on a claim made from a start label: plan or direct
@@ -38,19 +38,25 @@ const (
 	ModeDirect    = "direct"
 	PlanQuestions = "plan-questions"
 	PlanReady     = "plan"
+	// The limits a queued issue waits on: agent.max_parallel, or its project's max_parallel.
+	QueuedHost    = "max-parallel"
+	QueuedProject = "project-max-parallel"
 )
 
 // The states a marker names.
 const (
 	Running  = "running"
 	Progress = "progress"
+	Queued   = "queued" // the comment of an issue waiting for a free slot
 	Waiting  = "waiting"
 	Done     = "done"
 )
 
-// Transient reports whether m marks a post made while a run goes on: its claim or its progress comment. Such a
-// post says nothing about why an issue waits or how a run ended.
-func (m *Marker) Transient() bool { return m.State == Running || m.State == Progress }
+// Transient reports whether m marks a post that lasts only while a run goes on or waits for a slot: its claim, its
+// progress comment, or the queued comment. Such a post says nothing about why an issue waits or how a run ended.
+func (m *Marker) Transient() bool {
+	return m.State == Running || m.State == Progress || m.State == Queued
+}
 
 // clean keeps a value on one token: spaces become underscores and the comment terminator cannot appear.
 func clean(s string) string {
