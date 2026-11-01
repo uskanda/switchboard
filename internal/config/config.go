@@ -145,6 +145,8 @@ type Project struct {
 	ProtectedPathsExtra []string `yaml:"protected_paths_extra"`
 	// PlanFirst makes the ready label start with a plan that waits for approval before any change is made.
 	PlanFirst bool `yaml:"plan_first"`
+	// MaxParallel caps the runs of this project at once, under agent.max_parallel; nil leaves only that cap.
+	MaxParallel *int `yaml:"max_parallel"`
 	// TokenRef and AgentIdentity, set together, replace the forge's agent token and identity for this project, as
 	// with a GitLab project access token. The inbox never uses them.
 	TokenRef      string `yaml:"token_ref"`
@@ -153,6 +155,14 @@ type Project struct {
 	Forge string `yaml:"-"`
 	Owner string `yaml:"-"`
 	Repo  string `yaml:"-"`
+}
+
+// ParallelLimit is the project's own cap on runs at once, or 0 when it has none.
+func (p Project) ParallelLimit() int {
+	if p.MaxParallel == nil {
+		return 0
+	}
+	return *p.MaxParallel
 }
 
 // FullName is "owner/repo".
@@ -420,6 +430,9 @@ func (c *Config) validate() error {
 		}
 		if err := p.parseRef(); err != nil {
 			errs = append(errs, fmt.Errorf("%s.ref: %w", key, err))
+		}
+		if p.MaxParallel != nil && *p.MaxParallel < 1 {
+			errs = append(errs, fmt.Errorf("%s.max_parallel must be at least 1, got %d", key, *p.MaxParallel))
 		}
 		if (p.TokenRef == "") != (p.AgentIdentity == "") {
 			errs = append(errs, fmt.Errorf("%s: token_ref and agent_identity override the agent together; set both or neither", key))

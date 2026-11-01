@@ -14,18 +14,19 @@ import (
 	"github.com/uskanda/switchboard/internal/workspace"
 )
 
-// Reload hands the agent the projects of a new configuration file. The agent applies them before its next poll:
-// it stops taking up the projects that are gone (their runs finish), takes the changed settings of the others, and
-// accepts the new ones of this host once they are cloned and have the state labels.
-func (a *Agent) Reload(ps []config.Project) {
+// Reload hands the agent the projects and agent.max_parallel of a new configuration file. The agent applies them
+// before its next poll: it stops taking up the projects that are gone (their runs finish), takes the changed
+// settings of the others, and accepts the new ones of this host once they are cloned and have the state labels. A
+// lower limit stops no run; the poll's drain starts queued issues under the new limits.
+func (a *Agent) Reload(ch *config.Change) {
 	var mine []config.Project
-	for _, p := range ps {
+	for _, p := range ch.Projects {
 		if p.Host == a.Config.Host.Name {
 			mine = append(mine, p)
 		}
 	}
 	a.pmu.Lock()
-	a.desired, a.reloaded = mine, true
+	a.desired, a.desiredMax, a.reloaded = mine, ch.MaxParallel, true
 	a.pmu.Unlock()
 	select {
 	case a.wake <- struct{}{}:
@@ -42,6 +43,11 @@ func (a *Agent) applyProjects(ctx context.Context) {
 	if a.reloaded {
 		a.reloaded = false
 		a.applyDesired()
+		if a.desiredMax > 0 {
+			a.mu.Lock()
+			a.maxParallel = a.desiredMax
+			a.mu.Unlock()
+		}
 	}
 	waiting := make([]config.Project, 0, len(a.accepting))
 	for _, p := range a.accepting {
