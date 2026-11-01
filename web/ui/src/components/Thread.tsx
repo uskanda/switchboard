@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Markdown } from "@/components/Markdown";
 import { Card } from "@/components/ui/card";
 import type { Comment, Detail } from "@/lib/api";
@@ -37,8 +38,11 @@ function shown(comments: Comment[]) {
     .filter(({ c, i }) => !(c.agent && c.kind === "progress" && i !== lastProgress));
 }
 
-/** Thread draws the issue's body and comments, oldest first, as Markdown with raw HTML shown as text. */
-export function Thread({ detail }: { detail: Detail }) {
+/**
+ * Thread draws the issue's body and comments, oldest first, as Markdown with raw HTML shown as text. answering, when
+ * given, draws the comment at its index in its place: the question comment of a plan, drawn for answering.
+ */
+export function Thread({ detail, answering }: { detail: Detail; answering?: { index: number; node: ReactNode } }) {
   return (
     <ol className="flex flex-col gap-sm" aria-label="スレッド">
       <li>
@@ -58,7 +62,7 @@ export function Thread({ detail }: { detail: Detail }) {
           <li key={i}>
             <Card className={cn("flex flex-col gap-sm", latest && "border-2 border-primary")} aria-current={latest ? "true" : undefined}>
               <Byline author={c.author} at={c.created_at} agent={c.agent} />
-              <Markdown text={c.body} />
+              {answering?.index === i ? answering.node : <Markdown text={c.body} />}
             </Card>
           </li>
         ),

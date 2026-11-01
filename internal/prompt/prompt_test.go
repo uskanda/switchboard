@@ -85,6 +85,13 @@ func TestPlanSystemPromptAsksAndChangesNothing(t *testing.T) {
 	}
 }
 
+func TestPlanSystemPromptPutsEachOptionOnALine(t *testing.T) {
+	s := PlanSystem("ja", "/ok", "")
+	if !strings.Contains(s, `Put each option of a question on its own line, labeled like "A: ...".`) {
+		t.Fatalf("the plan system prompt does not say how to write the options:\n%s", s)
+	}
+}
+
 func TestPlanSystemPromptAddsTheUsersInstructionsLast(t *testing.T) {
 	s := PlanSystem("en", "/ok", "Always ask about the API names.")
 	at := strings.Index(s, "Always ask about the API names.")
