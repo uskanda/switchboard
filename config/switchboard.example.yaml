@@ -45,6 +45,9 @@ claude:
 plan:
   approve_word: /ok                   # a trusted comment starting with it approves a plan
 
+inbox:
+  refresh_interval: 30s               # how often inbox serve reads the forges while a web page is open; at least 10s
+
 agent:
   poll_interval: 60s
   timeout: 45m

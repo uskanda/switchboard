@@ -1,14 +1,17 @@
 package inboxapi
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 )
 
@@ -67,6 +70,68 @@ func (c *Client) SaveInstructions(ctx context.Context, target, content string) e
 	return c.do(ctx, http.MethodPut, "/v1/instructions", SaveInstructionsRequest{Target: target, Content: content}, nil)
 }
 
+// Events follows GET /v1/events: it calls fn with the listing the inbox service sends first, then with each listing
+// that differs from the one before, until ctx ends (ctx.Err()) or the stream breaks (ErrUnavailable). Reconnecting
+// is the caller's.
+func (c *Client) Events(ctx context.Context, fn func(*Inbox)) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://inbox/v1/events", nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Accept", "text/event-stream")
+	resp, err := c.client().Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return fmt.Errorf("%w: %v", ErrUnavailable, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return answerError(resp)
+	}
+	r := bufio.NewReader(resp.Body)
+	var event, data string
+	for {
+		line, err := r.ReadString('\n')
+		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if errors.Is(err, io.EOF) {
+				return fmt.Errorf("%w: the event stream ended", ErrUnavailable)
+			}
+			return fmt.Errorf("%w: %v", ErrUnavailable, err)
+		}
+		line = strings.TrimRight(line, "\r\n")
+		switch {
+		case line == "":
+			if event == EventInbox && data != "" {
+				var in Inbox
+				if err := json.Unmarshal([]byte(data), &in); err != nil {
+					return fmt.Errorf("the inbox service sent a listing that is not JSON: %w", err)
+				}
+				fn(&in)
+			}
+			event, data = "", ""
+		case strings.HasPrefix(line, ":"):
+		case strings.HasPrefix(line, "event:"):
+			event = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
+		case strings.HasPrefix(line, "data:"):
+			data += strings.TrimPrefix(strings.TrimPrefix(line, "data:"), " ")
+		}
+	}
+}
+
+// answerError is the Error of a response the API refused.
+func answerError(resp *http.Response) error {
+	e := &Error{}
+	if json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(e) != nil || e.Code == "" {
+		e = &Error{Code: CodeForge, Message: fmt.Sprintf("the inbox service answered %s", resp.Status)}
+	}
+	return e
+}
+
 func (c *Client) do(ctx context.Context, method, path string, in, out any) error {
 	var body io.Reader
 	if in != nil {
@@ -89,11 +154,7 @@ func (c *Client) do(ctx context.Context, method, path string, in, out any) error
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		e := &Error{}
-		if json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(e) != nil || e.Code == "" {
-			e = &Error{Code: CodeForge, Message: fmt.Sprintf("the inbox service answered %s", resp.Status)}
-		}
-		return e
+		return answerError(resp)
 	}
 	if out == nil {
 		return nil

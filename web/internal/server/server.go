@@ -6,11 +6,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"mime"
 	"net/http"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/uskanda/switchboard/inboxapi"
 )
@@ -22,6 +24,7 @@ type Inbox interface {
 	Reply(ctx context.Context, ref, text string, force bool) error
 	Instructions(ctx context.Context) (*inboxapi.Instructions, error)
 	SaveInstructions(ctx context.Context, target, content string) error
+	Events(ctx context.Context, fn func(*inboxapi.Inbox)) error
 }
 
 // CodeUnavailable is the error code the web inbox answers with when the inbox service cannot be reached.
@@ -51,6 +54,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.answer(w, out, err)
 	case r.URL.Path == "/api/reply" && r.Method == http.MethodPost:
 		s.reply(w, r)
+	case r.URL.Path == "/api/events" && r.Method == http.MethodGet:
+		s.events(w, r)
 	case r.URL.Path == "/api/instructions" && r.Method == http.MethodGet:
 		out, err := s.Inbox.Instructions(r.Context())
 		s.answer(w, out, err)
@@ -112,6 +117,40 @@ func (s *Server) saveInstructions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// events passes the inbox service's listings on to the browser as server-sent events (event inbox, the Inbox as
+// data). When the service cannot be reached, or its stream breaks, it sends event unavailable and ends: the
+// browser's EventSource reconnects after the retry it was given, which it would not do after an error status.
+func (s *Server) events(w http.ResponseWriter, r *http.Request) {
+	fl, ok := w.(http.Flusher)
+	if !ok {
+		send(w, http.StatusInternalServerError, inboxapi.Error{Code: inboxapi.CodeInvalid, Message: "the connection cannot stream"})
+		return
+	}
+	// The stream outlives the server's WriteTimeout, which is for the other answers.
+	http.NewResponseController(w).SetWriteDeadline(time.Time{})
+	h := w.Header()
+	h.Set("Content-Type", "text/event-stream")
+	h.Set("Cache-Control", "no-cache")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprint(w, "retry: 5000\n\n")
+	fl.Flush()
+	err := s.Inbox.Events(r.Context(), func(in *inboxapi.Inbox) {
+		data, _ := json.Marshal(in)
+		fmt.Fprintf(w, "event: inbox\ndata: %s\n\n", data)
+		fl.Flush()
+	})
+	if r.Context().Err() != nil {
+		return
+	}
+	msg := "the inbox service (switchboard inbox serve) is not reachable"
+	if err != nil && !errors.Is(err, inboxapi.ErrUnavailable) {
+		msg = err.Error()
+	}
+	data, _ := json.Marshal(inboxapi.Error{Code: CodeUnavailable, Message: msg})
+	fmt.Fprintf(w, "event: unavailable\ndata: %s\n\n", data)
+	fl.Flush()
 }
 
 var status = map[string]int{

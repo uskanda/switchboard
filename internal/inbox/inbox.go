@@ -67,6 +67,10 @@ type Item struct {
 	Question     string     `json:"question"`
 	RunningSince *time.Time `json:"running_since,omitempty"`
 	Progress     string     `json:"progress,omitempty"`
+	// UpdatedAt and Notes are the forge's update time and count of people's comments (GitLab's user_notes_count, 0
+	// on GitHub): a page watching one issue reads it again when either moves.
+	UpdatedAt *time.Time `json:"updated_at"`
+	Notes     int        `json:"notes"`
 }
 
 // The states of an Item.
@@ -281,10 +285,10 @@ func (b *Inbox) list(ctx context.Context, kind string) ([]Item, error) {
 			return nil, fmt.Errorf("%s: %w", s.Ref, err)
 		}
 		if labels.StateOf(s.Labels, b.Config.Labels) == b.Config.Labels.Running {
-			items = append(items, runningItem(s, comments, agentID))
+			items = append(items, withUpdate(runningItem(s, comments, agentID), s))
 			continue
 		}
-		it := Item{State: Waiting, Ref: refString(s.Ref), Project: s.Ref.Project(), Number: s.Ref.Number, Title: s.Title, URL: s.URL, Host: "?", Reason: "?", Question: "?"}
+		it := withUpdate(Item{State: Waiting, Ref: refString(s.Ref), Project: s.Ref.Project(), Number: s.Ref.Number, Title: s.Title, URL: s.URL, Host: "?", Reason: "?", Question: "?"}, s)
 		if c, m := latestPost(comments, agentID); c != nil {
 			it.Host, it.Reason, it.Question = orQ(m.Host), orQ(m.Reason), Excerpt(c.Body)
 			if !m.At.IsZero() {
@@ -295,6 +299,16 @@ func (b *Inbox) list(ctx context.Context, kind string) ([]Item, error) {
 		items = append(items, it)
 	}
 	return items, nil
+}
+
+// withUpdate sets what tells a watcher that the issue changed.
+func withUpdate(it Item, s forge.IssueSummary) Item {
+	if !s.UpdatedAt.IsZero() {
+		at := s.UpdatedAt
+		it.UpdatedAt = &at
+	}
+	it.Notes = s.Notes
+	return it
 }
 
 // runningItem is the row of a running issue: where and since when it runs, from the claim of the run, and the last
@@ -515,6 +529,42 @@ type Detail struct {
 	Post    string     `json:"post"` // the agent's latest post, without its marker
 	// ApproveWord is the word that approves a plan (plan.approve_word), for a page to say how to approve one.
 	ApproveWord string `json:"approve_word,omitempty"`
+	// Author, CreatedAt and Body are the issue's own; Comments are all its comments, oldest first.
+	Author    string          `json:"author"`
+	CreatedAt *time.Time      `json:"created_at"`
+	Body      string          `json:"body"`
+	Comments  []ThreadComment `json:"comments"`
+}
+
+// ThreadComment is one comment of an issue. Agent is set on a post of the agent (its identity, ending in a marker);
+// Kind is then the marker's state (running, progress, waiting, done) and Body is without the marker. A person's
+// comment is returned as written: it is data, and a marker-shaped line in it does not make it the agent's.
+type ThreadComment struct {
+	Author    string    `json:"author"`
+	CreatedAt time.Time `json:"created_at"`
+	Body      string    `json:"body"`
+	Agent     bool      `json:"agent"`
+	Kind      string    `json:"kind,omitempty"`
+}
+
+// withThread adds the issue's body and comments to d.
+func withThread(d *Detail, is *forge.Issue, comments []forge.Comment, agentID int64) *Detail {
+	d.Author, d.Body = is.Author.Login, is.Body
+	if !is.CreatedAt.IsZero() {
+		at := is.CreatedAt
+		d.CreatedAt = &at
+	}
+	d.Comments = []ThreadComment{}
+	for _, c := range comments {
+		tc := ThreadComment{Author: c.Author.Login, CreatedAt: c.CreatedAt, Body: c.Body}
+		if c.Author.ID == agentID {
+			if m, ok := marker.Parse(c.Body); ok {
+				tc.Agent, tc.Kind, tc.Body = true, m.State, body(c.Body)
+			}
+		}
+		d.Comments = append(d.Comments, tc)
+	}
+	return d
 }
 
 // Detail reads the issue and the agent's latest post on it.
@@ -529,7 +579,7 @@ func (b *Inbox) Detail(ctx context.Context, ref forge.IssueRef) (*Detail, error)
 	}
 	if is.State == "open" && labels.StateOf(is.Labels, b.Config.Labels) == b.Config.Labels.Running {
 		if d := runningDetail(is, comments, agentID); d != nil {
-			return d, nil
+			return withThread(d, is, comments, agentID), nil
 		}
 	}
 	c, m := latestPost(comments, agentID)
@@ -546,7 +596,7 @@ func (b *Inbox) Detail(ctx context.Context, ref forge.IssueRef) (*Detail, error)
 		at := m.At
 		d.Since = &at
 	}
-	return d, nil
+	return withThread(d, is, comments, agentID), nil
 }
 
 // runningDetail is a running issue with the progress comment of its run, or the claim while there is none. It is nil

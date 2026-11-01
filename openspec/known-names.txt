@@ -19,3 +19,4 @@ object_attributes.noteable_type
 outcome.PR
 inbox.Excerpt
 index.html
+http.ResponseController

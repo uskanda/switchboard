@@ -45,6 +45,7 @@ type world struct {
 	now    time.Time
 	ref    forge.IssueRef
 	bot    forge.User
+	stop   func() // closes the server and its connections
 }
 
 func newWorld(t *testing.T) *world {
@@ -90,7 +91,8 @@ func newWorld(t *testing.T) *world {
 	}
 	hs := &http.Server{Handler: w.srv}
 	go hs.Serve(ln)
-	t.Cleanup(func() { hs.Close() })
+	w.stop = func() { hs.Close() }
+	t.Cleanup(w.stop)
 	w.c = &inboxapi.Client{Socket: sock}
 	return w
 }
