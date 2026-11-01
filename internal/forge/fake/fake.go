@@ -13,15 +13,17 @@ import (
 
 // Forge holds repositories, issues, comments, label events, users and pull requests in memory.
 type Forge struct {
-	mu       sync.Mutex
-	kind     string // forge.GitHub or forge.GitLab
-	now      func() time.Time
-	nextID   int64
-	repos    map[string]*repo
-	users    map[string]forge.User
-	PRs      []forge.ChangeRequest
-	Comments int // number of PostComment calls, for tests that count writes
-	Edits    int // number of EditComment calls
+	mu     sync.Mutex
+	kind   string // forge.GitHub or forge.GitLab
+	now    func() time.Time
+	nextID int64
+	repos  map[string]*repo
+	users  map[string]forge.User
+	PRs    []forge.ChangeRequest
+	// closedPRs holds the pull requests closed by CloseChangeRequest, by their number (from 1).
+	closedPRs map[int]bool
+	Comments  int // number of PostComment calls, for tests that count writes
+	Edits     int // number of EditComment calls
 	// PostAs is the login PostComment posts as; "agent" when empty.
 	PostAs string
 	// FailSetLabels, when set, is returned by the next SetLabels call and then cleared.
@@ -467,6 +469,28 @@ func (f *Forge) CreateChangeRequest(_ context.Context, cr forge.ChangeRequest) (
 	defer f.mu.Unlock()
 	f.PRs = append(f.PRs, cr)
 	return fmt.Sprintf("https://forge.test/%s/%s/pull/%d", cr.Owner, cr.Repo, len(f.PRs)), nil
+}
+
+// CloseChangeRequest closes the n-th pull request created (from 1), as a person merging or closing it does.
+func (f *Forge) CloseChangeRequest(n int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.closedPRs == nil {
+		f.closedPRs = map[int]bool{}
+	}
+	f.closedPRs[n] = true
+}
+
+// FindOpenChangeRequest implements forge.Forge.
+func (f *Forge) FindOpenChangeRequest(_ context.Context, owner, name, head string) (string, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i, cr := range f.PRs {
+		if cr.Owner == owner && cr.Repo == name && cr.Head == head && !f.closedPRs[i+1] {
+			return fmt.Sprintf("https://forge.test/%s/%s/pull/%d", cr.Owner, cr.Repo, i+1), true, nil
+		}
+	}
+	return "", false, nil
 }
 
 // RepoPrivate implements forge.Forge.

@@ -184,7 +184,12 @@ projects:
 	if got := sh(t, ghOrigin, "git", "show", "switchboard/issue-7:dry-run.txt"); got != "off" {
 		t.Fatalf("dry-run.txt on the GitHub branch = %q", got)
 	}
-	if items, err := box.List(ctx); err != nil || len(items) != 0 {
+	if items, err := box.List(ctx); err != nil || len(items) != 2 || items[0].State != inbox.Done || items[1].State != inbox.Done {
 		t.Fatalf("inbox after done = %+v, %v", items, err)
+	}
+	gh.Close(ghRef)
+	gl.Close(glRef)
+	if items, err := box.List(ctx); err != nil || len(items) != 0 {
+		t.Fatalf("inbox after close = %+v, %v", items, err)
 	}
 }

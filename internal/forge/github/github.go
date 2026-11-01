@@ -461,6 +461,21 @@ func (c *Client) CreateChangeRequest(ctx context.Context, cr forge.ChangeRequest
 	return out.HTMLURL, err
 }
 
+// FindOpenChangeRequest implements forge.Forge. The head branch is in the repository itself, so its owner qualifies it.
+func (c *Client) FindOpenChangeRequest(ctx context.Context, owner, repo, head string) (string, bool, error) {
+	var out []struct {
+		HTMLURL string `json:"html_url"`
+	}
+	q := url.Values{"head": {owner + ":" + head}, "state": {"open"}, "per_page": {"1"}}
+	if _, err := c.do(ctx, http.MethodGet, c.url(fmt.Sprintf("/repos/%s/%s/pulls", owner, repo), q), nil, &out, nil); err != nil {
+		return "", false, err
+	}
+	if len(out) == 0 {
+		return "", false, nil
+	}
+	return out[0].HTMLURL, true, nil
+}
+
 // RepoPrivate implements forge.Forge.
 func (c *Client) RepoPrivate(ctx context.Context, owner, repo string) (bool, error) {
 	var out struct {

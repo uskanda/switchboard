@@ -274,7 +274,7 @@ func (a *Agent) retryWriteBack(ctx context.Context, ref forge.IssueRef, w *pendi
 		a.dropWriteBack(ref)
 		a.Audit.Log("writeback.retried", map[string]any{"issue": ref.String(), "run": w.o.Run, "state": w.o.State})
 		a.ended(w.project, ref, a.recordOf(ref, w.o.Run), w.o)
-		if w.o.State == "waiting" {
+		if w.o.State == "waiting" || w.o.State == "done" {
 			a.resume(w.project, ref)
 		}
 		return

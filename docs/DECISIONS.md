@@ -167,3 +167,10 @@
 - 決定：WUIから決められるのは `ref` と `plan_first` だけとする。`path` は `<inbox.project_root>` の下のリポジトリ名、`host` は受信箱のサービスの端末、`base_branch` はフォージの既定のブランチとする。`verify_command`、`include_untrusted`、エージェントの身元の上書き、`protected_paths_extra` は、手で編集したときだけ書ける。機能は `<inbox.project_root>` を書いたときだけ有効になる。この端末のプロジェクトがまだ使っていないフォージの追加は拒む
 - 決定：エージェントと受信箱のサービスは、10秒ごとに設定ファイルを確かめ、`projects` だけを読み直す。ほかの節は再起動まで反映しない。読み直しで現れたプロジェクトは、エージェントが自分のトークンでcloneし、状態ラベルを作ってから扱う。受信箱のトークンの権限は広げない
 - 理由：プロジェクトを足すには、設定を手で書いてラベルを作り、sudoで再起動する必要があった。スマホからは済ませられない。WUIは認証が無いので（ADR-036）、`verify_command` のように端末でコマンドを動かせる項目や、任意のディレクトリを指す `path` は渡さない。実行の対象は今までどおり `trusted_authors` のコメントに限られる。丸ごと書き戻す形は、コメントの桁揃えと空行を失う。webhookを自動で登録するなら、Webから届くサービスにwebhookを管理する権限が要る。Secret Serviceへの書き込みも要る。中継を入れ直すsudo（ADR-034）も自動になる。得るのは着手の早さだけで、webhookが無くてもポーリングで扱える（grilling `add-web-project-add` 第1ラウンドQ1〜Q7、第2ラウンドQ8〜Q16、第3ラウンドQ17）
+
+## ADR-040 doneのissueをcloseまで受信箱に残し、信頼済みのコメントで再開する（採用、2026-11-01）
+- 決定：openのまま `agent:done` のissueは、closeされるまで受信箱の「完了（close待ち）」の節に出す。エージェントの最新のdoneの投稿より後に信頼済みのコメントが付けば、waitingと同じ規則で再開し、runningに移す。受信箱からの返答も、waitingとdoneの両方で受け付ける。GitLabでは、doneのissueのコメント数も見る
+- 決定：doneで終える実行は、pushの後にissueのブランチの開いたPR/MRを探す。あれば作らずにそのURLを使い、doneの投稿には「PRを更新しました」と書く。無ければ今までどおり作る。closeやmergeの済んだものは使わない
+- 決定：pushはforceなしのまま変えない。baseとの衝突は `git merge origin/<base>` で解消させ、rebase、amend、履歴の書き換えはさせない。実装する実行の許可ツールに `git merge` を足す
+- 決定：計画を先に立てるモードで承認済みの計画を実装したissueは、doneから再開しても、承認された計画の実装（approvedRun）として動かす。範囲を超える頼みは `agent:plan` を付け直して計画から立て直す
+- 理由：作ったPR/MRに問題やコンフリクトがあれば、doneの後もやりとりが要る。表示だけ残しても、返答で動かなければ目的を果たせない。PR/MRの作成の失敗（GitHubの422、GitLabの409）から既存のURLを読み取る形は、誤りの本文の形に頼る。force pushを入れると、人間がPRのブランチに積んだコミットを消すおそれがあり、PRは最後にsquash mergeすれば履歴も気にならない。承認した計画の範囲に収まる直しで、毎回承認を挟むと遅い（issue `gh:uskanda/switchboard` #53のQ1〜Q7）

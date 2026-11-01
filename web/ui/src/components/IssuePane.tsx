@@ -154,8 +154,11 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
 
   const running = detail?.state === "running";
   const queued = detail?.state === "queued";
+  // An open done issue takes a reply too: a comment resumes the work until the issue is closed.
+  const replyable = !!detail && (detail.waiting || !!detail.done);
+  const finished = !!detail?.done && !running && !queued;
   // The form stays while something is typed or chosen, so a draft survives the issue leaving its wait.
-  const showForm = detail && !sent && (detail.waiting || text !== "" || touched);
+  const showForm = detail && !sent && (replyable || text !== "" || touched);
 
   return (
     <article className="flex flex-col gap-lg">
@@ -179,6 +182,8 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
                 <span className="font-medium">実行中</span>
               ) : queued ? (
                 <span className="font-medium">順番待ち</span>
+              ) : finished ? (
+                <span className="font-medium">完了</span>
               ) : (
                 <ReasonBadge reason={detail.reason} />
               )}
@@ -227,7 +232,8 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
               </label>
               <PlanHint reason={detail.reason} word={detail.approve_word || "/ok"} answerable={!!plan} />
               <Textarea id="reply" value={text} onChange={(e) => setText(e.target.value)} disabled={sending} />
-              {!detail.waiting && <p className="text-muted">このissueは待ちではなくなりました。返答は送れません。</p>}
+              {finished && <p className="text-label-md text-muted">作業は終わっています。返答すると、エージェントが同じPR/MRで作業を再開します。</p>}
+              {!replyable && <p className="text-muted">このissueは待ちではなくなりました。返答は送れません。</p>}
               {plan ? (
                 <>
                   <span id="reply-preview" className="text-label-md font-medium text-muted">
@@ -237,24 +243,24 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
                     {composed}
                   </section>
                   <div className="flex flex-wrap justify-end gap-sm">
-                    <Button type="submit" variant="secondary" disabled={sending || !detail.waiting || text.trim() === ""}>
+                    <Button type="submit" variant="secondary" disabled={sending || !replyable || text.trim() === ""}>
                       返答を送る
                     </Button>
-                    <Button type="button" disabled={sending || !detail.waiting} onClick={() => void send(composed)}>
+                    <Button type="button" disabled={sending || !replyable} onClick={() => void send(composed)}>
                       {sending ? "送っています" : "この内容で返答"}
                     </Button>
                   </div>
                 </>
               ) : (
-                <Button type="submit" disabled={sending || !detail.waiting || text.trim() === ""} className="self-end">
+                <Button type="submit" disabled={sending || !replyable || text.trim() === ""} className="self-end">
                   {sending ? "送っています" : "返答を送る"}
                 </Button>
               )}
             </form>
           )}
           {running && !sent && !showForm && <p className="text-muted">実行中のため返答できません</p>}
-          {queued && !detail.waiting && !sent && !showForm && <p className="text-muted">順番待ちのため、まだ返答は要りません</p>}
-          {!detail.waiting && !running && !queued && !sent && !showForm && <p className="text-muted">このissueは待ちではありません。返答は送れません。</p>}
+          {queued && !replyable && !sent && !showForm && <p className="text-muted">順番待ちのため、まだ返答は要りません</p>}
+          {!replyable && !running && !queued && !sent && !showForm && <p className="text-muted">このissueは待ちではありません。返答は送れません。</p>}
         </>
       )}
     </article>

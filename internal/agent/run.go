@@ -89,7 +89,7 @@ func declaration(res *claudecode.Result) (*Declaration, string) {
 // forge token away from claude is.
 func settings(verifyCommand string) claudecode.Settings {
 	allow := []string{"Read", "Edit", "Write", "Glob", "Grep"}
-	for _, c := range []string{"git status", "git diff", "git log", "git add", "git commit"} {
+	for _, c := range []string{"git status", "git diff", "git log", "git add", "git commit", "git merge"} {
 		allow = append(allow, "Bash("+c+")", "Bash("+c+" *)")
 	}
 	if f := strings.Fields(verifyCommand); len(f) > 0 {
@@ -155,7 +155,7 @@ func (a *Agent) execute(ctx context.Context, pl *plan, act *active) string {
 
 // ended records a run whose outcome was written back.
 func (a *Agent) ended(p config.Project, ref forge.IssueRef, rec record, o *outcome) {
-	if o.State == "waiting" && ref.Kind() == forge.GitLab {
+	if ref.Kind() == forge.GitLab {
 		a.keepNotes(a.ctx, p, ref)
 	}
 	rec.State, rec.Ended, rec.Result = "finished", time.Now().UTC(), o.result()
@@ -208,7 +208,7 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) *outcome {
 	lang, word := a.Config.Comments.Language, a.Config.Plan.ApproveWord
 	req := claudecode.Request{
 		Binary: a.Config.Claude.Binary, Dir: dir, RunDir: a.runDir(rec.Run), SessionID: rec.Session,
-		SystemPrompt: prompt.System(lang), Settings: settings(p.VerifyCommand), MaxTurns: a.Config.Agent.MaxTurns,
+		SystemPrompt: prompt.System(lang, p.BaseBranch), Settings: settings(p.VerifyCommand), MaxTurns: a.Config.Agent.MaxTurns,
 		Schema: Schema, Auth: a.Config.Claude.Auth, Timeout: a.Config.Agent.Timeout,
 		IntGrace: a.IntGrace, TermGrace: a.TermGrace, Env: a.Env,
 	}
@@ -221,7 +221,7 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) *outcome {
 			return o.fail(fmt.Sprintf(a.msg.prepare, err))
 		}
 	case approvedRun:
-		req.SystemPrompt = prompt.ApprovedSystem(lang, pl.planID, pl.okID)
+		req.SystemPrompt = prompt.ApprovedSystem(lang, p.BaseBranch, pl.planID, pl.okID)
 	}
 	req.Prompt = prompt.Build(in)
 	stopProgress := a.followProgress(ctx, is.Ref, rec, filepath.Join(a.runDir(rec.Run), "stream.jsonl"))
@@ -295,20 +295,37 @@ func (a *Agent) finish(ctx context.Context, pl *plan, sp *workspace.Space, d *De
 		}
 		return o.fail(fmt.Sprintf(a.msg.pushFailed, err))
 	}
-	url, err := a.forgeOf(is.Ref).CreateChangeRequest(ctx, forge.ChangeRequest{
-		Owner: is.Ref.Owner, Repo: is.Ref.Repo, Title: is.Title, Body: body,
-		Head: sp.IssueBranch(), Base: p.BaseBranch, Draft: true,
-	})
-	if err != nil {
+	gitlab := is.Ref.Kind() == forge.GitLab
+	failed := func(err error) *outcome {
 		if ctx.Err() != nil {
 			return nil
 		}
-		if is.Ref.Kind() == forge.GitLab {
+		if gitlab {
 			return o.fail(fmt.Sprintf(a.msg.mrFailed, err))
 		}
 		return o.fail(fmt.Sprintf(a.msg.prFailed, err))
 	}
-	if is.Ref.Kind() == forge.GitLab {
+	f := a.forgeOf(is.Ref)
+	// A run resumed after done pushed onto the branch of an open change request: that one is kept (ADR-040).
+	url, found, err := f.FindOpenChangeRequest(ctx, is.Ref.Owner, is.Ref.Repo, sp.IssueBranch())
+	if err != nil {
+		return failed(err)
+	}
+	if found {
+		line := a.msg.prUpdated
+		if gitlab {
+			line = a.msg.mrUpdated
+		}
+		return o.done(d, url, fmt.Sprintf(line, url))
+	}
+	url, err = f.CreateChangeRequest(ctx, forge.ChangeRequest{
+		Owner: is.Ref.Owner, Repo: is.Ref.Repo, Title: is.Title, Body: body,
+		Head: sp.IssueBranch(), Base: p.BaseBranch, Draft: true,
+	})
+	if err != nil {
+		return failed(err)
+	}
+	if gitlab {
 		return o.done(d, url, fmt.Sprintf(a.msg.mr, url))
 	}
 	return o.done(d, url, fmt.Sprintf(a.msg.pr, url))
