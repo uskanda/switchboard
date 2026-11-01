@@ -53,7 +53,7 @@ func Status(cfg *config.Config, d state.Dir, w io.Writer) error {
 		}
 		rel, _ := filepath.Rel(d.Path, path)
 		var r record
-		if d.ReadJSON(rel, &r) == nil && r.State == "running" {
+		if d.ReadJSON(rel, &r) == nil && (r.State == "running" || r.State == "writeback") {
 			recs = append(recs, r)
 		}
 		return nil
@@ -68,7 +68,12 @@ func Status(cfg *config.Config, d state.Dir, w io.Writer) error {
 	}
 	for _, r := range recs {
 		how := "running since " + r.Started.Format(time.RFC3339)
-		if !running {
+		switch {
+		case r.State == "writeback" && running:
+			how = "write-back pending since " + r.Ended.Format(time.RFC3339) + "; retried at each poll"
+		case r.State == "writeback":
+			how = "write-back pending since " + r.Ended.Format(time.RFC3339) + "; recovered when the agent starts"
+		case !running:
 			how = "interrupted (started " + r.Started.Format(time.RFC3339) + "; recovered when the agent starts)"
 		}
 		fmt.Fprintf(w, "  %s  %s  run %s\n", r.Issue, how, r.Run)

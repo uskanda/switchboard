@@ -96,16 +96,21 @@ func (a *Agent) applyDesired() {
 	}
 }
 
-// dropPending forgets the queued issues of a removed project and returns them, so that their queued comments can
+// dropPending forgets the queued issues of a removed project and the issues it would have evaluated again, and returns the queued ones, so that their queued comments can
 // be removed once pmu is released.
 func (a *Agent) dropPending(p config.Project) []forge.IssueRef {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	var out []forge.IssueRef
 	for ref := range a.pending {
-		if ref.Kind() == p.Forge && ref.Owner == p.Owner && ref.Repo == p.Repo {
+		if inProject(ref, p) {
 			delete(a.pending, ref)
 			out = append(out, ref)
+		}
+	}
+	for ref := range a.unsettled {
+		if inProject(ref, p) {
+			delete(a.unsettled, ref)
 		}
 	}
 	return out

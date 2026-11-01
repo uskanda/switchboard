@@ -446,7 +446,7 @@ agent:
 |---|---|
 | エージェントのクラッシュ・端末再起動 | 起動時の reconcile で「自分の担当・running・プロセスなし」を検出し `waiting(reason=error)` にする。worktree は残すので次回の実行で続きから |
 | `claude -p` のハング | `agent.timeout` で、4.3 と同じ SIGINT → SIGTERM → SIGKILL の順にプロセスグループを停止 |
-| フォージ API の失敗 | 指数バックオフで再試行。書き戻しは run-dir の `outcome.json` から再開できるようにし、finalizer は冪等にする |
+| フォージ API の失敗 | ポーリングのたびに再試行する（`fix-agent-stuck-issues`）。書き戻しは run-dir の `outcome.json` から再開でき、同じ run のコメントは二度投稿しない。評価に失敗した issue は、`since` を止めて次のポーリングで評価し直す。やり直すものがある間は、中継につながっていてもポーリング間隔で回す |
 | 中継の停止・切断 | 自動でポーリング間隔に戻す（SPEC.md 7 章）。再接続時は `Last-Event-ID` で回収 |
 | 利用上限 | 端末の scheduler を一時停止。待ちは `reason=limit` として受信箱に出る |
 | ラベルの不整合（agent:* が複数） | reconciler が正規化し、監査ログに残す |

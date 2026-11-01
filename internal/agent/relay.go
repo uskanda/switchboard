@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/uskanda/switchboard/internal/config"
+	"github.com/uskanda/switchboard/internal/forge"
 	"github.com/uskanda/switchboard/internal/relay"
 )
 
@@ -18,11 +19,13 @@ type Subscriber interface {
 
 // interval is how long the loop waits between polls: reconcile_interval while the relay is up and has a webhook for
 // every project, else poll_interval. A project without a webhook in relay.hooks gets no event, so it is polled as
-// if there were no relay.
+// if there were no relay. Something to try again (a write-back, an evaluation that failed) also brings the loop
+// back to poll_interval until it is done.
 func (a *Agent) interval() time.Duration {
+	retrying := len(a.retried()) > 0 || a.pendingWriteBacks()
 	a.rmu.Lock()
 	defer a.rmu.Unlock()
-	if a.connected && len(a.uncovered()) == 0 {
+	if a.connected && len(a.uncovered()) == 0 && !retrying {
 		return a.Config.Agent.ReconcileInterval
 	}
 	return a.Config.Agent.PollInterval
@@ -40,14 +43,59 @@ func (a *Agent) uncovered() []config.Project {
 }
 
 // due lists the projects a tick at now fetches: every one while the relay is down; while it is up, those without a
-// webhook, and the others too once reconcile_interval has passed since the last reconcile.
+// webhook or with an issue to evaluate again, and the others too once reconcile_interval has passed since the last
+// reconcile.
 func (a *Agent) due(now time.Time) []config.Project {
+	again := a.retried()
 	a.rmu.Lock()
 	defer a.rmu.Unlock()
 	if !a.connected || now.Sub(a.reconciled) >= a.Config.Agent.ReconcileInterval {
 		return a.projectList()
 	}
-	return a.uncovered()
+	var out []config.Project
+	for _, p := range a.projectList() {
+		if !a.Config.Relay.Covers(p.Ref) || again[p.Ref] {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// retried is the set of projects, by ref, with an issue to evaluate again that does not only wait for a slot.
+func (a *Agent) retried() map[string]bool {
+	a.mu.Lock()
+	var refs []forge.IssueRef
+	for ref, u := range a.unsettled {
+		if !u.queued {
+			refs = append(refs, ref)
+		}
+	}
+	a.mu.Unlock()
+	out := map[string]bool{}
+	for _, ref := range refs {
+		for _, p := range a.projectList() {
+			if inProject(ref, p) {
+				out[p.Ref] = true
+			}
+		}
+	}
+	return out
+}
+
+// pendingWriteBacks reports whether a write-back waits to be tried again.
+func (a *Agent) pendingWriteBacks() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return len(a.writebacks) > 0
+}
+
+// retune tells the loop to check its interval again, without polling: something to try again appeared outside a
+// poll of the loop (a relay refresh, the end of a run).
+func (a *Agent) retune() {
+	select {
+	case a.tune <- struct{}{}:
+	default:
+	}
 }
 
 // onRelayState records whether the relay is up and wakes the loop, which polls at once: on connecting, to take in
@@ -126,6 +174,7 @@ func (a *Agent) refresh(p config.Project) {
 		a.logf("relay refresh: %v", err)
 	}
 	a.drain(ctx)
+	a.retune()
 }
 
 // stopRefreshes cancels the pending refreshes and, by taking the poll lock once, waits for one in progress.

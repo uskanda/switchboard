@@ -81,15 +81,21 @@ type Agent struct {
 	queued      map[forge.IssueRef]int64 // the queued comment of each queued issue; 0 while it is being posted
 	pending     map[forge.IssueRef]config.Project
 	seen        map[forge.IssueRef]time.Time
-	notes       map[forge.IssueRef]int  // GitLab: the comment count of each waiting issue at its last evaluation
-	closed      map[forge.IssueRef]bool // closed issues whose worktree waits for their run to stop
-	wg          sync.WaitGroup
+	// unsettled holds the issues whose evaluation did not finish (an error, a queue, a lock), so that since stays
+	// at or before their update time and they are evaluated again (#27).
+	unsettled map[forge.IssueRef]unsettledIssue
+	// writebacks holds the runs of this host whose write-back did not finish; each poll tries them again (#26).
+	writebacks map[forge.IssueRef]*pendingWriteBack
+	notes      map[forge.IssueRef]int  // GitLab: the comment count of each waiting issue at its last evaluation
+	closed     map[forge.IssueRef]bool // closed issues whose worktree waits for their run to stop
+	wg         sync.WaitGroup
 
 	pollMu     sync.Mutex // one poll or relay refresh at a time
 	rmu        sync.Mutex
 	connected  bool                   // the relay stream is up
 	timers     map[string]*time.Timer // by project ref: the pending refresh of a project with events
 	wake       chan struct{}          // the relay connected or was lost
+	tune       chan struct{}          // the interval may have changed: something to try again appeared
 	reconciled time.Time              // when every project was last fetched; guarded by rmu
 }
 
@@ -118,6 +124,18 @@ func (a *Agent) projectList() []config.Project {
 	return slices.Clone(a.projects)
 }
 
+// handles reports whether p is still one of the projects the agent takes issues of.
+func (a *Agent) handles(p config.Project) bool {
+	a.pmu.RLock()
+	defer a.pmu.RUnlock()
+	for _, q := range a.projects {
+		if q.Ref == p.Ref {
+			return true
+		}
+	}
+	return false
+}
+
 // isPrivate reports whether the project's repository was private when the agent took the project on.
 func (a *Agent) isPrivate(ref string) bool {
 	a.pmu.RLock()
@@ -138,16 +156,21 @@ type active struct {
 	started time.Time
 }
 
+// unsettledIssue is an issue to evaluate again: its update time when last seen, and whether it only waits for a
+// slot (drain takes it up; it does not shorten the poll interval).
+type unsettledIssue struct {
+	at     time.Time
+	queued bool
+}
+
 // errQueued reports that an issue waits for a free slot; it is evaluated again when one frees up.
 var errQueued = errors.New("queued")
 
-// lockName keeps the Phase 1 name for GitHub. GitLab names start with "@", which no GitHub owner can, and replace the
-// slashes of subgroups so that the lock stays one file.
+// lockName joins the forge, the owner, the repository and the number with "~", which neither forge allows in a
+// name, and replaces the slashes of GitLab subgroups so that the lock stays one file. A repository name has no
+// slash, so the last two parts are always the repository and the number, and two issues never share a name.
 func lockName(ref forge.IssueRef) string {
-	if ref.Kind() == forge.GitLab {
-		return fmt.Sprintf("@gitlab-%s-%s-%d", strings.ReplaceAll(ref.Owner, "/", "~"), ref.Repo, ref.Number)
-	}
-	return fmt.Sprintf("%s-%s-%d", ref.Owner, ref.Repo, ref.Number)
+	return fmt.Sprintf("%s~%s~%s~%d", ref.Kind(), strings.ReplaceAll(ref.Owner, "/", "~"), ref.Repo, ref.Number)
 }
 
 func (a *Agent) logf(format string, args ...any) {
@@ -185,9 +208,12 @@ func (a *Agent) Start(ctx context.Context) error {
 	a.queued = map[forge.IssueRef]int64{}
 	a.pending = map[forge.IssueRef]config.Project{}
 	a.seen = map[forge.IssueRef]time.Time{}
+	a.unsettled = map[forge.IssueRef]unsettledIssue{}
+	a.writebacks = map[forge.IssueRef]*pendingWriteBack{}
 	a.notes = map[forge.IssueRef]int{}
 	a.closed = map[forge.IssueRef]bool{}
 	a.wake = make(chan struct{}, 1)
+	a.tune = make(chan struct{}, 1)
 	a.pmu.Lock()
 	a.private = map[string]bool{}
 	a.accepting = map[string]config.Project{}
@@ -238,22 +264,39 @@ func (a *Agent) Run(ctx context.Context) error {
 		defer a.stopRefreshes()
 		go a.Relay.Run(ctx, a.onEvent, a.onRelayState)
 	}
-	t := time.NewTicker(a.interval())
+	cur := a.interval()
+	t := time.NewTicker(cur)
 	defer t.Stop()
+	// retune resets the ticker when the interval changed: something to try again appeared or was done.
+	retune := func() {
+		if d := a.interval(); d != cur {
+			cur = d
+			t.Reset(d)
+		}
+	}
 	next := a.projectList // what the coming poll fetches, decided after a reload is applied
 	for {
 		a.applyProjects(ctx)
 		if err := a.poll(ctx, next()); err != nil && ctx.Err() == nil {
 			a.logf("poll: %v", err)
 		}
-		select {
-		case <-ctx.Done():
-			return nil
-		case now := <-t.C:
-			next = func() []config.Project { return a.due(now) }
-		case <-a.wake: // poll every project at once, then at the interval of the new state
-			t.Reset(a.interval())
-			next = a.projectList
+		retune()
+	wait:
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case now := <-t.C:
+				next = func() []config.Project { return a.due(now) }
+				break wait
+			case <-a.wake: // poll every project at once, then at the interval of the new state
+				cur = a.interval()
+				t.Reset(cur)
+				next = a.projectList
+				break wait
+			case <-a.tune:
+				retune()
+			}
 		}
 	}
 }
@@ -269,6 +312,7 @@ func (a *Agent) Poll(ctx context.Context) error {
 func (a *Agent) poll(ctx context.Context, ps []config.Project) error {
 	a.pollMu.Lock()
 	defer a.pollMu.Unlock()
+	a.retryWriteBacks(ctx)
 	var errs []error
 	for _, p := range ps {
 		errs = append(errs, a.pollProject(ctx, p)...)
@@ -291,17 +335,21 @@ func (a *Agent) pollProject(ctx context.Context, p config.Project) []error {
 		return []error{fmt.Errorf("%s: %w", p.Ref, err)}
 	}
 	var errs []error
+	listed := map[forge.IssueRef]bool{}
 	for _, s := range list {
+		listed[s.Ref] = true
 		a.mu.Lock()
 		last, ok := a.seen[s.Ref]
+		_, again := a.unsettled[s.Ref]
 		a.mu.Unlock()
-		if ok && !s.UpdatedAt.After(last) {
+		if ok && !s.UpdatedAt.After(last) && !again {
 			continue
 		}
 		if err := a.evaluate(ctx, p, s); err != nil {
 			errs = append(errs, err)
 		}
 	}
+	a.forgetMissing(p, listed)
 	if p.Forge == forge.GitLab {
 		errs = append(errs, a.pollReplies(ctx, p, f)...)
 	}
@@ -330,37 +378,78 @@ func (a *Agent) pollReplies(ctx context.Context, p config.Project, f forge.Forge
 	return errs
 }
 
-// evaluate decides what an updated issue needs and records it as seen, unless it has to be evaluated again later.
+// evaluate decides what an updated issue needs and records it as seen, unless it has to be evaluated again later:
+// then it is kept unsettled, which holds since back for it.
 func (a *Agent) evaluate(ctx context.Context, p config.Project, s forge.IssueSummary) error {
 	err := a.evaluateOnce(ctx, p, s)
-	switch {
-	case err == nil:
+	gone := errors.Is(err, forge.ErrNotFound)
+	if err == nil || gone {
 		a.mu.Lock()
 		if prev, ok := a.seen[s.Ref]; !ok || s.UpdatedAt.After(prev) {
 			a.seen[s.Ref] = s.UpdatedAt
 		}
 		a.notes[s.Ref] = s.Notes
+		delete(a.unsettled, s.Ref)
 		a.mu.Unlock()
+		if gone {
+			a.logf("%s: the forge no longer has the issue; it is not evaluated again", s.Ref)
+		}
 		return nil
-	case errors.Is(err, errQueued), errors.Is(err, state.ErrLocked):
+	}
+	a.unsettle(s.Ref, s.UpdatedAt, errors.Is(err, errQueued))
+	if errors.Is(err, errQueued) || errors.Is(err, state.ErrLocked) {
 		return nil // evaluated again later
 	}
 	return fmt.Errorf("%s: %w", s.Ref, err)
 }
 
+// unsettle keeps ref to be evaluated again, as updated at at. queued says it only waits for a slot.
+func (a *Agent) unsettle(ref forge.IssueRef, at time.Time, queued bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if u, ok := a.unsettled[ref]; ok && u.at.After(at) {
+		at = u.at
+	}
+	a.unsettled[ref] = unsettledIssue{at: at, queued: queued}
+}
+
+// forgetMissing stops evaluating again the unsettled issues of p that the forge no longer lists: since never passed
+// their update time, so a listing without them means they were deleted or moved.
+func (a *Agent) forgetMissing(p config.Project, listed map[forge.IssueRef]bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for ref := range a.unsettled {
+		if inProject(ref, p) && !listed[ref] && a.active[ref] == nil {
+			delete(a.unsettled, ref)
+			delete(a.pending, ref)
+			a.logf("%s: the forge no longer lists the issue; it is not evaluated again", ref)
+		}
+	}
+}
+
+func inProject(ref forge.IssueRef, p config.Project) bool {
+	return ref.Kind() == p.Forge && ref.Owner == p.Owner && ref.Repo == p.Repo
+}
+
 // since is a minute before the latest update seen in the project, so that a clock skew between the forge and
-// this host loses nothing. The value moves only when something changes, which keeps conditional requests cheap.
+// this host loses nothing. It never passes an unsettled issue, which is then listed again. The value moves only when
+// something changes, which keeps conditional requests cheap.
 func (a *Agent) since(p config.Project) time.Time {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	var latest time.Time
 	for ref, t := range a.seen {
-		if ref.Kind() == p.Forge && ref.Owner == p.Owner && ref.Repo == p.Repo && t.After(latest) {
+		if inProject(ref, p) && t.After(latest) {
 			latest = t
 		}
 	}
 	if latest.IsZero() {
 		return latest
+	}
+	for ref, u := range a.unsettled {
+		if inProject(ref, p) && u.at.Before(latest) {
+			latest = u.at
+		}
 	}
 	return latest.Add(-time.Minute)
 }
@@ -562,7 +651,7 @@ func (pl *plan) hasReply() bool {
 }
 
 // launch starts the run of pl unless the issue already runs, every slot is taken (errQueued), or another process
-// holds the issue's lock (state.ErrLocked).
+// holds the issue's lock (state.ErrLocked). Call it with pollMu held: every caller (a poll, a relay refresh, afterRun) does.
 func (a *Agent) launch(ctx context.Context, pl *plan) error {
 	ref := pl.issue.Ref
 	limit := a.projectLimit(ref)
@@ -578,6 +667,7 @@ func (a *Agent) launch(ctx context.Context, pl *plan) error {
 			a.queued[ref] = 0
 		}
 		a.mu.Unlock()
+		a.unsettle(ref, pl.issue.UpdatedAt, true)
 		if !noted {
 			a.noteQueued(ctx, ref, limitKind, value)
 		}
@@ -619,6 +709,13 @@ func (a *Agent) launch(ctx context.Context, pl *plan) error {
 	if err := a.swapper(ref).Swap(ctx, ref, a.Config.Labels.Running); err != nil {
 		finish()
 		a.wg.Done()
+		if ctx.Err() == nil {
+			// The label may be set although the swap failed: the next poll reads it again (D3 of the design).
+			o := &outcome{Run: act.run, Ack: pl.ack(), msg: a.msg}
+			o.fail(a.msg.interrupted)
+			rec := record{Issue: ref.String(), Run: act.run, Started: act.started, Ack: pl.ack()}
+			a.keepWriteBack(ref, &pendingWriteBack{project: pl.project, o: o, interrupted: true}, rec, err)
+		}
 		return err
 	}
 	a.logf("%s: run %s started", ref, act.run)
@@ -626,15 +723,33 @@ func (a *Agent) launch(ctx context.Context, pl *plan) error {
 		defer a.wg.Done()
 		state := a.execute(runCtx, pl, act)
 		finish()
-		if state == "waiting" {
-			// A reply that arrived during the run starts the next run now.
-			if err := a.consider(a.ctx, pl.project, ref); err != nil && !errors.Is(err, errQueued) && a.ctx.Err() == nil {
-				a.logf("%s: %v", ref, err)
-			}
-		}
-		a.drain(a.ctx)
+		a.afterRun(pl.project, ref, state)
 	}()
 	return nil
+}
+
+// afterRun starts what the end of a run makes ready: the next run of a waiting issue that got a reply meanwhile
+// (ADR-016), then the queued issues. It runs in turn with the polls, so that every launch is serialized with them:
+// a poll never sees an issue that is active but not yet labeled running (#25).
+func (a *Agent) afterRun(p config.Project, ref forge.IssueRef, state string) {
+	a.pollMu.Lock()
+	defer a.pollMu.Unlock()
+	if state == "waiting" {
+		a.resume(p, ref)
+	}
+	a.drain(a.ctx)
+	a.retune() // a queued issue that failed to start is evaluated again within poll_interval
+}
+
+// resume starts the next run of an issue just made waiting, when a reply already arrived. A project removed from the
+// configuration starts no new run.
+func (a *Agent) resume(p config.Project, ref forge.IssueRef) {
+	if !a.handles(p) {
+		return
+	}
+	if err := a.consider(a.ctx, p, ref); err != nil && !errors.Is(err, errQueued) && a.ctx.Err() == nil {
+		a.logf("%s: %v", ref, err)
+	}
 }
 
 // drain starts queued issues while slots are free. An issue whose project is at its limit stays queued and does
@@ -664,7 +779,20 @@ func (a *Agent) drain(ctx context.Context) {
 		if !free {
 			continue
 		}
-		if err := a.consider(ctx, p, ref); err != nil && !errors.Is(err, errQueued) {
+		switch err := a.consider(ctx, p, ref); {
+		case err == nil:
+			a.mu.Lock()
+			delete(a.unsettled, ref)
+			a.mu.Unlock()
+		case errors.Is(err, errQueued):
+		default:
+			// The next poll lists the issue again, since it stays unsettled; it now shortens the interval.
+			a.mu.Lock()
+			if u, ok := a.unsettled[ref]; ok {
+				u.queued = false
+				a.unsettled[ref] = u
+			}
+			a.mu.Unlock()
 			a.logf("%s: %v", ref, err)
 		}
 	}
@@ -715,7 +843,7 @@ func (a *Agent) cleanClosed(ctx context.Context) {
 	a.mu.Unlock()
 	for _, ref := range refs {
 		for _, p := range a.projectList() {
-			if ref.Kind() == p.Forge && ref.Owner == p.Owner && ref.Repo == p.Repo {
+			if inProject(ref, p) {
 				a.cleanUp(ctx, p, ref)
 			}
 		}
