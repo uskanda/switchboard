@@ -35,6 +35,25 @@ func TestRelayTokenAddPrintsTheHashOnly(t *testing.T) {
 	}
 }
 
+func TestRelayTokenAddForTheInbox(t *testing.T) {
+	store := memKeyring{}
+	old := keyring
+	keyring = store
+	defer func() { keyring = old }()
+	var out, errb bytes.Buffer
+	if code := cli.Run([]string{"relay", "token", "add", "--inbox", "ubuntu-a", "--config", writeConfig(t)}, &out, &errb); code != 0 {
+		t.Fatalf("code %d: %s", code, errb.String())
+	}
+	if store["switchboard/relay-ubuntu-a-inbox"] == "" || store["switchboard/relay-ubuntu-a"] != "" {
+		t.Fatalf("stored %v", store)
+	}
+	for _, want := range []string{"- name: ubuntu-a-inbox", "Add this to inbox in", "token_ref: switchboard/relay-ubuntu-a-inbox"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("the output lacks %q:\n%s", want, out.String())
+		}
+	}
+}
+
 func TestRelayHookAddNeedsAnInboxToken(t *testing.T) {
 	var out, errb bytes.Buffer
 	cfg := writeConfig(t)

@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { isRunning } from "@/lib/api";
+import { isRunning, type Inbox } from "@/lib/api";
 import { useInbox, type Live } from "@/lib/inbox";
 
 const liveText: Record<Live, string> = {
@@ -8,6 +8,17 @@ const liveText: Record<Live, string> = {
   reconnecting: "自動更新が切れています。再接続しています",
   off: "自動更新なし",
 };
+
+/**
+ * statusText is the words for the state of the updates. While live, they also say how soon a change shows: at once
+ * while the inbox service follows the relay, at the interval while it has lost the relay.
+ */
+function statusText(live: Live, inbox: Inbox | null): string {
+  if (live !== "live") return liveText[live];
+  if (inbox?.relay === "connected") return "自動更新中（即時）";
+  if (inbox?.relay === "disconnected" && inbox.refresh_interval_seconds) return `自動更新中（${inbox.refresh_interval_seconds}秒ごと）`;
+  return liveText.live;
+}
 
 /**
  * Header is the bar over every page: the name, the counts of waiting and running issues, the state of the automatic
@@ -32,7 +43,7 @@ export function Header() {
         )}
         <p aria-live="polite" className="flex items-center gap-xs text-label-md text-muted">
           <span aria-hidden className={live === "live" ? "size-2 rounded-full bg-primary" : "size-2 rounded-full border border-muted"} />
-          {liveText[live]}
+          {statusText(live, inbox)}
         </p>
         <Link to="/settings" className="ml-auto inline-flex min-h-11 items-center text-label-md text-muted underline">
           設定

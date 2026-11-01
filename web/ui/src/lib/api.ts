@@ -25,7 +25,17 @@ export type Item = {
 
 export const isRunning = (it: Item) => it.state === "running";
 
-export type Inbox = { items: Item[]; errors: { forge: string; message: string }[]; fetched_at: string };
+/**
+ * Inbox is a listing. relay is whether the inbox service follows the relay's events ("" when it is not set up), and
+ * refresh_interval_seconds how often it reads the forges while a page listens; older services send neither.
+ */
+export type Inbox = {
+  items: Item[];
+  errors: { forge: string; message: string }[];
+  fetched_at: string;
+  relay?: "connected" | "disconnected" | "";
+  refresh_interval_seconds?: number;
+};
 
 export type Detail = {
   ref: string;

@@ -19,6 +19,9 @@ import (
 	"github.com/uskanda/switchboard/internal/inbox"
 	"github.com/uskanda/switchboard/internal/inboxserve"
 	"github.com/uskanda/switchboard/internal/instructions"
+	"github.com/uskanda/switchboard/internal/relay"
+	"github.com/uskanda/switchboard/internal/relayclient"
+	"github.com/uskanda/switchboard/internal/secret"
 )
 
 // serveInbox is the inbox the API serves: every configured forge, each read and written with its inbox token.
@@ -52,7 +55,7 @@ func inboxAPI(cfg *config.Config, forges map[string]forge.Forge, store instructi
 			repos[kind] = r
 		}
 	}
-	api = &inboxserve.Server{Inbox: newInbox(cfg, forges), Interval: cfg.Inbox.RefreshInterval,
+	api = &inboxserve.Server{Inbox: newInbox(cfg, forges), Interval: cfg.Inbox.RefreshInterval, Relay: cfg.Inbox.Relay != nil,
 		Instructions: &inboxserve.Instructions{Store: store, Projects: refsOf(cfg.Projects), Host: cfg.Host.Name},
 		Projects:     &inboxserve.Projects{Config: cfg, Repos: repos},
 	}
@@ -71,6 +74,31 @@ func refsOf(projects []config.Project) []string {
 		out = append(out, p.Ref)
 	}
 	return out
+}
+
+// inboxRelay is the client the inbox service follows the relay with, using its own token (inbox.relay.token_ref).
+func inboxRelay(cfg *config.Config, r *config.AgentRelay, stderr io.Writer) (*relayclient.Client, error) {
+	res := secret.Resolver{Store: secret.Keyring{}, AllowEnv: cfg.Secrets.AllowEnv}
+	tok, err := res.Token(r.TokenRef)
+	if err != nil {
+		return nil, err
+	}
+	return &relayclient.Client{URL: r.URL, Token: tok, Logf: func(format string, args ...any) {
+		fmt.Fprintf(stderr, "switchboard: inbox: "+format+"\n", args...)
+	}}, nil
+}
+
+// followRelay passes the relay's events and state to api until ctx ends. An event is only a cue to read the forges
+// again; which issue it names does not matter, since the listing is read whole.
+func followRelay(ctx context.Context, rc *relayclient.Client, api *inboxserve.Server, stderr io.Writer) {
+	rc.Run(ctx, func(relay.Event) { api.RelayEvent() }, func(up bool) {
+		if up {
+			fmt.Fprintln(stderr, "switchboard: inbox: relay: connected")
+		} else {
+			fmt.Fprintln(stderr, "switchboard: inbox: relay: disconnected")
+		}
+		api.RelayState(up)
+	})
 }
 
 func inboxServe(args []string, stdout, stderr io.Writer) int {
@@ -105,6 +133,13 @@ func inboxServe(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 	go w.Run(ctx, stderr, func(ch *config.Change) { reload(ch.Projects) })
+	if r := cfg.Inbox.Relay; r != nil {
+		rc, err := inboxRelay(cfg, r, stderr)
+		if err != nil {
+			return fail(stderr, err)
+		}
+		go followRelay(ctx, rc, api, stderr)
+	}
 	// Requests end with ctx, so the event streams, which never go idle, close on a signal instead of holding the
 	// shutdown.
 	srv := &http.Server{Handler: api, ReadHeaderTimeout: 10 * time.Second, BaseContext: func(net.Listener) context.Context { return ctx }}
