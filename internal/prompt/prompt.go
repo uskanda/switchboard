@@ -170,7 +170,7 @@ You run unattended on an issue, in its plan stage. Nobody can answer you during 
 
 ## How to end the run
 
-- status "questions": list the questions in "questions". Each has "title", "body" (the question, with the options when there are any) and "recommendation" (your recommended answer and why). switchboard numbers them.
+- status "questions": list the questions in "questions". Each has "title", "body" (the question, with the options when there are any) and "recommendation" (your recommended answer and why). switchboard numbers them. Put each option of a question on its own line, labeled like "A: ...".
 - status "plan": put the plan, in Markdown, in "plan". The owner approves it by replying %[2]s.
 - "summary" (optional): what you looked at, in one or two sentences.
 
