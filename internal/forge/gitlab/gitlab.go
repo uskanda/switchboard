@@ -5,6 +5,7 @@ package gitlab
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/uskanda/switchboard/internal/forge"
@@ -204,39 +206,63 @@ const maxNotePages = 10
 
 // Thread implements forge.Forge. The body's last editor is the author of the last system note about the
 // description (V21). When the notes run past maxNotePages, a later one may hide, so the editor is unknown.
+// The issue, its notes and who edited them are three requests that need nothing of one another, so they are sent
+// at once.
 func (c *Client) Thread(ctx context.Context, ref forge.IssueRef) (*forge.Issue, []forge.Comment, error) {
 	base := project(ref.Owner, ref.Repo) + "/issues/" + strconv.Itoa(ref.Number)
-	var gi glIssue
-	if _, err := c.do(ctx, http.MethodGet, c.url(base, nil), nil, &gi); err != nil {
+	var (
+		wg                          sync.WaitGroup
+		gi                          glIssue
+		comments                    []forge.Comment
+		editor                      *forge.User
+		more                        bool
+		byID                        map[int64]forge.Edit
+		issueErr, notesErr, editErr error
+	)
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		_, issueErr = c.do(ctx, http.MethodGet, c.url(base, nil), nil, &gi)
+	}()
+	go func() {
+		defer wg.Done()
+		more, notesErr = pages(ctx, c, c.url(base+"/notes", url.Values{"sort": {"asc"}, "order_by": {"created_at"}, "per_page": {"100"}}), maxNotePages,
+			func(p []glNote) {
+				for _, n := range p {
+					if n.System {
+						if strings.Contains(n.Body, "description") {
+							u := n.Author.user()
+							editor = &u
+						}
+						continue
+					}
+					comments = append(comments, forge.Comment{ID: n.ID, Body: n.Body, Author: n.Author.user(), CreatedAt: n.CreatedAt})
+				}
+			})
+	}()
+	go func() {
+		defer wg.Done()
+		byID, editErr = c.edits(ctx, ref)
+	}()
+	wg.Wait()
+	if err := cmp.Or(issueErr, notesErr, editErr); err != nil {
 		return nil, nil, err
 	}
 	is := &forge.Issue{IssueSummary: gi.summary(ref.Owner, ref.Repo), Body: gi.Description, Author: gi.Author.user(), CreatedAt: gi.CreatedAt}
-	var comments []forge.Comment
-	var editor *forge.User
-	more, err := pages(ctx, c, c.url(base+"/notes", url.Values{"sort": {"asc"}, "order_by": {"created_at"}, "per_page": {"100"}}), maxNotePages,
-		func(p []glNote) {
-			for _, n := range p {
-				if n.System {
-					if strings.Contains(n.Body, "description") {
-						u := n.Author.user()
-						editor = &u
-					}
-					continue
-				}
-				comments = append(comments, forge.Comment{ID: n.ID, Body: n.Body, Author: n.Author.user(), CreatedAt: n.CreatedAt})
-			}
-		})
-	if err != nil {
-		return nil, nil, err
-	}
 	switch {
 	case more:
 		is.BodyEdit = forge.Edit{Edited: true, Unknown: true}
 	case editor != nil:
 		is.BodyEdit = forge.Edit{Edited: true, Editor: editor}
 	}
-	if err := c.addEdits(ctx, ref, comments); err != nil {
-		return nil, nil, err
+	// A comment the query did not return is marked Unknown, so that trust decisions treat it as edited by an
+	// untrusted user.
+	for i := range comments {
+		e, ok := byID[comments[i].ID]
+		if !ok {
+			e = forge.Edit{Edited: true, Unknown: true}
+		}
+		comments[i].Edit = e
 	}
 	return is, comments, nil
 }
@@ -261,9 +287,9 @@ func gid(s string) int64 {
 	return n
 }
 
-// addEdits fills in who last edited each comment. lastEditedBy is set only for an edited note (V21). A comment
-// the query did not return is marked Unknown, so that trust decisions treat it as edited by an untrusted user.
-func (c *Client) addEdits(ctx context.Context, ref forge.IssueRef, comments []forge.Comment) error {
+// edits reads who last edited each of the newest notes, by note ID. lastEditedBy is set only for an edited note
+// (V21).
+func (c *Client) edits(ctx context.Context, ref forge.IssueRef) (map[int64]forge.Edit, error) {
 	in := map[string]any{"query": editQuery, "variables": map[string]any{"path": ref.Project(), "iid": strconv.Itoa(ref.Number)}}
 	var out struct {
 		Data struct {
@@ -283,10 +309,10 @@ func (c *Client) addEdits(ctx context.Context, ref forge.IssueRef, comments []fo
 		} `json:"errors"`
 	}
 	if _, err := c.do(ctx, http.MethodPost, c.baseURL+"/api/graphql", in, &out); err != nil {
-		return err
+		return nil, err
 	}
 	if len(out.Errors) > 0 {
-		return fmt.Errorf("gitlab: graphql: %s", out.Errors[0].Message)
+		return nil, fmt.Errorf("gitlab: graphql: %s", out.Errors[0].Message)
 	}
 	byID := map[int64]forge.Edit{}
 	for _, n := range out.Data.Project.Issue.Notes.Nodes {
@@ -299,14 +325,7 @@ func (c *Client) addEdits(ctx context.Context, ref forge.IssueRef, comments []fo
 		}
 		byID[gid(n.ID)] = e
 	}
-	for i := range comments {
-		e, ok := byID[comments[i].ID]
-		if !ok {
-			e = forge.Edit{Edited: true, Unknown: true}
-		}
-		comments[i].Edit = e
-	}
-	return nil
+	return byID, nil
 }
 
 type glLabelEvent struct {

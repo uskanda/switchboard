@@ -38,6 +38,11 @@ type Inbox struct {
 	// Cache is the file the row numbers of the last listing are kept in.
 	Cache string
 	Now   func() time.Time
+
+	// ids holds the account IDs of the agent identities resolved so far, keyed by forge kind and login. An account
+	// keeps its ID, so one lookup serves every later listing and detail.
+	idMu sync.Mutex
+	ids  map[string]int64
 }
 
 // DefaultCache is $XDG_CACHE_HOME/switchboard/inbox.json, with ~/.cache when XDG_CACHE_HOME is unset.
@@ -115,10 +120,23 @@ func (b *Inbox) agentID(ctx context.Context, ref forge.IssueRef) (int64, error) 
 	p, _ := b.project(ref.Kind(), ref.Owner, ref.Repo)
 	p.Forge = ref.Kind()
 	login := b.Config.AgentIdentity(p)
+	key := ref.Kind() + "\x00" + strings.ToLower(login)
+	b.idMu.Lock()
+	id, ok := b.ids[key]
+	b.idMu.Unlock()
+	if ok {
+		return id, nil
+	}
 	u, err := b.forgeOf(ref.Kind()).User(ctx, login)
 	if err != nil {
 		return 0, fmt.Errorf("resolve agent_identity %s: %w", login, err)
 	}
+	b.idMu.Lock()
+	if b.ids == nil {
+		b.ids = map[string]int64{}
+	}
+	b.ids[key] = u.ID
+	b.idMu.Unlock()
 	return u.ID, nil
 }
 
@@ -569,11 +587,19 @@ func withThread(d *Detail, is *forge.Issue, comments []forge.Comment, agentID in
 
 // Detail reads the issue and the agent's latest post on it.
 func (b *Inbox) Detail(ctx context.Context, ref forge.IssueRef) (*Detail, error) {
-	agentID, err := b.agentID(ctx, ref)
-	if err != nil {
-		return nil, err
-	}
+	// The agent's account and the thread are read at the same time: neither needs the other.
+	var agentID int64
+	var idErr error
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		agentID, idErr = b.agentID(ctx, ref)
+	}()
 	is, comments, err := b.forgeOf(ref.Kind()).Thread(ctx, ref)
+	<-done
+	if idErr != nil {
+		return nil, idErr
+	}
 	if err != nil {
 		return nil, err
 	}
