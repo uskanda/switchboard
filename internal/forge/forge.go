@@ -149,6 +149,8 @@ type Forge interface {
 	EnsureLabel(ctx context.Context, owner, repo, name, color, description string) (bool, error)
 	// CreateChangeRequest opens a pull request and returns its URL.
 	CreateChangeRequest(ctx context.Context, cr ChangeRequest) (string, error)
+	// OpenChangeRequest returns the URL of an open pull request from head to base, or ErrNotFound.
+	OpenChangeRequest(ctx context.Context, owner, repo, head, base string) (string, error)
 	// RepoPrivate reports whether the repository is private.
 	RepoPrivate(ctx context.Context, owner, repo string) (bool, error)
 	// User resolves a login to the user, with its numeric ID.

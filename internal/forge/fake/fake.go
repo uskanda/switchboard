@@ -20,8 +20,9 @@ type Forge struct {
 	repos    map[string]*repo
 	users    map[string]forge.User
 	PRs      []forge.ChangeRequest
-	Comments int // number of PostComment calls, for tests that count writes
-	Edits    int // number of EditComment calls
+	closed   map[int]bool // indexes into PRs that ClosePR closed
+	Comments int          // number of PostComment calls, for tests that count writes
+	Edits    int          // number of EditComment calls
 	// PostAs is the login PostComment posts as; "agent" when empty.
 	PostAs string
 	// FailSetLabels, when set, is returned by the next SetLabels call and then cleared.
@@ -467,6 +468,29 @@ func (f *Forge) CreateChangeRequest(_ context.Context, cr forge.ChangeRequest) (
 	defer f.mu.Unlock()
 	f.PRs = append(f.PRs, cr)
 	return fmt.Sprintf("https://forge.test/%s/%s/pull/%d", cr.Owner, cr.Repo, len(f.PRs)), nil
+}
+
+// OpenChangeRequest implements forge.Forge.
+func (f *Forge) OpenChangeRequest(_ context.Context, owner, repo, head, base string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := len(f.PRs) - 1; i >= 0; i-- {
+		cr := f.PRs[i]
+		if !f.closed[i] && cr.Owner == owner && cr.Repo == repo && cr.Head == head && cr.Base == base {
+			return fmt.Sprintf("https://forge.test/%s/%s/pull/%d", owner, repo, i+1), nil
+		}
+	}
+	return "", forge.ErrNotFound
+}
+
+// ClosePR closes the i-th change request in PRs, counted from 0.
+func (f *Forge) ClosePR(i int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.closed == nil {
+		f.closed = map[int]bool{}
+	}
+	f.closed[i] = true
 }
 
 // RepoPrivate implements forge.Forge.
