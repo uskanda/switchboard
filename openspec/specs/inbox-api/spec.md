@@ -155,12 +155,17 @@ APIは、`ref` と `plan_first` を受けて、設定にプロジェクトを1�
 - **THEN** 追加されず、リポジトリを読めないことを示す誤りが返る
 
 ### Requirement: webhookの案内
-`<agent.relay>` のある端末では、追加の応答は、`switchboard relay hook add <ref>` の実行を促す文字列を含まなければならない（MUST）。
+`<agent.relay>` のある端末でGitLabのプロジェクトを追加したとき、追加の応答は、`switchboard relay hook add <ref>` の実行を促す文字列を含まなければならない（MUST）。
+GitHubのプロジェクトの応答は、この文字列を含んではならない（MUST NOT）。中継の受け口にGitHubは届かないため（ADR-007）、GitHubのプロジェクトはポーリングで扱う。
 APIは、webhookを登録してはならない（MUST NOT）。
 
-#### Scenario: 中継を使う端末
+#### Scenario: 中継を使う端末でGitLabのプロジェクトを足す
+- **WHEN** `<agent.relay>` のある端末で、`gl:nas/tools` を追加する
+- **THEN** 応答に `switchboard relay hook add gl:nas/tools` が含まれ、フォージにwebhookは作られない
+
+#### Scenario: 中継を使う端末でGitHubのプロジェクトを足す
 - **WHEN** `<agent.relay>` のある端末で、`gh:uskanda/notes` を追加する
-- **THEN** 応答に `switchboard relay hook add gh:uskanda/notes` が含まれ、フォージにwebhookは作られない
+- **THEN** 応答にwebhookの案内は含まれない
 
 ### Requirement: 追加の反映
 プロジェクトを追加したとき、APIは、再起動せずに、受信箱の一覧、追加の指示、プロジェクトの一覧の対象にそのプロジェクトを含めなければならない（MUST）。

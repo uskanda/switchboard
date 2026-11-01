@@ -139,7 +139,8 @@ func (s *Server) addProject(w http.ResponseWriter, r *http.Request) {
 			out.Project = s.Projects.state(r.Context(), next, q, s.now())
 		}
 	}
-	if next.Agent.Relay != nil {
+	// Only GitLab, on the relay's machine, can send to the relay (ADR-007); a GitHub project is polled.
+	if next.Agent.Relay != nil && p.Forge == forge.GitLab {
 		out.Webhook = "switchboard relay hook add " + p.Ref
 	}
 	send(w, http.StatusCreated, out)

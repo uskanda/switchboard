@@ -410,7 +410,7 @@ inbox:
 - 受信箱のトークンでリポジトリを読めない
 - 別のプロジェクトが、同じ場所にクローンされている
 
-中継を使う端末では、足したあとに画面が `switchboard relay hook add <ref>` の実行を案内する。webhookを登録するまでは、そのプロジェクトはポーリングで扱われる。
+中継を使う端末でGitLabのプロジェクトを足すと、画面が `switchboard relay hook add <ref>` の実行を案内する。webhookを登録するまでは、そのプロジェクトはポーリングで扱われる。GitHubのwebhookは中継に届かないので、GitHubのプロジェクトには案内を出さない。
 
 状態は `switchboard service status --inbox` と `--web` で見る。手で試すときは、`switchboard inbox serve` を動かしてから `switchboard-web serve` を動かす。このときソケットは `$XDG_RUNTIME_DIR/switchboard/inbox.sock` にでき、`web.yaml` の `socket` で場所を指定できる。
 
