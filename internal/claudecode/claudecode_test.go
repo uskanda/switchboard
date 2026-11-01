@@ -207,8 +207,10 @@ func TestTimeoutSendsINTThenTERMThenKILL(t *testing.T) {
 	bin, rec := fakeClaude(t, "done.jsonl", 30, true, true, 0)
 	req := request(t, bin)
 	req.Timeout = 300 * time.Millisecond
-	req.IntGrace = 300 * time.Millisecond
-	req.TermGrace = 300 * time.Millisecond
+	// The fake runs its trap only after its current sleep returns, which a loaded machine can delay past a short
+	// grace: give each signal a second to be recorded.
+	req.IntGrace = time.Second
+	req.TermGrace = time.Second
 	start := time.Now()
 	res, err := Run(context.Background(), req)
 	if err != nil {
