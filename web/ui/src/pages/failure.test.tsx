@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -97,7 +97,7 @@ describe("waits on a failed run", () => {
     const calls = answer({ "GET /api/inbox": errorInbox, [issue]: detail("error"), "POST /api/reply": null });
     at("/issue/gh%3Ao%2Fr%2312");
     await userEvent.click(await screen.findByRole("button", { name: "再実行する" }));
-    expect(await screen.findByRole("status")).toHaveTextContent("送りました。エージェントが作業を再開します。");
+    expect(await within(screen.getByRole("article")).findByRole("status")).toHaveTextContent("送りました。エージェントが作業を再開します。");
     const posts = calls.filter((c) => c.key === "POST /api/reply");
     expect(posts).toHaveLength(1);
     expect(JSON.parse(String(posts[0].init?.body))).toEqual({ ref: "gh:o/r#12", text: "再実行してください。" });
@@ -110,7 +110,7 @@ describe("waits on a failed run", () => {
     await userEvent.type(screen.getByRole("textbox", { name: "返答" }), "テストを先に直して");
     expect(retry).toBeDisabled();
     await userEvent.click(screen.getByRole("button", { name: "返答を送る" }));
-    expect(await screen.findByRole("status")).toHaveTextContent("送りました");
+    expect(await within(screen.getByRole("article")).findByRole("status")).toHaveTextContent("送りました");
     const post = calls.find((c) => c.key === "POST /api/reply");
     expect(JSON.parse(String(post?.init?.body))).toEqual({ ref: "gh:o/r#12", text: "テストを先に直して" });
   });

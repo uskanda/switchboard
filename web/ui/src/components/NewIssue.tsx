@@ -7,7 +7,8 @@ import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiError, createIssue, getIssueTargets, type IssueTargets, type StartKind } from "@/lib/api";
-import { refText } from "@/lib/ref";
+import { useInbox } from "@/lib/inbox";
+import { refText, splitRef } from "@/lib/ref";
 import { toast } from "@/lib/toast";
 
 /** What each kind of start does, before the label it stands for. */
@@ -41,9 +42,11 @@ function failure(err: unknown): string {
 /**
  * NewIssue is the button above the list that opens a dialog for a new issue in any configured project, with a start
  * label. The issue is opened with the inbox token, so the agent takes it up (ADR-040). Once it is opened the dialog
- * closes and a success toast links to it on the forge.
+ * closes and a success toast links to it on the forge. Until the agent takes it up, the list shows a running row of
+ * it, marked as being processed (lib/pending.ts).
  */
 export function NewIssue() {
+  const { markPending } = useInbox();
   const dialog = useRef<HTMLDialogElement>(null);
   const id = useId();
   const [targets, setTargets] = useState<IssueTargets | null>(null);
@@ -74,6 +77,13 @@ export function NewIssue() {
     setError(null);
     try {
       const out = await createIssue({ ref: project, title: title.trim(), body, start });
+      const hash = out.ref.lastIndexOf("#");
+      markPending(out.ref, "create", {
+        title: title.trim(),
+        url: out.url,
+        project: splitRef(hash < 0 ? out.ref : out.ref.slice(0, hash)).path,
+        number: hash < 0 ? 0 : Number(out.ref.slice(hash + 1)) || 0,
+      });
       toast.success(
         <>
           <IssueRef value={out.ref} /> を作りました
