@@ -20,4 +20,4 @@
 
 - [x] 4.1 `make verify`が通ることを確かめる
 - [ ] 4.2 `switchboard-web`をブラウザの幅1280pxと360pxで開いて確かめる。確かめるのは、質問のカードの位置（見出しの直下）、見出しの固定とタイトルの切り替え、横へのスクロールの有無、知らせの表示と行き先である
-- [ ] 4.3 `specs/web/spec.md`の差分を、実装が済んだらmain specsへ反映してarchiveする
+- [x] 4.3 `specs/web/spec.md`の差分を、実装が済んだらmain specsへ反映してarchiveする

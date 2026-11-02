@@ -53,12 +53,16 @@ APIは、エージェントのアカウントのIDを、プロセスが動いて
 - **THEN** 着手のコメントはエージェントの投稿で種類が着手として返り、どちらの本文にもマーカーは含まれない
 
 ### Requirement: 返答
-APIは、指定したissueに返答を投稿しなければならない（MUST）。投稿の前の確認は、`switchboard reply` と同じにする。issueを取り直して `agent:waiting` を確かめ、空の返答とマーカーで終わる返答は拒む。
-待ちでないときは、投稿せずに、待ちでないことを区別できる誤りを返さなければならない（MUST）。
+APIは、指定したissueに返答を投稿しなければならない（MUST）。投稿の前の確認は、`switchboard reply` と同じにする。issueを取り直して、openで `agent:waiting` か `agent:done` が付いていることを確かめ、空の返答とマーカーで終わる返答は拒む。
+どちらでもないときは、投稿せずに、待ちでないことを区別できる誤りを返さなければならない（MUST）。
 
 #### Scenario: 既に再開していた
-- **WHEN** `agent:waiting` が外れたissueに返答を送る
+- **WHEN** `agent:waiting` が外れて `agent:running` が付いたissueへ、返答を送る
 - **THEN** 投稿されず、待ちでないことを示す誤りが返る
+
+#### Scenario: 完了のissueに返答する
+- **WHEN** openのまま `agent:done` のissueに返答を送る
+- **THEN** 返答が投稿される
 
 ### Requirement: 公開のクライアント
 核のモジュールは、このAPIを呼ぶGoのパッケージ `<inboxapi>` を、`internal/` の外に公開しなければならない（MUST）。パッケージは、要求と応答の型と、待ちでないことを示す誤りを持つ。
@@ -198,3 +202,82 @@ APIは、webhookを登録してはならない（MUST NOT）。
 #### Scenario: 返答の待ちで順番待ちのissueに返答する
 - **WHEN** `agent:waiting` が付いた順番待ちのissueに、返答を送る
 - **THEN** 返答は投稿され、順番が来た実行のプロンプトに入る
+
+### Requirement: 実行中のissue
+APIの一覧は、実行中のissueを、状態（`running`）とともに返さなければならない（MUST）。項目は `switchboard inbox --json` と同じにする。
+APIの1件の詳細は、実行中のissueについて、進捗のコメントの全文を返さなければならない（MUST）。実行中のissueへの返答は、待ちでないissueへの返答として拒む。
+
+#### Scenario: 実行中のissueを開く
+- **WHEN** 実行中のissueの詳細を求める
+- **THEN** 状態は `running` で、進捗のコメントの全文が返る
+
+### Requirement: issueを作れる先の一覧
+APIは、設定にあるすべてのプロジェクトを、設定の順に、担当の端末の名前とともに返さなければならない（MUST）。`switchboard inbox serve` が動く端末の担当でないプロジェクトも含める。
+APIは、開始ラベルの種別（`ready`、`plan`、`go`）と、それぞれのラベル名を返さなければならない（MUST）。設定でラベル名が空の種別は返さない。
+設定の読み直しで現れたプロジェクトは、再起動しなくても一覧へ出なければならない（MUST）。
+
+#### Scenario: ほかの端末の担当プロジェクト
+- **WHEN** `laptop` の担当の `gl:nas/sb` を含む設定で動く、端末 `usknas` の受信箱のサービスで、一覧を求める
+- **THEN** `gl:nas/sb` が担当の端末 `laptop` とともに返る
+
+#### Scenario: planのラベル名が空
+- **WHEN** `labels.plan` が空の設定で、一覧を求める
+- **THEN** 開始ラベルの種別として、`ready` と `go` だけが返る
+
+### Requirement: issueの作成
+APIは、`ref`、タイトル、本文、開始ラベルの種別を受けて、そのプロジェクトに、受信箱のトークンでissueを作らなければならない（MUST）。issueには、種別に当たる設定のラベルを1つだけ付ける。
+APIは、作ったissueの参照（`gh:owner/repo#n` の形）とフォージのページのURLを返さなければならない（MUST）。
+作ったあと、APIは一覧のキャッシュを捨て、フォージの読み直しを促さなければならない（MUST）。
+
+#### Scenario: 計画から始めるissue
+- **WHEN** `labels.plan` が `agent:plan` の設定で、`gl:nas/sb` に種別 `plan` のissueを作る
+- **THEN** `gl:nas/sb` に、受信箱のトークンの持ち主が作者で、`agent:plan` だけが付いたissueができ、その参照とURLが返る
+
+### Requirement: issueの作成の前の確認
+次のどれかに当たるとき、APIはissueを作ってはならず、それぞれを区別できる誤りを返さなければならない（MUST NOT）。
+- `ref` が設定に無い（`unknown_project`）
+- タイトルが空白だけか、256字を超える（`invalid`）
+- 本文が1MiBを超える（`too_large`）
+- 種別が、一覧で返す開始ラベルの種別に無い（`invalid`）
+- 本文がswitchboardのマーカー行で終わる（`invalid`）
+
+フォージがissueを作れなかったとき、APIは `forge` の誤りを返さなければならない（MUST）。
+
+#### Scenario: ラベル名を種別として送る
+- **WHEN** 種別に `agent:done` を送る
+- **THEN** issueは作られず、`invalid` の誤りが返る
+
+#### Scenario: 設定に無いプロジェクト
+- **WHEN** 設定に無い `gh:o/nope` を送る
+- **THEN** issueは作られず、`unknown_project` の誤りが返る
+
+### Requirement: 完了の項目
+一覧の要素は、openのまま `agent:done` のissueについて、状態 `done` と行番号を持たなければならない（MUST）。完了の時刻を `done_since` に、doneの投稿が名指すPR/MRのURLを `change_url` に入れる。
+1件の詳細は、openのまま `agent:done` のissueで `done` を真にしなければならない（MUST）。closeされたissueでは偽にする。
+
+#### Scenario: 完了のissueの要素
+- **WHEN** PRを作ってdoneになったopenのissueがある状態で、一覧を求める
+- **THEN** そのissueの要素は `state` が `done` で、`done_since` と `change_url` を持つ
+
+### Requirement: 中継のイベントによる取り直し
+`<inbox.relay>` があるとき、`switchboard inbox serve` は、動いている間ずっと中継の配信口につながなければならない（MUST）。つないだときと切れたときは、ログに残す。
+画面が `/v1/events` でつないでいる間に中継のイベントが届いたとき、受信箱のサービスは、`<inbox.refresh_interval>` を待たずに一覧を取り直さなければならない（MUST）。最初のイベントから2秒の間に届いたイベントは、1回の取り直しにまとめる。前回の取得から10秒たつまでは取り直さない。
+画面がつないでいないときは、中継のイベントが届いても、受信箱のサービスは、フォージを読まずに一覧のキャッシュを捨てなければならない（MUST）。
+中継につないでいる間も、受信箱のサービスは、`<inbox.refresh_interval>` ごとの取り直しを延ばしてはならない（MUST NOT）。
+
+#### Scenario: イベントが続けて届く
+- **WHEN** 画面を開いている間、中継からイベントが1秒のうちに3つ届く
+- **THEN** 一覧の取り直しは1回だけで、変化は間隔を待たずに画面へ出る
+
+#### Scenario: 画面が無いときにイベントが届く
+- **WHEN** 画面を閉じている間に中継からイベントが届き、そのあとで画面を開く
+- **THEN** 画面を開いたときに、キャッシュを使わずにフォージから一覧を取り直す
+
+### Requirement: 一覧の中継の状態と間隔
+一覧は、中継の状態を `relay` に持たなければならない（MUST）。値は、つながっていれば `connected`、`<inbox.relay>` があって切れていれば（つなぎに行っている間を含む）`disconnected`、`<inbox.relay>` が無ければ空とする。
+一覧は、`<inbox.refresh_interval>` の秒数を `refresh_interval_seconds` に持たなければならない（MUST）。
+中継の状態が変わったとき、受信箱のサービスは、フォージを読まずに、最後の一覧に新しい状態を入れて `/v1/events` に送らなければならない（MUST）。
+
+#### Scenario: 中継が切れる
+- **WHEN** 画面を開いている間に、中継が止まる
+- **THEN** フォージを読まずに、`relay` が `disconnected` の一覧が送られる

@@ -257,7 +257,7 @@ webhookの一覧の各項目は、プロジェクトの `ref`、`hook-key`、シ
 
 ### Requirement: 自動で直す回数の設定
 設定の `agent` は、整数の `<agent.max_fix_attempts>` を持てなければならない（MUST）。無いときは2とする。
-`<agent.max_fix_attempts>` が0のとき、エージェントは、CIの失敗とnon-fast-forwardを自動では直さない。
+`<agent.max_fix_attempts>` が0のとき、エージェントは、CIの失敗、non-fast-forward、変更要求の衝突を自動では直さない。
 `<agent.max_fix_attempts>` が負のとき、`switchboard` は設定の誤りとして拒まなければならない（MUST）。
 
 #### Scenario: 項目が無い設定
@@ -301,3 +301,11 @@ webhookの一覧の各項目は、プロジェクトの `ref`、`hook-key`、シ
 #### Scenario: プロジェクトの追加の許可を足す
 - **WHEN** `switchboard agent run` が動いている間に、あるプロジェクトの `<projects[].allow_tools_extra>` に `Skill` を足して保存する
 - **THEN** 10秒ほどのうちに、そのあとで始まるそのプロジェクトの実行では `Skill` が許される
+
+### Requirement: 受信箱の中継の設定
+設定は、`<inbox.relay>` に、中継の配信口のURL（`url`）と、受信箱のサービスのトークンの `token_ref` を持てなければならない（MUST）。無いとき、受信箱のサービスは中継につながない。
+`<inbox.relay>` を書いて `url` か `token_ref` が無いとき、設定の検証は、設定を拒まなければならない（MUST）。
+
+#### Scenario: token_refが無い
+- **WHEN** `<inbox.relay>` に `url` だけを書いて設定を検証する
+- **THEN** 設定は拒まれ、誤りには `inbox.relay.token_ref` が示される
