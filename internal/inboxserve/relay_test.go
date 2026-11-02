@@ -57,7 +57,8 @@ func waitSearches(t *testing.T, w *world, n int32) {
 func TestRelayEventsAreReadOnceAfterTheDebounce(t *testing.T) {
 	w := newServer(t)
 	w.srv.Interval = time.Hour
-	w.srv.debounce, w.srv.gap = 80*time.Millisecond, time.Millisecond
+	// The debounce is far longer than the steps before the check, so that a slow runner does not end it early.
+	w.srv.debounce, w.srv.gap = 500*time.Millisecond, time.Millisecond
 	got, _ := page(t, w)
 	next(t, got)
 	before := w.searches()
