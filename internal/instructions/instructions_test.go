@@ -182,6 +182,40 @@ func TestRunInstructionsAreSavedAndJoinedApart(t *testing.T) {
 	}
 }
 
+func TestLoadHashesEachFileAsSaveRecordsIt(t *testing.T) {
+	s, a := store(t)
+	if got := s.Load(Run, "gh:alice/sandbox"); got != (Loaded{}) {
+		t.Fatalf("Load without files = %+v", got)
+	}
+	run := s.Of(Run)
+	if err := run.Save(Global, "  \n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := run.Save("gh:alice/sandbox", "Record an OpenSpec change.\n"); err != nil {
+		t.Fatal(err)
+	}
+	got := s.Load(Run, "gh:alice/sandbox")
+	if got.Global != "" || got.Project != a.events[1]["sha256"] || got.Text != s.Run("gh:alice/sandbox") {
+		t.Fatalf("Load = %+v, want no global hash and the project hash %v", got, a.events[1]["sha256"])
+	}
+	if err := run.Save(Global, "Run the checks.\n"); err != nil {
+		t.Fatal(err)
+	}
+	got = s.Load(Run, "gh:alice/sandbox")
+	if got.Global != a.events[2]["sha256"] || got.Project != a.events[1]["sha256"] || got.Text != "Run the checks.\n\nRecord an OpenSpec change." {
+		t.Fatalf("Load = %+v", got)
+	}
+	if p := s.Load(Plan, "gh:alice/sandbox"); p != (Loaded{}) {
+		t.Fatalf("Load of the plan kind = %+v, want nothing", p)
+	}
+	if err := s.Save(Global, "Ask first.\n"); err != nil {
+		t.Fatal(err)
+	}
+	if p := s.Load(Plan, "gh:alice/sandbox"); p.Global != a.events[3]["sha256"] || p.Text != s.Plan("gh:alice/sandbox") || p.Text != "Ask first." {
+		t.Fatalf("Load of the plan kind = %+v", p)
+	}
+}
+
 func TestRunInstructionsRefuseSecrets(t *testing.T) {
 	s, _ := store(t)
 	run := s.Of(Run)

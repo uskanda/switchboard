@@ -248,6 +248,8 @@ projects:
 
 指示は、計画の指示と同じディレクトリに `run.md` の名前で置く。全体は `instructions/run.md` である。GitHubのプロジェクトは `instructions/gh/<owner>/<repo>/run.md` に置く。GitLabなら `instructions/gl/<group>/<project>/run.md` である。保存の検査と監査ログは計画の指示と同じで、Web表示の「設定」の画面からも編集できる。
 
+実行を始めるたびに、監査ログに `run.started` が残る。中身は、実行のID、実行の種類、足した許可の一覧、使った指示のファイルごとのSHA-256である。計画の実行では、足した許可は空で、ハッシュは `plan.md` のものになる。同じ値を持つ `instructions.saved` の行から、どの保存の版で動いたかが分かる。指示の内容そのものは残らない。
+
 ```bash
 switchboard instructions edit --run                   # 全プロジェクトの実装の指示
 switchboard instructions edit --run gh:o/switchboard  # 1つのプロジェクトの実装の指示
