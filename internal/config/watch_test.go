@@ -92,6 +92,21 @@ func TestWatcherNamesTheSectionsItDoesNotApply(t *testing.T) {
 	}
 }
 
+func TestWatcherAppliesTheAgentPreferPlan(t *testing.T) {
+	w, p := newWatcher(t, valid)
+	save(t, p, valid+"agent:\n  prefer_plan: true\n", time.Now().Add(time.Minute))
+	ch, err := w.Check()
+	if err != nil || ch == nil {
+		t.Fatalf("Check = %+v, %v; want a change", ch, err)
+	}
+	if !ch.PreferPlan {
+		t.Error("prefer plan = false, want true")
+	}
+	if len(ch.Ignored) != 0 {
+		t.Errorf("ignored = %v, want none: agent.prefer_plan is applied", ch.Ignored)
+	}
+}
+
 func TestWatcherAppliesTheAgentMaxParallel(t *testing.T) {
 	w, p := newWatcher(t, valid)
 	save(t, p, valid+"agent:\n  max_parallel: 2\n", time.Now().Add(time.Minute))

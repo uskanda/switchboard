@@ -14,17 +14,18 @@ import (
 // WatchInterval is how often a Watcher looks at the configuration file.
 const WatchInterval = 10 * time.Second
 
-// Change is a new, valid configuration file as a running process applies it: the new projects and agent.max_parallel,
-// and the sections that changed too but take a restart.
+// Change is a new, valid configuration file as a running process applies it: the new projects, agent.max_parallel
+// and agent.prefer_plan, and the sections that changed too but take a restart.
 type Change struct {
 	Projects    []Project
 	MaxParallel int      // agent.max_parallel
+	PreferPlan  bool     // agent.prefer_plan
 	Ignored     []string // the YAML keys of the changed sections other than projects, in file order
 }
 
 // Watcher notices edits of the configuration file, so that a running agent or inbox service can take new projects
-// without a restart. Only projects and agent.max_parallel are applied; everything else stays as the process started
-// with it.
+// without a restart. Only projects, agent.max_parallel and agent.prefer_plan are applied; everything else stays as
+// the process started with it.
 type Watcher struct {
 	path    string
 	running Config // the configuration the process started with, without its projects
@@ -71,15 +72,16 @@ func (w *Watcher) Check() (*Change, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Change{Projects: c.Projects, MaxParallel: c.Agent.MaxParallel, Ignored: w.changedSections(c)}, nil
+	return &Change{Projects: c.Projects, MaxParallel: c.Agent.MaxParallel, PreferPlan: c.Agent.PreferPlan, Ignored: w.changedSections(c)}, nil
 }
 
 // changedSections names the top-level sections other than projects in which c differs from the running one, leaving
-// agent.max_parallel out.
+// agent.max_parallel and agent.prefer_plan out.
 func (w *Watcher) changedSections(c *Config) []string {
 	var out []string
 	next := *c
 	next.Agent.MaxParallel = w.running.Agent.MaxParallel
+	next.Agent.PreferPlan = w.running.Agent.PreferPlan
 	a, b := reflect.ValueOf(w.running), reflect.ValueOf(next)
 	t := a.Type()
 	for i := range t.NumField() {
@@ -114,7 +116,7 @@ func (w *Watcher) Run(ctx context.Context, log io.Writer, apply func(*Change)) {
 			continue
 		}
 		if len(ch.Ignored) > 0 {
-			fmt.Fprintf(log, "config: %s changed; restart to apply them (only projects and agent.max_parallel are read again)\n", strings.Join(ch.Ignored, ", "))
+			fmt.Fprintf(log, "config: %s changed; restart to apply them (only projects, agent.max_parallel and agent.prefer_plan are read again)\n", strings.Join(ch.Ignored, ", "))
 		}
 		apply(ch)
 	}

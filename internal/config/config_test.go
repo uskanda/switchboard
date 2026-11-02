@@ -95,6 +95,23 @@ func TestUnknownKeyIsNamed(t *testing.T) {
 	}
 }
 
+func TestPreferPlanDefaultsToFalse(t *testing.T) {
+	c, err := Load(write(t, valid))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Agent.PreferPlan {
+		t.Error("agent.prefer_plan is on by default")
+	}
+	c, err = Load(write(t, valid+"agent:\n  prefer_plan: true\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.Agent.PreferPlan {
+		t.Error("agent.prefer_plan: true was not read")
+	}
+}
+
 func TestTypeMismatchFails(t *testing.T) {
 	_, err := Load(write(t, valid+"agent:\n  max_parallel: many\n"))
 	if err == nil || !strings.Contains(err.Error(), "max_parallel") {
