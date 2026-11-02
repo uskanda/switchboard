@@ -10,12 +10,14 @@ import (
 	"time"
 )
 
-// Item is one waiting, running or queued issue, as switchboard inbox --json lists it. Only waiting issues have a row
-// number (N); a running one has RunningSince and Progress, the last line of its progress comment ("?" without one); a
-// queued one has QueuedSince, and Reason names the limit reached (max-parallel or project-max-parallel).
+// Item is one waiting, done, running or queued issue, as switchboard inbox --json lists it. Waiting and done issues
+// have a row number (N), numbered in this order; an open done issue has DoneSince and ChangeURL, the pull or merge
+// request its done post names ("" without one); a running one has RunningSince and Progress, the last line of its
+// progress comment ("?" without one); a queued one has QueuedSince, and Reason names the limit reached (max-parallel
+// or project-max-parallel).
 type Item struct {
 	N            int        `json:"n,omitempty"`
-	State        string     `json:"state"` // waiting, running or queued
+	State        string     `json:"state"` // waiting, done, running or queued
 	Ref          string     `json:"ref"`
 	Project      string     `json:"project"`
 	Number       int        `json:"number"`
@@ -28,6 +30,8 @@ type Item struct {
 	RunningSince *time.Time `json:"running_since,omitempty"`
 	Progress     string     `json:"progress,omitempty"`
 	QueuedSince  *time.Time `json:"queued_since,omitempty"`
+	DoneSince    *time.Time `json:"done_since,omitempty"`
+	ChangeURL    string     `json:"change_url,omitempty"`
 	// UpdatedAt and Notes are the forge's update time and count of people's comments (GitLab's user_notes_count, 0
 	// on GitHub): a page watching one issue reads it again when either moves.
 	UpdatedAt *time.Time `json:"updated_at"`
@@ -65,12 +69,14 @@ const EventInbox = "inbox"
 // the refused operations, with what its marker says. While the issue runs, State is "running" and Post is the
 // progress comment of the run (the claim before there is one); a reply to it is refused as not waiting. While the
 // issue waits for a slot, State is "queued" and Since is when it was queued; Post is then the last wait's post while
-// the issue still waits for a reply (which is still taken), else the queued comment.
+// the issue still waits for a reply (which is still taken), else the queued comment. Done is set on an open done
+// issue, which takes a reply as a waiting one does (ADR-042).
 type Detail struct {
 	Ref     string     `json:"ref"`
 	Title   string     `json:"title"`
 	URL     string     `json:"url"`
 	Waiting bool       `json:"waiting"`
+	Done    bool       `json:"done"`
 	Host    string     `json:"host"`
 	State   string     `json:"state"`
 	Reason  string     `json:"reason"`

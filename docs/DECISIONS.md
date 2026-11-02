@@ -180,3 +180,10 @@
 - 決定：GitHubのエージェントのトークンに、`Actions: Read` と `Commit statuses: Read` を足す。どちらも読み取りだけである。足さないうちは、エージェントはCIを見張らず、`switchboard doctor` が警告する。GitLabは今の `api` スコープで足りる
 - 決定：中継のイベントの種別は増やさない。GitHubのwebhookは中継に届かない（ADR-007）ので、CIの結果はどちらのフォージでもポーリングで知る
 - 理由：PRができた後のCIの失敗は、人がログを読んで返信するまで止まっていた。直す実行の対象は、既に信頼済みの人が着手させたissueと、エージェント自身がpushしたコミットに限る。CIのログは非信頼のデータとして渡し、許可するツールはnon-fast-forwardの直しの `git merge` だけ増やす。保護パスの検査と、PRがdraftであることも変わらない。grillingの記録は `handle-push-and-ci-failures` の第1ラウンドQ2〜Q5、第3ラウンドQ15
+
+## ADR-042 doneのissueをcloseまで受信箱に残し、信頼済みのコメントで再開する（採用、2026-11-01）
+- 決定：openのまま `agent:done` のissueは、closeされるまで受信箱の「完了（close待ち）」の節に出す。エージェントの最新のdoneの投稿より後に信頼済みのコメントが付けば、waitingと同じ規則で再開し、runningに移す。受信箱からの返答も、waitingとdoneの両方で受け付ける。GitLabでは、doneのissueのコメント数も見る
+- 決定：doneで終える実行は、pushの後にissueのブランチからbaseへの開いたPR/MRを探し、あればそのURLを使う（`reuse-open-change-request` の仕組み）。そのときdoneの投稿には「PRを更新しました」と書く。closeやmergeの済んだものは使わない
+- 決定：pushはforceなしのまま変えない。baseとの衝突は `git merge origin/<base>` で解消させ、rebase、amend、履歴の書き換えはさせない。実装する実行の許可ツールに `git merge` を足す。ADR-041がpushの直しに限った `git merge` は、これで実装する実行のすべてに広がる
+- 決定：計画を先に立てるモードで承認済みの計画を実装したissueは、doneから再開しても、承認された計画の実装（approvedRun）として動かす。範囲を超える頼みは `agent:plan` を付け直して計画から立て直す
+- 理由：作ったPR/MRに問題やコンフリクトがあれば、doneの後もやりとりが要る。表示だけ残しても、返答で動かなければ目的を果たせない。PR/MRの作成の失敗（GitHubの422、GitLabの409）から既存のURLを読み取る形は、誤りの本文の形に頼る。force pushを入れると、人間がPRのブランチに積んだコミットを消すおそれがあり、PRは最後にsquash mergeすれば履歴も気にならない。承認した計画の範囲に収まる直しで、毎回承認を挟むと遅い（issue `gh:uskanda/switchboard` #53のQ1〜Q7）

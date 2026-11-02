@@ -375,10 +375,10 @@ func (a *Agent) pollProject(ctx context.Context, p config.Project) []error {
 	return errs
 }
 
-// pollReplies evaluates the waiting issues of a GitLab project whose comment count changed. GitLab does not move an
-// issue's update time for a new comment (V22), so UpdatedIssues alone misses replies.
+// pollReplies evaluates the waiting and done issues of a GitLab project whose comment count changed. GitLab does not
+// move an issue's update time for a new comment (V22), so UpdatedIssues alone misses replies.
 func (a *Agent) pollReplies(ctx context.Context, p config.Project, f forge.Forge) []error {
-	waiting, err := f.SearchOpenIssuesWithLabel(ctx, p.FullName(), a.Config.Labels.Waiting)
+	waiting, err := f.SearchOpenIssuesWithLabel(ctx, p.FullName(), a.Config.Labels.Waiting, a.Config.Labels.Done)
 	if err != nil {
 		return []error{fmt.Errorf("%s: %w", p.Ref, err)}
 	}
@@ -509,7 +509,7 @@ func (a *Agent) evaluateOnce(ctx context.Context, p config.Project, s forge.Issu
 		a.Audit.Log("labels.normalized", map[string]any{"issue": s.Ref.String(), "found": s.Labels, "kept": labels.StateOf(fixed, n)})
 		st = labels.StateOf(fixed, n)
 	}
-	if !labels.IsStart(st, n) && st != n.Waiting {
+	if !labels.IsStart(st, n) && st != n.Waiting && st != n.Done {
 		a.leaveQueue(ctx, s.Ref)
 		return nil
 	}
@@ -607,7 +607,7 @@ func (a *Agent) decide(ctx context.Context, p config.Project, ref forge.IssueRef
 		if !j.ReadyLabel(ref, actor) {
 			return nil, nil
 		}
-	case st == n.Waiting:
+	case st == n.Waiting, st == n.Done:
 	default:
 		return nil, nil
 	}
@@ -636,7 +636,7 @@ func (a *Agent) decide(ctx context.Context, p config.Project, ref forge.IssueRef
 		}
 	}
 	pl.classify(a.Config.Plan.ApproveWord)
-	if st == n.Waiting && !pl.hasReply() {
+	if (st == n.Waiting || st == n.Done) && !pl.hasReply() {
 		return nil, nil
 	}
 	if !j.Body(is) {
@@ -646,7 +646,8 @@ func (a *Agent) decide(ctx context.Context, p config.Project, ref forge.IssueRef
 }
 
 // hasReply reports whether a trusted comment follows the comment acknowledged by the agent's latest post, and that
-// post is a question (the issue is waiting because the agent made it wait).
+// post is a question (the issue is waiting because the agent made it wait) or a done (the issue stays open for more
+// work until it is closed, ADR-042).
 func (pl *plan) hasReply() bool {
 	var m *marker.Marker
 	for i := len(pl.comments) - 1; i >= 0 && m == nil; i-- {
@@ -656,7 +657,7 @@ func (pl *plan) hasReply() bool {
 			}
 		}
 	}
-	if m == nil || m.State != "waiting" {
+	if m == nil || (m.State != "waiting" && m.State != "done") {
 		return false
 	}
 	at := -1
@@ -759,20 +760,20 @@ func (a *Agent) launch(ctx context.Context, pl *plan) error {
 	return nil
 }
 
-// afterRun starts what the end of a run makes ready: the next run of a waiting issue that got a reply meanwhile
-// (ADR-016), then the queued issues. It runs in turn with the polls, so that every launch is serialized with them:
-// a poll never sees an issue that is active but not yet labeled running (#25).
+// afterRun starts what the end of a run makes ready: the next run of a waiting or done issue that got a reply
+// meanwhile (ADR-016, ADR-042), then the queued issues. It runs in turn with the polls, so that every launch is
+// serialized with them: a poll never sees an issue that is active but not yet labeled running (#25).
 func (a *Agent) afterRun(p config.Project, ref forge.IssueRef, state string) {
 	a.pollMu.Lock()
 	defer a.pollMu.Unlock()
-	if state == "waiting" {
+	if state == "waiting" || state == "done" {
 		a.resume(p, ref)
 	}
 	a.drain(a.ctx)
 	a.retune() // a queued issue that failed to start is evaluated again within poll_interval
 }
 
-// resume starts the next run of an issue just made waiting, when a reply already arrived. A project removed from the
+// resume starts the next run of an issue just made waiting or done, when a reply already arrived. A project removed from the
 // configuration starts no new run.
 func (a *Agent) resume(p config.Project, ref forge.IssueRef) {
 	if !a.handles(p) {

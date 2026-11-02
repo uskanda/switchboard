@@ -15,26 +15,13 @@ import (
 
 func TestSettingsNeverAllowRebaseOrPush(t *testing.T) {
 	for name, s := range map[string][]string{
-		"implement": settings("make verify", "").Deny,
-		"fix ci":    settings("make verify", "ci").Deny,
-		"fix push":  settings("make verify", "push").Deny,
+		"implement": settings("make verify").Deny,
 		"plan":      planSettings().Deny,
 	} {
 		for _, d := range []string{"Bash(git rebase)", "Bash(git rebase *)", "Bash(git push)", "Bash(git push *)"} {
 			if !slices.Contains(s, d) {
 				t.Errorf("%s: deny lacks %s", name, d)
 			}
-		}
-	}
-}
-
-func TestOnlyAPushFixMayMerge(t *testing.T) {
-	if !slices.Contains(settings("", "push").Allow, "Bash(git merge *)") {
-		t.Error("a push fix run must be allowed to merge")
-	}
-	for _, cause := range []string{"", "ci"} {
-		if s := settings("", cause); slices.Contains(s.Allow, "Bash(git merge *)") || slices.Contains(s.Allow, "Bash(git merge)") {
-			t.Errorf("settings(%q) allows git merge", cause)
 		}
 	}
 }

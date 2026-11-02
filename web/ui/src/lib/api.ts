@@ -2,10 +2,10 @@
 // package inboxapi.
 
 export type Item = {
-  /** The row number; only a waiting issue has one. */
+  /** The row number; only a waiting or done issue has one. */
   n?: number;
-  /** waiting, running or queued; a back end older than the running list leaves it out, and its items all wait. */
-  state?: "waiting" | "running" | "queued";
+  /** waiting, done, running or queued; a back end older than the running list leaves it out, and its items all wait. */
+  state?: "waiting" | "done" | "running" | "queued";
   ref: string;
   project: string;
   number: number;
@@ -20,6 +20,9 @@ export type Item = {
   progress?: string;
   /** When the issue was queued for a free slot; reason then names the limit reached. */
   queued_since?: string | null;
+  /** When the agent finished an issue still open (it waits to be closed), and the pull or merge request it names. */
+  done_since?: string | null;
+  change_url?: string;
   /** The forge's update time and count of people's comments (GitLab's; 0 on GitHub): a move in either means the issue changed. */
   updated_at?: string | null;
   notes?: number;
@@ -27,6 +30,7 @@ export type Item = {
 
 export const isRunning = (it: Item) => it.state === "running";
 export const isQueued = (it: Item) => it.state === "queued";
+export const isDone = (it: Item) => it.state === "done";
 
 /** queueText says which limit a queued issue waits on. */
 export const queueText = (reason: string) =>
@@ -49,6 +53,8 @@ export type Detail = {
   title: string;
   url: string;
   waiting: boolean;
+  /** Open and done: it takes a reply as a waiting issue does, until it is closed. A back end older than this leaves it out. */
+  done?: boolean;
   host: string;
   state: string;
   reason: string;

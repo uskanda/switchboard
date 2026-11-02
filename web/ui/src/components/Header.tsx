@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { isQueued, isRunning, type Inbox } from "@/lib/api";
+import { isDone, isQueued, isRunning, type Inbox } from "@/lib/api";
 import { useInbox, type Live } from "@/lib/inbox";
 
 const liveText: Record<Live, string> = {
@@ -21,15 +21,17 @@ function statusText(live: Live, inbox: Inbox | null): string {
 }
 
 /**
- * Header is the bar over every page: the name, the counts of waiting and running issues (and of queued ones when there
- * are any), the state of the automatic updates (with how soon a change shows, see statusText), and the settings link.
- * The name links to the list.
+ * Header is the bar over every page: the name, the counts of waiting and running issues (and of queued and done ones
+ * when there are any), the state of the automatic updates (with how soon a change shows, see statusText), and the
+ * settings link. The name links to the list.
  */
 export function Header() {
   const { inbox, live } = useInbox();
   const running = inbox?.items.filter(isRunning).length ?? 0;
   const queued = inbox?.items.filter(isQueued).length ?? 0;
-  const waiting = (inbox?.items.length ?? 0) - running - queued;
+  const done = inbox?.items.filter(isDone).length ?? 0;
+  const waiting = (inbox?.items.length ?? 0) - running - queued - done;
+  const label = `待ち${waiting}件、実行中${running}件${queued > 0 ? `、順番待ち${queued}件` : ""}${done > 0 ? `、完了${done}件` : ""}`;
   return (
     <header className="sticky top-0 z-10 border-b border-outline bg-surface">
       <div className="flex min-h-14 flex-wrap items-center gap-x-lg gap-y-xs px-lg py-sm">
@@ -39,9 +41,10 @@ export function Header() {
           </Link>
         </h1>
         {inbox && (
-          <p className="text-label-md text-muted" aria-label={`待ち${waiting}件、実行中${running}件${queued > 0 ? `、順番待ち${queued}件` : ""}`}>
+          <p className="text-label-md text-muted" aria-label={label}>
             待ち {waiting}・実行中 {running}
             {queued > 0 && `・順番待ち ${queued}`}
+            {done > 0 && `・完了 ${done}`}
           </p>
         )}
         <p aria-live="polite" className="flex items-center gap-xs text-label-md text-muted">

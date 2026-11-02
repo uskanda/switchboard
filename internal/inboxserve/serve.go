@@ -364,7 +364,7 @@ func (s *Server) issue(w http.ResponseWriter, r *http.Request) {
 // detailOf is d as the API's type: the same fields, the comments copied one by one.
 func detailOf(d *inbox.Detail) inboxapi.Detail {
 	out := inboxapi.Detail{
-		Ref: d.Ref, Title: d.Title, URL: d.URL, Waiting: d.Waiting, Host: d.Host, State: d.State, Reason: d.Reason,
+		Ref: d.Ref, Title: d.Title, URL: d.URL, Waiting: d.Waiting, Done: d.Done, Host: d.Host, State: d.State, Reason: d.Reason,
 		Since: d.Since, Post: d.Post, ApproveWord: d.ApproveWord, Author: d.Author, CreatedAt: d.CreatedAt, Body: d.Body,
 		Comments: []inboxapi.Comment{},
 	}
