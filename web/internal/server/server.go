@@ -28,6 +28,7 @@ type Inbox interface {
 	AddProject(ctx context.Context, req inboxapi.AddProjectRequest) (*inboxapi.AddProjectResponse, error)
 	IssueTargets(ctx context.Context) (*inboxapi.IssueTargets, error)
 	CreateIssue(ctx context.Context, req inboxapi.CreateIssueRequest) (*inboxapi.CreateIssueResponse, error)
+	Merge(ctx context.Context, ref, sha string) error
 	Events(ctx context.Context, fn func(*inboxapi.Inbox)) error
 }
 
@@ -75,6 +76,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.answer(w, out, err)
 	case r.URL.Path == "/api/issues" && r.Method == http.MethodPost:
 		s.createIssue(w, r)
+	case r.URL.Path == "/api/merge" && r.Method == http.MethodPost:
+		s.merge(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/"):
 		send(w, http.StatusNotFound, inboxapi.Error{Code: inboxapi.CodeNotFound, Message: "no such endpoint"})
 	case r.Method == http.MethodGet || r.Method == http.MethodHead:
@@ -84,7 +87,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// sameOrigin tells whether a reply, a save, an addition or a new issue comes from the web inbox's own page: a JSON body (a page elsewhere cannot send
+// sameOrigin tells whether a reply, a save, an addition, a new issue or a merge comes from the web inbox's own page: a JSON body (a page elsewhere cannot send
 // one without a preflight, which this server never answers), an Origin of exactly this address, and a Host of
 // exactly this address (a page that rebinds its own name to this address still sends its own name).
 func (s *Server) sameOrigin(r *http.Request) (int, string) {
@@ -178,6 +181,25 @@ func (s *Server) createIssue(w http.ResponseWriter, r *http.Request) {
 	send(w, http.StatusCreated, out)
 }
 
+// merge passes the merge of a done issue's change request on, from the web inbox's own page only. The merge cannot be
+// undone and is made with the inbox token (ADR-043), so it gets the same checks as a reply.
+func (s *Server) merge(w http.ResponseWriter, r *http.Request) {
+	if code, why := s.sameOrigin(r); code != 0 {
+		send(w, code, inboxapi.Error{Code: inboxapi.CodeInvalid, Message: why})
+		return
+	}
+	var req inboxapi.MergeRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
+		send(w, http.StatusBadRequest, inboxapi.Error{Code: inboxapi.CodeInvalid, Message: "the body is not a merge"})
+		return
+	}
+	if err := s.Inbox.Merge(r.Context(), req.Ref, req.SHA); err != nil {
+		s.answer(w, nil, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // events passes the inbox service's listings on to the browser as server-sent events (event inbox, the Inbox as
 // data). When the service cannot be reached, or its stream breaks, it sends event unavailable and ends: the
 // browser's EventSource reconnects after the retry it was given, which it would not do after an error status.
@@ -216,6 +238,9 @@ var status = map[string]int{
 	inboxapi.CodeInvalid:        http.StatusBadRequest,
 	inboxapi.CodeNotFound:       http.StatusNotFound,
 	inboxapi.CodeNotWaiting:     http.StatusConflict,
+	inboxapi.CodeStale:          http.StatusConflict,
+	inboxapi.CodeNotMergeable:   http.StatusConflict,
+	inboxapi.CodeForbidden:      http.StatusForbidden,
 	inboxapi.CodeTooLarge:       http.StatusRequestEntityTooLarge,
 	inboxapi.CodeSecret:         http.StatusUnprocessableEntity,
 	inboxapi.CodeUnknownProject: http.StatusUnprocessableEntity,
