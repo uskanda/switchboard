@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import { Markdown } from "@/components/Markdown";
 import { Card } from "@/components/ui/card";
-import type { Comment, Detail } from "@/lib/api";
+import type { Detail } from "@/lib/api";
+import { shown } from "@/lib/scrollTarget";
 import { cn } from "@/lib/utils";
 
 function when(at: string | null | undefined): string {
@@ -26,25 +27,17 @@ function Byline({ author, at, agent }: { author: string; at: string | null | und
 }
 
 /**
- * shown picks the comments to draw: a claim of a run and a queued comment fold to one line, and of the progress comments only the
- * latest stays. The latest question of the agent is marked to stand out.
- */
-function shown(comments: Comment[]) {
-  const last = (kind: string) => comments.reduce((at, c, i) => (c.agent && c.kind === kind ? i : at), -1);
-  const lastProgress = last("progress");
-  const lastQuestion = last("waiting");
-  return comments
-    .map((c, i) => ({ c, i, folded: c.agent && (c.kind === "running" || c.kind === "queued") ? c.kind : undefined, latest: i === lastQuestion }))
-    .filter(({ c, i }) => !(c.agent && c.kind === "progress" && i !== lastProgress));
-}
-
-/**
- * Thread draws the issue's body and comments, oldest first, as Markdown with raw HTML shown as text. answering, when
- * given, draws the comment at its index in its place: the question comment of a plan, drawn for answering.
+ * Thread draws the issue's body and comments, oldest first, as Markdown with raw HTML shown as text (see shown for
+ * what is drawn). answering, when given, draws the comment at its index in its place: the question comment of a plan,
+ * drawn for answering. Each comment's card carries the comment's index in data-index, for scrolling to it; it stops
+ * below the pinned head of the issue (--header-h and --pane-head-h).
  */
 export function Thread({ detail, answering }: { detail: Detail; answering?: { index: number; node: ReactNode } }) {
   return (
-    <ol className="flex flex-col gap-sm" aria-label="スレッド">
+    <ol
+      className="flex flex-col gap-sm [&>li]:scroll-mt-[calc(var(--header-h,0px)+var(--pane-head-h,0px))] lg:[&>li]:scroll-mt-[var(--pane-head-h,0px)]"
+      aria-label="スレッド"
+    >
       <li>
         <Card className="flex flex-col gap-sm">
           <Byline author={detail.author ?? ""} at={detail.created_at} />
@@ -53,13 +46,13 @@ export function Thread({ detail, answering }: { detail: Detail; answering?: { in
       </li>
       {shown(detail.comments ?? []).map(({ c, i, folded, latest }) =>
         folded ? (
-          <li key={i} className="flex flex-wrap items-center gap-sm px-lg text-label-md text-muted">
+          <li key={i} data-index={i} className="flex flex-wrap items-center gap-sm px-lg text-label-md text-muted">
             <AgentMark />
             <span>{folded === "queued" ? "順番待ちになりました" : "着手しました"}</span>
             <time dateTime={c.created_at}>{when(c.created_at)}</time>
           </li>
         ) : (
-          <li key={i}>
+          <li key={i} data-index={i}>
             <Card className={cn("flex flex-col gap-sm", latest && "border-2 border-primary")} aria-current={latest ? "true" : undefined}>
               <Byline author={c.author} at={c.created_at} agent={c.agent} />
               {answering?.index === i ? answering.node : <Markdown text={c.body} />}
