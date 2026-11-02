@@ -60,14 +60,25 @@ func TestFencesCannotBeClosedByIssueText(t *testing.T) {
 }
 
 func TestSystemPromptStatesTheProtocol(t *testing.T) {
-	s := System("ja")
+	s := System("ja", "main")
 	for _, want := range []string{"waiting", "done", "question", "Japanese", "git push", "commit", "untrusted"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("system prompt lacks %q", want)
 		}
 	}
-	if !strings.Contains(System("en"), "English") {
+	if !strings.Contains(System("en", "main"), "English") {
 		t.Error("the English system prompt does not name the language")
+	}
+}
+
+// A run resumed after done may meet a conflict with the base; it merges, since switchboard pushes without force (Q6).
+func TestSystemPromptsResolveConflictsByMergingTheBase(t *testing.T) {
+	for name, s := range map[string]string{"System": System("en", "develop"), "ApprovedSystem": ApprovedSystem("en", "develop", 1, 2)} {
+		for _, want := range []string{"git merge origin/develop", "Never rebase, amend"} {
+			if !strings.Contains(s, want) {
+				t.Errorf("%s lacks %q", name, want)
+			}
+		}
 	}
 }
 
@@ -105,7 +116,7 @@ func TestPlanSystemPromptAddsTheUsersInstructionsLast(t *testing.T) {
 }
 
 func TestApprovedSystemPromptNamesThePlanAndTheApproval(t *testing.T) {
-	s := ApprovedSystem("en", 41, 57)
+	s := ApprovedSystem("en", "main", 41, 57)
 	for _, want := range []string{"comment 41", "comment 57", "Do not reopen", `status "done"`, "git commit"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("approved system prompt lacks %q", want)
@@ -155,11 +166,12 @@ func TestBuildWithoutFailureHasNoFence(t *testing.T) {
 }
 
 func TestFixSystem(t *testing.T) {
-	ci := FixSystem("en", FixCI)
-	if !strings.Contains(ci, "CI") || strings.Contains(ci, "git merge") {
+	ci := FixSystem("en", "main", FixCI)
+	// Every run resolves a conflict with the base by merging it (ADR-042); only a push fix merges origin's issue branch.
+	if !strings.Contains(ci, "CI") || !strings.Contains(ci, "git merge origin/main") || strings.Contains(ci, "origin/<the current branch>") {
 		t.Errorf("FixSystem(ci) = %s", ci)
 	}
-	push := FixSystem("ja", FixPush)
+	push := FixSystem("ja", "main", FixPush)
 	if !strings.Contains(push, "git merge") || !strings.Contains(push, "Japanese") || !strings.Contains(push, "git rebase") {
 		t.Errorf("FixSystem(push) = %s", push)
 	}

@@ -11,6 +11,7 @@ type texts struct {
 	timeout, interrupted, maxTurns, failed, noDeclaration, prepare, start  string
 	configChanged, verifyFailed, notPushed, pushFailed, prFailed, mrFailed string
 	pr, mr, verified, notVerified, prSummary, prVerification, withheld     string
+	prUpdated, mrUpdated                                                   string // the done line of a reused change request
 	claim, multipleStarts                                                  string
 
 	// A push the agent does not fix: the title, why for each kind, and the heading of git's output.
@@ -61,6 +62,8 @@ var english = texts{
 	mrFailed:      "The branch was pushed, but the merge request could not be opened: %s",
 
 	pr:             "Pull request: %s",
+	prUpdated:      "Pull request updated: %s",
+	mrUpdated:      "Merge request updated: %s",
 	claim:          "Started on host %s.",
 	queuedHost:     "Queued: host %s runs as many issues at once as it may (%d). This issue starts when a run ends.",
 	queuedProject:  "Queued: this project runs as many issues at once as it may (%d). This issue starts when one of its runs ends.",
@@ -134,6 +137,8 @@ var japanese = texts{
 	mrFailed:      "ブランチはpushしましたが、MRを作れませんでした：%s",
 
 	pr:             "PR：%s",
+	prUpdated:      "PRを更新しました：%s",
+	mrUpdated:      "MRを更新しました：%s",
 	claim:          "端末%sで実行を始めます。",
 	queuedHost:     "順番待ちにしました。端末%sで同時に動かせる実行の上限（%d）に達しています。実行が1つ終わると始めます。",
 	queuedProject:  "順番待ちにしました。このプロジェクトで同時に動かせる実行の上限（%d）に達しています。このプロジェクトの実行が1つ終わると始めます。",
