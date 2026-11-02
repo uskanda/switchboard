@@ -25,7 +25,7 @@ type outcome struct {
 	Run     string `json:"run"`
 	Session string `json:"session"`
 	State   string `json:"state"`  // waiting or done
-	Reason  string `json:"reason"` // for waiting: question, permission, error, verify, push, ci
+	Reason  string `json:"reason"` // for waiting: question, permission, error, verify, push, ci, conflict
 	Ack     int64  `json:"ack"`
 	Body    string `json:"body"` // the comment without its marker
 	PR      string `json:"pr,omitempty"`

@@ -1,5 +1,6 @@
 import { Link } from "react-router";
 import { IssueRef } from "@/components/IssueRef";
+import { MergeButton } from "@/components/MergeButton";
 import { NewIssue } from "@/components/NewIssue";
 import { ReasonBadge } from "@/components/ReasonBadge";
 import { Alert } from "@/components/ui/alert";
@@ -9,13 +10,23 @@ import { age, elapsed, isDone, isQueued, isRunning, issuePath, queueText, type I
 import { useInbox } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
 
-/** ChangeLink is the pull or merge request of a done issue, a link of its own beside the issue's. */
+/**
+ * ChangeLink is the pull or merge request of a done issue, a link of its own beside the issue's, with the button that
+ * merges it when the done post names its number and commit. Both stay outside the row's link to the issue.
+ */
 function ChangeLink({ it }: { it: Item }) {
-  if (!isDone(it) || !it.change_url) return null;
+  if (!isDone(it)) return null;
+  const mergeable = !!it.change_number && !!it.change_sha;
+  if (!it.change_url && !mergeable) return null;
   return (
-    <a href={it.change_url} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center break-all font-mono text-mono-sm text-muted underline">
-      {it.change_url}
-    </a>
+    <div className="flex flex-wrap items-center gap-sm">
+      {it.change_url && (
+        <a href={it.change_url} target="_blank" rel="noreferrer" className="inline-flex min-h-11 min-w-0 items-center break-all font-mono text-mono-sm text-muted underline">
+          {it.change_url}
+        </a>
+      )}
+      {mergeable && <MergeButton issueRef={it.ref} number={it.change_number!} sha={it.change_sha!} url={it.change_url} />}
+    </div>
   );
 }
 
