@@ -110,7 +110,7 @@ function Items({ items, timeHead, selected }: { items: Item[]; timeHead: string;
               <Link
                 to={issuePath(it.ref)}
                 aria-current={current ? "page" : undefined}
-                className="block rounded-md focus-visible:outline-2 focus-visible:outline-primary"
+                className="block rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
               >
                 <Card className={cn("flex flex-col gap-xs", current && "border-2 border-primary")}>
                   <IssueRef value={it.ref} className="self-start" />
