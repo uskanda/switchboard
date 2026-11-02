@@ -32,10 +32,21 @@ func TestInstructionsListsGlobalAndEveryProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Host != "here" || len(got.Items) != 3 {
+	if err := s.Of(instructions.Run).Save("gh:o/r", "Record a change."); err != nil {
+		t.Fatal(err)
+	}
+	got, err = w.c.Instructions(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Host != "here" || len(got.Items) != 6 {
 		t.Fatalf("instructions = %+v", got)
 	}
-	want := []inboxapi.Instruction{{Target: "", Content: ""}, {Target: "gh:o/r", Content: "Mind the API names."}, {Target: "gl:nas/sb", Content: ""}}
+	want := []inboxapi.Instruction{
+		{Target: "", Kind: "plan"}, {Target: "", Kind: "run"},
+		{Target: "gh:o/r", Kind: "plan", Content: "Mind the API names."}, {Target: "gh:o/r", Kind: "run", Content: "Record a change."},
+		{Target: "gl:nas/sb", Kind: "plan"}, {Target: "gl:nas/sb", Kind: "run"},
+	}
 	for i, it := range got.Items {
 		if it != want[i] {
 			t.Errorf("item %d = %+v, want %+v", i, it, want[i])
@@ -45,13 +56,13 @@ func TestInstructionsListsGlobalAndEveryProject(t *testing.T) {
 
 func TestSaveInstructions(t *testing.T) {
 	w, s, ev := withInstructions(t)
-	if err := w.c.SaveInstructions(ctx, "gl:nas/sb", "Ask in Japanese."); err != nil {
+	if err := w.c.SaveInstructions(ctx, inboxapi.SaveInstructionsRequest{Target: "gl:nas/sb", Content: "Ask in Japanese."}); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := s.Read("gl:nas/sb"); got != "Ask in Japanese." {
 		t.Fatalf("file = %q", got)
 	}
-	if err := w.c.SaveInstructions(ctx, "", "Short questions."); err != nil {
+	if err := w.c.SaveInstructions(ctx, inboxapi.SaveInstructionsRequest{Content: "Short questions."}); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := s.Read(instructions.Global); got != "Short questions." {
@@ -72,7 +83,7 @@ func TestSaveInstructionsRefusals(t *testing.T) {
 		{"gh:o/r", "use ghp_" + strings.Repeat("Zx9", 12), inboxapi.ErrSecret},
 		{"gh:someone/other", "x", inboxapi.ErrUnknownProject},
 	} {
-		if err := w.c.SaveInstructions(ctx, c.target, c.content); !errors.Is(err, c.want) {
+		if err := w.c.SaveInstructions(ctx, inboxapi.SaveInstructionsRequest{Target: c.target, Content: c.content}); !errors.Is(err, c.want) {
 			t.Errorf("SaveInstructions(%s, %d bytes) = %v, want %v", c.target, len(c.content), err, c.want)
 		}
 	}
@@ -85,5 +96,21 @@ func TestInstructionsWithoutAStoreAreNotServed(t *testing.T) {
 	w := newWorld(t)
 	if _, err := w.c.Instructions(ctx); !errors.Is(err, inboxapi.ErrNotFound) {
 		t.Fatalf("Instructions = %v", err)
+	}
+}
+
+func TestSaveRunInstructions(t *testing.T) {
+	w, s, _ := withInstructions(t)
+	if err := w.c.SaveInstructions(ctx, inboxapi.SaveInstructionsRequest{Target: "gh:o/r", Kind: "run", Content: "Record a change."}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Of(instructions.Run).Read("gh:o/r"); got != "Record a change." {
+		t.Fatalf("run file = %q", got)
+	}
+	if got, _ := s.Read("gh:o/r"); got != "" {
+		t.Fatalf("the plan file changed: %q", got)
+	}
+	if err := w.c.SaveInstructions(ctx, inboxapi.SaveInstructionsRequest{Target: "gh:o/r", Kind: "build", Content: "x"}); !errors.Is(err, inboxapi.ErrInvalid) {
+		t.Fatalf("an unknown kind = %v, want ErrInvalid", err)
 	}
 }

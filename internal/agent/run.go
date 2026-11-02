@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -87,9 +88,19 @@ func declaration(res *claudecode.Result) (*Declaration, string) {
 }
 
 // settings are what a run may do without asking. A run may merge, to resolve a conflict with the base (ADR-042) or
-// take in origin's issue branch after a refused push; no run may rebase. The deny rules are not a boundary (Phase 0,
-// V5); keeping the forge token away from claude is.
-func settings(verifyCommand string) claudecode.Settings {
+// take in origin's issue branch after a refused push; no run may rebase. extra are the user's added allow rules
+// (agent.allow_tools_extra, then the project's), each taken once; the deny rules still win over them (V42). The deny
+// rules are not a boundary (Phase 0, V5); keeping the forge token away from claude is.
+func settings(verifyCommand string, extra ...[]string) claudecode.Settings {
+	base := baseAllow(verifyCommand)
+	return claudecode.Settings{
+		Allow: append(base, extraAllow(base, extra...)...),
+		Deny:  []string{"Bash(git push)", "Bash(git push *)", "Bash(git rebase)", "Bash(git rebase *)", "Bash(gh)", "Bash(gh *)", "WebFetch"},
+	}
+}
+
+// baseAllow are the allow rules every run that writes files gets.
+func baseAllow(verifyCommand string) []string {
 	allow := []string{"Read", "Edit", "Write", "Glob", "Grep"}
 	for _, c := range []string{"git status", "git diff", "git log", "git add", "git commit", "git merge"} {
 		allow = append(allow, "Bash("+c+")", "Bash("+c+" *)")
@@ -97,10 +108,21 @@ func settings(verifyCommand string) claudecode.Settings {
 	if f := strings.Fields(verifyCommand); len(f) > 0 {
 		allow = append(allow, "Bash("+f[0]+")", "Bash("+f[0]+" *)")
 	}
-	return claudecode.Settings{
-		Allow: allow,
-		Deny:  []string{"Bash(git push)", "Bash(git push *)", "Bash(git rebase)", "Bash(git rebase *)", "Bash(gh)", "Bash(gh *)", "WebFetch"},
+	return allow
+}
+
+// extraAllow returns the rules of extra that settings adds after base, in order: trimmed, each taken once, and none
+// that base already has. It is never nil, so that the audit log records an empty list.
+func extraAllow(base []string, extra ...[]string) []string {
+	added := []string{}
+	for _, rules := range extra {
+		for _, r := range rules {
+			if r = strings.TrimSpace(r); !slices.Contains(base, r) && !slices.Contains(added, r) {
+				added = append(added, r)
+			}
+		}
 	}
+	return added
 }
 
 func (a *Agent) space(pl *plan) *workspace.Space {
@@ -214,17 +236,21 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) *outcome {
 		in.Comments = append(in.Comments, prompt.Comment{Kind: k, ID: c.ID, Author: c.Author.Login, Body: c.Body})
 	}
 	lang, word := a.Config.Comments.Language, a.Config.Plan.ApproveWord
+	base := baseAllow(p.VerifyCommand)
+	added := extraAllow(base, a.Config.Agent.AllowToolsExtra, p.AllowToolsExtra)
 	req := claudecode.Request{
 		Binary: a.Config.Claude.Binary, Dir: dir, RunDir: a.runDir(rec.Run), SessionID: rec.Session,
-		SystemPrompt: prompt.System(lang, p.BaseBranch), Settings: settings(p.VerifyCommand), MaxTurns: a.Config.Agent.MaxTurns,
+		SystemPrompt: prompt.System(lang, p.BaseBranch), Settings: settings(p.VerifyCommand, a.Config.Agent.AllowToolsExtra, p.AllowToolsExtra), MaxTurns: a.Config.Agent.MaxTurns,
 		Schema: Schema, Auth: a.Config.Claude.Auth, Timeout: a.Config.Agent.Timeout,
 		IntGrace: a.IntGrace, TermGrace: a.TermGrace, Env: a.Env,
 	}
 	head := ""
+	var used instructions.Loaded
 	switch pl.kind {
 	case planRun:
 		in.Task = prompt.PlanTask
-		req.SystemPrompt, req.Settings, req.Schema = prompt.PlanSystem(lang, word, a.planInstructions(p)), planSettings(), PlanSchema
+		used, added = a.planInstructions(p), []string{}
+		req.SystemPrompt, req.Settings, req.Schema = prompt.PlanSystem(lang, word, used.Text), planSettings(), PlanSchema
 		if head, err = sp.Head(ctx); err != nil {
 			return o.fail(fmt.Sprintf(a.msg.prepare, err))
 		}
@@ -234,7 +260,12 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) *outcome {
 		in.Task, in.Failure = prompt.FixTask, pl.fix.report
 		req.SystemPrompt = prompt.FixSystem(lang, p.BaseBranch, pl.fix.cause)
 	}
+	if pl.kind != planRun {
+		used = a.runInstructions(p)
+		req.SystemPrompt = prompt.WithUserInstructions(req.SystemPrompt, used.Text)
+	}
 	req.Prompt = prompt.Build(in)
+	a.logStarted(is.Ref, rec.Run, pl, added, used)
 	stopProgress := a.followProgress(ctx, is.Ref, rec, filepath.Join(a.runDir(rec.Run), "stream.jsonl"))
 	res, err := claudecode.Run(ctx, req)
 	stopProgress()
@@ -408,9 +439,32 @@ func (a *Agent) planOutcome(res *claudecode.Result, pl *plan, o *outcome, discar
 
 // planInstructions returns the user's additional instructions for the plan runs of p, read again for every run.
 // A configuration that was not loaded from a file has none.
-func (a *Agent) planInstructions(p config.Project) string {
+func (a *Agent) planInstructions(p config.Project) instructions.Loaded {
 	if a.Config.Path == "" {
-		return ""
+		return instructions.Loaded{}
 	}
-	return instructions.For(a.Config.Path, nil).Plan(p.Ref)
+	return instructions.For(a.Config.Path, nil).Load(instructions.Plan, p.Ref)
+}
+
+// runInstructions returns the user's additional instructions for the runs of p that write files, read again for every
+// run. A configuration that was not loaded from a file has none.
+func (a *Agent) runInstructions(p config.Project) instructions.Loaded {
+	if a.Config.Path == "" {
+		return instructions.Loaded{}
+	}
+	return instructions.For(a.Config.Path, nil).Load(instructions.Run, p.Ref)
+}
+
+// logStarted records, as claude starts, the allow rules the run added and the hashes of the instruction files it got,
+// so that the audit log tells which permissions and which saved version of the instructions a run used. The text of
+// the instructions is never logged, as for instructions.saved.
+func (a *Agent) logStarted(ref forge.IssueRef, run string, pl *plan, added []string, used instructions.Loaded) {
+	fields := map[string]any{
+		"issue": ref.String(), "run": run, "kind": pl.kind.String(), "allow": added,
+		"instructions": map[string]string{"global": used.Global, "project": used.Project},
+	}
+	if pl.kind == fixRun {
+		fields["cause"] = pl.fix.cause
+	}
+	a.Audit.Log("run.started", fields)
 }

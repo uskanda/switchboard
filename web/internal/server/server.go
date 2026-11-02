@@ -23,7 +23,7 @@ type Inbox interface {
 	Issue(ctx context.Context, ref string) (*inboxapi.Detail, error)
 	Reply(ctx context.Context, ref, text string, force bool) error
 	Instructions(ctx context.Context) (*inboxapi.Instructions, error)
-	SaveInstructions(ctx context.Context, target, content string) error
+	SaveInstructions(ctx context.Context, req inboxapi.SaveInstructionsRequest) error
 	Projects(ctx context.Context) (*inboxapi.Projects, error)
 	AddProject(ctx context.Context, req inboxapi.AddProjectRequest) (*inboxapi.AddProjectResponse, error)
 	IssueTargets(ctx context.Context) (*inboxapi.IssueTargets, error)
@@ -118,7 +118,8 @@ func (s *Server) reply(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// saveInstructions passes a save of the plan runs' instructions on, from the web inbox's own page only.
+// saveInstructions passes a save of instructions (of the plan runs or the runs that write files) on, from the web
+// inbox's own page only.
 func (s *Server) saveInstructions(w http.ResponseWriter, r *http.Request) {
 	if code, why := s.sameOrigin(r); code != 0 {
 		send(w, code, inboxapi.Error{Code: inboxapi.CodeInvalid, Message: why})
@@ -129,7 +130,7 @@ func (s *Server) saveInstructions(w http.ResponseWriter, r *http.Request) {
 		send(w, http.StatusBadRequest, inboxapi.Error{Code: inboxapi.CodeInvalid, Message: "the body is not a save of instructions"})
 		return
 	}
-	if err := s.Inbox.SaveInstructions(r.Context(), req.Target, req.Content); err != nil {
+	if err := s.Inbox.SaveInstructions(r.Context(), req); err != nil {
 		s.answer(w, nil, err)
 		return
 	}

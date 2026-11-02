@@ -133,3 +133,110 @@ func TestPlanJoinsGlobalThenProject(t *testing.T) {
 		t.Fatalf("Plan of another project = %q", got)
 	}
 }
+
+func TestRunInstructionsLiveBesideThePlanOnes(t *testing.T) {
+	s := Store{Dir: "/c/instructions"}.Of(Run)
+	for target, want := range map[string]string{
+		Global:                         "/c/instructions/run.md",
+		"gh:uskanda/switchboard":       "/c/instructions/gh/uskanda/switchboard/run.md",
+		"gl:nas/tools/switchboard-sbx": "/c/instructions/gl/nas/tools/switchboard-sbx/run.md",
+	} {
+		got, err := s.Path(target)
+		if err != nil || got != want {
+			t.Errorf("run Path(%q) = %q, %v; want %q", target, got, err, want)
+		}
+	}
+	if got, _ := (Store{Dir: "/c/instructions"}).Of(Plan).Path(Global); got != "/c/instructions/plan.md" {
+		t.Errorf("plan Path = %q", got)
+	}
+}
+
+func TestRunInstructionsAreSavedAndJoinedApart(t *testing.T) {
+	s, a := store(t)
+	run := s.Of(Run)
+	if err := run.Save("gh:alice/sandbox", "Record an OpenSpec change.\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Save("gh:alice/sandbox", "Ask first.\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := run.Save(Global, "Run the checks.\n"); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Run("gh:alice/sandbox"); got != "Run the checks.\n\nRecord an OpenSpec change." {
+		t.Errorf("Run = %q", got)
+	}
+	if got := s.Plan("gh:alice/sandbox"); got != "Ask first." {
+		t.Errorf("Plan = %q, want the plan file only", got)
+	}
+	p, _ := run.Path("gh:alice/sandbox")
+	if fi, err := os.Stat(p); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Fatalf("run file mode = %v, %v", fi, err)
+	}
+	kinds := []any{}
+	for _, e := range a.events {
+		kinds = append(kinds, e["kind"])
+	}
+	if len(kinds) != 3 || kinds[0] != "run" || kinds[1] != "plan" || kinds[2] != "run" {
+		t.Errorf("audit kinds = %v, want run, plan, run", kinds)
+	}
+}
+
+func TestLoadHashesEachFileAsSaveRecordsIt(t *testing.T) {
+	s, a := store(t)
+	if got := s.Load(Run, "gh:alice/sandbox"); got != (Loaded{}) {
+		t.Fatalf("Load without files = %+v", got)
+	}
+	run := s.Of(Run)
+	if err := run.Save(Global, "  \n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := run.Save("gh:alice/sandbox", "Record an OpenSpec change.\n"); err != nil {
+		t.Fatal(err)
+	}
+	got := s.Load(Run, "gh:alice/sandbox")
+	if got.Global != "" || got.Project != a.events[1]["sha256"] || got.Text != s.Run("gh:alice/sandbox") {
+		t.Fatalf("Load = %+v, want no global hash and the project hash %v", got, a.events[1]["sha256"])
+	}
+	if err := run.Save(Global, "Run the checks.\n"); err != nil {
+		t.Fatal(err)
+	}
+	got = s.Load(Run, "gh:alice/sandbox")
+	if got.Global != a.events[2]["sha256"] || got.Project != a.events[1]["sha256"] || got.Text != "Run the checks.\n\nRecord an OpenSpec change." {
+		t.Fatalf("Load = %+v", got)
+	}
+	if p := s.Load(Plan, "gh:alice/sandbox"); p != (Loaded{}) {
+		t.Fatalf("Load of the plan kind = %+v, want nothing", p)
+	}
+	if err := s.Save(Global, "Ask first.\n"); err != nil {
+		t.Fatal(err)
+	}
+	if p := s.Load(Plan, "gh:alice/sandbox"); p.Global != a.events[3]["sha256"] || p.Text != s.Plan("gh:alice/sandbox") || p.Text != "Ask first." {
+		t.Fatalf("Load of the plan kind = %+v", p)
+	}
+}
+
+func TestRunInstructionsRefuseSecrets(t *testing.T) {
+	s, _ := store(t)
+	run := s.Of(Run)
+	if err := run.Save(Global, "old\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := run.Save(Global, "token glpat-"+strings.Repeat("Ab1", 8)); !errors.Is(err, ErrSecret) {
+		t.Fatalf("Save of a token = %v", err)
+	}
+	if got, _ := run.Read(Global); got != "old\n" {
+		t.Fatalf("a refused save changed the file: %q", got)
+	}
+}
+
+func TestParseKind(t *testing.T) {
+	for in, want := range map[string]Kind{"": Plan, "plan": Plan, "run": Run} {
+		if got, err := ParseKind(in); err != nil || got != want {
+			t.Errorf("ParseKind(%q) = %q, %v", in, got, err)
+		}
+	}
+	if _, err := ParseKind("build"); err == nil {
+		t.Error("ParseKind(build) is accepted")
+	}
+}

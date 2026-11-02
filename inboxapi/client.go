@@ -64,16 +64,16 @@ func (c *Client) Merge(ctx context.Context, ref, sha string) error {
 	return c.do(ctx, http.MethodPost, "/v1/merge", MergeRequest{Ref: ref, SHA: sha}, nil)
 }
 
-// Instructions returns the additional instructions of the plan runs, as the inbox service's machine has them.
+// Instructions returns the additional instructions of both kinds, as the inbox service's machine has them.
 func (c *Client) Instructions(ctx context.Context) (*Instructions, error) {
 	var out Instructions
 	return &out, c.do(ctx, http.MethodGet, "/v1/instructions", nil, &out)
 }
 
-// SaveInstructions replaces the instructions of target ("" for every project) with content. It is refused with
-// ErrTooLarge, ErrSecret or ErrUnknownProject.
-func (c *Client) SaveInstructions(ctx context.Context, target, content string) error {
-	return c.do(ctx, http.MethodPut, "/v1/instructions", SaveInstructionsRequest{Target: target, Content: content}, nil)
+// SaveInstructions replaces the instructions of req's target ("" for every project) and kind with its content. It is
+// refused with ErrTooLarge, ErrSecret, ErrUnknownProject, or ErrInvalid for an unknown kind.
+func (c *Client) SaveInstructions(ctx context.Context, req SaveInstructionsRequest) error {
+	return c.do(ctx, http.MethodPut, "/v1/instructions", req, nil)
 }
 
 // Projects returns the projects of the inbox service's machine and their state.

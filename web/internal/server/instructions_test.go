@@ -16,11 +16,11 @@ func (f *fakeInbox) Instructions(context.Context) (*inboxapi.Instructions, error
 	return &inboxapi.Instructions{Host: "ubuntu-a", Items: []inboxapi.Instruction{{Target: ""}, {Target: "gh:o/r", Content: "Mind the API."}}}, nil
 }
 
-func (f *fakeInbox) SaveInstructions(_ context.Context, target, content string) error {
+func (f *fakeInbox) SaveInstructions(_ context.Context, req inboxapi.SaveInstructionsRequest) error {
 	if f.err != nil {
 		return f.err
 	}
-	f.saved = append(f.saved, inboxapi.SaveInstructionsRequest{Target: target, Content: content})
+	f.saved = append(f.saved, req)
 	return nil
 }
 
@@ -36,6 +36,14 @@ func TestInstructionsAreSaved(t *testing.T) {
 	f := &fakeInbox{}
 	w := do(newServer(f), "POST", "/api/instructions", `{"target":"gh:o/r","content":"Ask in Japanese."}`, good)
 	if w.Code != http.StatusNoContent || len(f.saved) != 1 || f.saved[0].Target != "gh:o/r" || f.saved[0].Content != "Ask in Japanese." {
+		t.Fatalf("status = %d, saved = %+v", w.Code, f.saved)
+	}
+}
+
+func TestTheKindOfASaveIsPassedOn(t *testing.T) {
+	f := &fakeInbox{}
+	w := do(newServer(f), "POST", "/api/instructions", `{"target":"gh:o/r","kind":"run","content":"Record a change."}`, good)
+	if w.Code != http.StatusNoContent || len(f.saved) != 1 || f.saved[0].Kind != "run" {
 		t.Fatalf("status = %d, saved = %+v", w.Code, f.saved)
 	}
 }

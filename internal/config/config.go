@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -109,6 +110,9 @@ type Agent struct {
 	// means DefaultFixAttempts, 0 no automatic fixes.
 	MaxFixAttempts *int        `yaml:"max_fix_attempts"`
 	Relay          *AgentRelay `yaml:"relay"`
+	// AllowToolsExtra are Claude Code permission rules added to the allow rules of every run that writes files, in
+	// every project.
+	AllowToolsExtra []string `yaml:"allow_tools_extra"`
 }
 
 // DefaultFixAttempts is agent.max_fix_attempts when unset.
@@ -161,6 +165,9 @@ type Project struct {
 	ProtectedPathsExtra []string `yaml:"protected_paths_extra"`
 	// PlanFirst makes the ready label start with a plan that waits for approval before any change is made.
 	PlanFirst bool `yaml:"plan_first"`
+	// AllowToolsExtra are Claude Code permission rules added, after agent.allow_tools_extra, to the allow rules of
+	// this project's runs that write files.
+	AllowToolsExtra []string `yaml:"allow_tools_extra"`
 	// MaxParallel caps the runs of this project at once, under agent.max_parallel; nil leaves only that cap.
 	MaxParallel *int `yaml:"max_parallel"`
 	// TokenRef and AgentIdentity, set together, replace the forge's agent token and identity for this project, as
@@ -435,6 +442,7 @@ func (c *Config) validate() error {
 	if n := c.Agent.MaxFixAttempts; n != nil && *n < 0 {
 		errs = append(errs, fmt.Errorf("agent.max_fix_attempts must be at least 0, got %d", *n))
 	}
+	errs = append(errs, checkAllowTools("agent.allow_tools_extra", c.Agent.AllowToolsExtra)...)
 	if len(c.Projects) == 0 {
 		errs = append(errs, errors.New("projects needs at least one project"))
 	}
@@ -450,6 +458,7 @@ func (c *Config) validate() error {
 		if err := p.parseRef(); err != nil {
 			errs = append(errs, fmt.Errorf("%s.ref: %w", key, err))
 		}
+		errs = append(errs, checkAllowTools(key+".allow_tools_extra", p.AllowToolsExtra)...)
 		if p.MaxParallel != nil && *p.MaxParallel < 1 {
 			errs = append(errs, fmt.Errorf("%s.max_parallel must be at least 1, got %d", key, *p.MaxParallel))
 		}
@@ -575,4 +584,44 @@ func (c *Config) ProjectsFor(host string) []Project {
 		}
 	}
 	return out
+}
+
+// deniedCommands are the commands every run refuses; an extra allow rule may not name them.
+var deniedCommands = [][]string{{"git", "push"}, {"git", "rebase"}, {"gh"}}
+
+// checkAllowTools refuses the extra allow rules under key that are blank, allow every command, or name what every
+// run refuses. A broader rule such as Bash(git *) passes: the deny rules of the run still take precedence over it.
+func checkAllowTools(key string, rules []string) []error {
+	var errs []error
+	for _, r := range rules {
+		rule := strings.TrimSpace(r)
+		bad := ""
+		switch {
+		case rule == "":
+			bad = "is blank"
+		case strings.HasPrefix(rule, "WebFetch"):
+			bad = "allows WebFetch, which every run refuses"
+		case rule == "Bash":
+			bad = "allows every command"
+		case strings.HasPrefix(rule, "Bash(") && strings.HasSuffix(rule, ")"):
+			cmd := strings.TrimSuffix(strings.TrimPrefix(rule, "Bash("), ")")
+			for _, suffix := range []string{":*", " *", "*"} {
+				cmd = strings.TrimSuffix(cmd, suffix)
+			}
+			words := strings.Fields(cmd)
+			if len(words) == 0 {
+				bad = "allows every command"
+				break
+			}
+			for _, d := range deniedCommands {
+				if len(words) >= len(d) && slices.Equal(words[:len(d)], d) {
+					bad = fmt.Sprintf("allows %s, which every run refuses", strings.Join(d, " "))
+				}
+			}
+		}
+		if bad != "" {
+			errs = append(errs, fmt.Errorf("%s: %q %s", key, r, bad))
+		}
+	}
+	return errs
 }
