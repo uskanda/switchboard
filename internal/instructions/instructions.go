@@ -121,19 +121,44 @@ func (s Store) Read(target string) (string, error) {
 
 // Plan returns what a plan run of project gets: the global plan instructions, then the project's, each left out when
 // it is blank or cannot be read.
-func (s Store) Plan(project string) string { return s.Of(Plan).joined(project) }
+func (s Store) Plan(project string) string { return s.Load(Plan, project).Text }
 
 // Run returns what a run that writes files in project gets, joined as Plan joins.
-func (s Store) Run(project string) string { return s.Of(Run).joined(project) }
+func (s Store) Run(project string) string { return s.Load(Run, project).Text }
 
-func (s Store) joined(project string) string {
+// Loaded is one reading of the instructions a run gets: the joined text, and the SHA-256 of each file as Save records
+// it in instructions.saved, "" for a file that is missing, blank or cannot be read.
+type Loaded struct {
+	Text    string
+	Global  string
+	Project string
+}
+
+// Load reads the instructions of kind for a run of project once, so that the text a run gets and the hashes it records
+// come from the same files.
+func (s Store) Load(kind Kind, project string) Loaded {
+	s = s.Of(kind)
+	var l Loaded
 	var parts []string
 	for _, t := range []string{Global, project} {
-		if text, err := s.Read(t); err == nil && strings.TrimSpace(text) != "" {
-			parts = append(parts, strings.TrimSpace(text))
+		text, err := s.Read(t)
+		if err != nil || strings.TrimSpace(text) == "" {
+			continue
+		}
+		parts = append(parts, strings.TrimSpace(text))
+		if t == Global {
+			l.Global = hash(text)
+		} else {
+			l.Project = hash(text)
 		}
 	}
-	return strings.Join(parts, "\n\n")
+	l.Text = strings.Join(parts, "\n\n")
+	return l
+}
+
+func hash(text string) string {
+	sum := sha256.Sum256([]byte(text))
+	return hex.EncodeToString(sum[:])
 }
 
 // Save replaces the instructions of target with text, after the size and secret checks. The file is written in
@@ -172,12 +197,11 @@ func (s Store) Save(target, text string) error {
 		return err
 	}
 	if s.Audit != nil {
-		sum := sha256.Sum256([]byte(text))
 		name := target
 		if name == Global {
 			name = "global"
 		}
-		s.Audit.Log("instructions.saved", map[string]any{"target": name, "kind": string(s.kind()), "sha256": hex.EncodeToString(sum[:])})
+		s.Audit.Log("instructions.saved", map[string]any{"target": name, "kind": string(s.kind()), "sha256": hash(text)})
 	}
 	return nil
 }
