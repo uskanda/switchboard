@@ -29,5 +29,5 @@
 
 ## 5. 記録と仕上げ
 
-- [x] 5.1 `docs/DECISIONS.md` にADR-043を足し、`docs/SECURITY.md` の4章に、人のきっかけ無しに始まる実行として衝突を加える。textlintが通ることを確かめる
+- [x] 5.1 `docs/DECISIONS.md` にADR-044を足し、`docs/SECURITY.md` の4章に、人のきっかけ無しに始まる実行として衝突を加える。textlintが通ることを確かめる
 - [x] 5.2 `make verify` が通ることを確かめる

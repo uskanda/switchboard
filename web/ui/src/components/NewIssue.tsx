@@ -1,6 +1,7 @@
 import { useId, useRef, useState, type FormEvent } from "react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiError, createIssue, getIssueTargets, type IssueTargets, type StartKind } from "@/lib/api";
@@ -102,11 +103,7 @@ export function NewIssue() {
           新規issue
         </Button>
       </div>
-      <dialog
-        ref={dialog}
-        aria-labelledby={`${id}-heading`}
-        className="m-auto max-h-[calc(100dvh-2*var(--spacing-lg))] w-[calc(100%-2*var(--spacing-lg))] max-w-[720px] overflow-y-auto rounded-md border border-outline bg-surface p-lg text-on-surface backdrop:bg-black/40"
-      >
+      <Dialog ref={dialog} aria-labelledby={`${id}-heading`}>
         <form onSubmit={submit} className="flex flex-col gap-md">
           <h2 id={`${id}-heading`} className="text-headline-md font-semibold">
             新規issue
@@ -170,7 +167,7 @@ export function NewIssue() {
             </Button>
           </div>
         </form>
-      </dialog>
+      </Dialog>
     </div>
   );
 }

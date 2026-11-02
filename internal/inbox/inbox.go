@@ -77,6 +77,10 @@ type Item struct {
 	QueuedSince  *time.Time `json:"queued_since,omitempty"`
 	DoneSince    *time.Time `json:"done_since,omitempty"`
 	ChangeURL    string     `json:"change_url,omitempty"`
+	// ChangeNumber and ChangeSHA are the change request and the commit the marker of the latest done post names
+	// (cr and sha); a page merges that commit of that change request, and offers no merge without them.
+	ChangeNumber int    `json:"change_number,omitempty"`
+	ChangeSHA    string `json:"change_sha,omitempty"`
 	// UpdatedAt and Notes are the forge's update time and count of people's comments (GitLab's user_notes_count, 0
 	// on GitHub): a page watching one issue reads it again when either moves.
 	UpdatedAt *time.Time `json:"updated_at"`
@@ -379,6 +383,7 @@ func doneItem(s forge.IssueSummary, comments []forge.Comment, agentID int64) Ite
 		return it
 	}
 	it.Host, it.ChangeURL = orQ(m.Host), ChangeURL(body(c.Body))
+	it.ChangeNumber, it.ChangeSHA = m.CR, m.SHA
 	if !m.At.IsZero() {
 		at := m.At
 		it.DoneSince = &at
@@ -577,6 +582,7 @@ var (
 	ErrInvalid    = errors.New("invalid")     // the request itself is wrong: a malformed ref, an empty reply
 	ErrNotFound   = errors.New("not found")   // the issue is not of a configured project, or has no agent post
 	ErrNotWaiting = errors.New("not waiting") // the issue no longer waits, so the reply was not posted
+	ErrStale      = errors.New("stale")       // the issue or its done post is not what the page showed; nothing was merged
 )
 
 // wrap marks err with kind for errors.Is and keeps its message.
@@ -651,6 +657,10 @@ type Detail struct {
 	Post    string     `json:"post"` // the agent's latest post, without its marker
 	// ApproveWord is the word that approves a plan (plan.approve_word), for a page to say how to approve one.
 	ApproveWord string `json:"approve_word,omitempty"`
+	// ChangeURL, ChangeNumber and ChangeSHA are set on an open done issue, as on its Item.
+	ChangeURL    string `json:"change_url,omitempty"`
+	ChangeNumber int    `json:"change_number,omitempty"`
+	ChangeSHA    string `json:"change_sha,omitempty"`
 	// Author, CreatedAt and Body are the issue's own; Comments are all its comments, oldest first.
 	Author    string          `json:"author"`
 	CreatedAt *time.Time      `json:"created_at"`
@@ -729,6 +739,11 @@ func (b *Inbox) Detail(ctx context.Context, ref forge.IssueRef) (*Detail, error)
 		if !m.At.IsZero() {
 			at := m.At
 			d.Since = &at
+		}
+	}
+	if finished {
+		if dc, dm := latestOf(comments, agentID, marker.Done); dc != nil {
+			d.ChangeURL, d.ChangeNumber, d.ChangeSHA = ChangeURL(body(dc.Body)), dm.CR, dm.SHA
 		}
 	}
 	if q != nil {
@@ -810,6 +825,55 @@ func (b *Inbox) Reply(ctx context.Context, ref forge.IssueRef, text string, forc
 	}
 	_, err = f.PostComment(ctx, ref, text)
 	return err
+}
+
+// Merge merges the change request of an open done issue: the one the marker of the agent's latest done post names
+// (cr), and only at the commit that marker names (sha), which must be the sha the page showed. The draft is marked
+// ready first. The issue itself is left alone: the change request's "Closes #N" closes it, and the agent cleans up
+// after the close (ADR-043). The forge's refusals come back as forge.ErrHeadMoved, *forge.NotMergeableError and
+// forge.ErrForbidden. m merges with the forge's inbox token (ADR-043).
+func (b *Inbox) Merge(ctx context.Context, m forge.Merges, ref forge.IssueRef, sha string) error {
+	if strings.TrimSpace(sha) == "" {
+		return wrap(ErrInvalid, errors.New("the commit to merge is empty"))
+	}
+	if m == nil {
+		return fmt.Errorf("no client merges on %s", forgeName(ref.Kind()))
+	}
+	agentID, err := b.agentID(ctx, ref)
+	if err != nil {
+		return err
+	}
+	is, comments, err := b.forgeOf(ref.Kind()).Thread(ctx, ref)
+	if err != nil {
+		return err
+	}
+	n := b.Config.Labels
+	if st := labels.StateOf(is.Labels, n); is.State != "open" || st != n.Done {
+		now := st
+		if is.State != "open" {
+			now = "closed"
+		}
+		if now == "" {
+			now = "no state label"
+		}
+		return wrap(ErrStale, fmt.Errorf("%s is not done (%s); nothing was merged", refString(ref), now))
+	}
+	_, dm := latestOf(comments, agentID, marker.Done)
+	switch {
+	case dm == nil || dm.CR == 0 || dm.SHA == "":
+		return wrap(ErrStale, fmt.Errorf("the done post of %s names no change request and commit; merge it on the forge", refString(ref)))
+	case dm.SHA != sha:
+		return wrap(ErrStale, fmt.Errorf("the agent pushed %s to %s after the page was read; open it again", short(dm.SHA), refString(ref)))
+	}
+	return m.MergeChangeRequest(ctx, ref.Owner, ref.Repo, dm.CR, dm.SHA)
+}
+
+// short is the first 7 characters of a commit.
+func short(sha string) string {
+	if len(sha) > 7 {
+		return sha[:7]
+	}
+	return sha
 }
 
 const scissors = "------------------------ >8 ------------------------"

@@ -415,7 +415,7 @@ runごとのファイルは `~/.local/state/switchboard/runs/<run-id>/` に置�
 forges:
   github:
     agent_identity: YOUR_GITHUB_USER   # Phase 1 は人間と同じでよい（ADR-015）
-    inbox_token_ref: switchboard/github-inbox   # 人間の ID・Issues 読み書きのみ
+    inbox_token_ref: switchboard/github-inbox   # 人間の ID・Issues、Pull requests、Contents の読み書き（WUIからのマージ、ADR-043）
 projects:
   - ref: gh:YOUR_GITHUB_USER/example-repo
     path: ~/Repos/example-repo

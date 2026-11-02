@@ -13,7 +13,7 @@
 - CIの失敗と衝突が同時にあるときは、衝突を先に直す
 - 直す実行のプロンプトに、衝突を解消する原因（`conflict`）を足す
 - 受信箱とWUIで、reasonの `conflict` を表示用の言葉にする
-- ADR-043を足し、SECURITY.mdの4章（人のきっかけ無しに始まる実行）を書き換える
+- ADR-044を足し、SECURITY.mdの4章（人のきっかけ無しに始まる実行）を書き換える
 
 ## Capabilities
 
@@ -35,5 +35,5 @@
 - `internal/prompt`: `FixConflict` と、その直す実行のシステムプロンプト
 - `internal/marker`: 待ちのreasonに `conflict` を足す
 - `web/ui`: reasonの `conflict` を失敗の一種として表示し、返信の案内を出す
-- `docs/DECISIONS.md`（ADR-043）、`docs/SECURITY.md`
+- `docs/DECISIONS.md`（ADR-044）、`docs/SECURITY.md`
 - フォージへの問い合わせ：doneのissue1件につき、`reconcile_interval` ごとに変更要求を1回読む。トークンの権限は増えない

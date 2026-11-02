@@ -107,11 +107,17 @@ func (d *Doctor) forge(ctx context.Context, kind string) {
 		inboxLabel = "forges.gitlab.inbox_token_ref"
 	}
 	if ref := cfg.InboxTokenRef(kind); ref == "" {
-		d.warn("forges.%s.inbox_token_ref is not set: inbox, show and reply need it", n)
+		d.warn("forges.%s.inbox_token_ref is not set: inbox, show, reply and merging from the web inbox need it", n)
 	} else if _, err := d.Secrets.Token(ref); err != nil {
 		d.fail("inbox token (%s %s): %v", inboxLabel, ref, err)
 	} else {
-		d.ok("inbox token (%s %s) found", inboxLabel, ref)
+		// The token's permissions are not read: a fine-grained PAT does not tell them. Merging is refused with 403
+		// until they are given (ADR-043).
+		needs := "Issues, Pull requests and Contents write"
+		if kind == forge.GitLab {
+			needs = "the api scope"
+		}
+		d.ok("inbox token (%s %s) found; merging from the web inbox needs %s", inboxLabel, ref, needs)
 	}
 	if v, ok := f.(versioned); ok && kind == forge.GitLab {
 		if ver, err := v.Version(ctx); err != nil {

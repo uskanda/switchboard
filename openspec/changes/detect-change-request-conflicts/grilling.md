@@ -13,7 +13,7 @@
 | 衝突とみなす状態 | GitHubは `mergeable=false` かつ `mergeable_state=dirty`、GitLabは `has_conflicts=true` だけを衝突とする。`mergeable=null` などの計算中は次の問い合わせに回す。`behind`（衝突なしでbaseより遅れている）や `blocked` は対象外 | 第1ラウンド Q5 |
 | CIの失敗と衝突が同時にあるとき | 衝突を先に直す。mergeのpushでCIが走り直すので、CIの失敗はその結果で改めて判定する | 第2ラウンド Q6 |
 | 対象のフォージ | GitHubとGitLabを同じ変更で入れる。どちらも今のトークンの権限で読める | 第2ラウンド Q7 |
-| 記録の残し方 | ADR-043を足し、ADR-041のきっかけにbaseとの衝突を加えることと、見張りを変更要求がopenの間に延ばすことを残す。SECURITY.mdの4章も書き換え、ci-watchのspecに要求を足す。ADR-041そのものは書き換えない | 第2ラウンド Q8 |
+| 記録の残し方 | ADR-044を足し、ADR-041のきっかけにbaseとの衝突を加えることと、見張りを変更要求がopenの間に延ばすことを残す。SECURITY.mdの4章も書き換え、ci-watchのspecに要求を足す。ADR-041そのものは書き換えない | 第2ラウンド Q8 |
 
 ## 後回しにしたもの
 
