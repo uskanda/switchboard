@@ -3,7 +3,7 @@ SHELL := /usr/bin/env bash
 
 GO ?= go
 
-.PHONY: verify verify-fmt verify-vet verify-test verify-web build install restart deploy
+.PHONY: verify verify-fmt verify-vet verify-test verify-web build install restart deploy-check deploy
 
 # The systemd units `switchboard service install` (and its --relay/--inbox/--web variants) put in place.
 SERVICES := switchboard-relay.service switchboard-inbox.service switchboard-agent.service switchboard-web.service
@@ -44,4 +44,16 @@ restart: ## Restart every installed switchboard service (asks for the sudo passw
 	if [ -z "$$units" ]; then echo "restart: no switchboard service is installed"; exit 1; fi; \
 	sudo systemctl restart $$units && systemctl --no-pager --lines=0 status $$units
 
-deploy: install restart ## Install the current build and restart every service
+# A deploy from another branch puts a build the main branch does not have into service. On a terminal the target
+# asks before it builds; otherwise it warns and goes on.
+deploy-check:
+	@branch="$$(git rev-parse --abbrev-ref HEAD)"; \
+	if [ "$$branch" != "main" ]; then \
+		echo "deploy: warning: the checkout is on '$$branch', not main" >&2; \
+		if [ -t 0 ]; then \
+			read -r -p "deploy: deploy this branch anyway? [y/N] " answer; \
+			[ "$$answer" = "y" ] || { echo "deploy: stopped" >&2; exit 1; }; \
+		fi; \
+	fi
+
+deploy: deploy-check install restart ## Install the current build and restart every service
