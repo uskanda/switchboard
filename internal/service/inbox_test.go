@@ -22,6 +22,15 @@ func TestInboxCredentialsAreTheInboxTokens(t *testing.T) {
 	}
 }
 
+// With inbox.relay, the inbox service also loads its bearer token for the relay.
+func TestInboxCredentialsIncludeTheRelayToken(t *testing.T) {
+	c := cfg()
+	c.Inbox.Relay = &config.AgentRelay{URL: "http://127.0.0.1:8782/events", TokenRef: "switchboard/relay-ubuntu-a-inbox"}
+	if got := refsOf(InboxCredentials(c)); got != "switchboard/github-inbox switchboard/gitlab-inbox switchboard/relay-ubuntu-a-inbox" {
+		t.Fatalf("credentials = %s", got)
+	}
+}
+
 // The agent's service loads the Telegram bot token when it notifies; the inbox tokens stay out.
 func TestAgentCredentialsIncludeTheTelegramToken(t *testing.T) {
 	c := cfg()

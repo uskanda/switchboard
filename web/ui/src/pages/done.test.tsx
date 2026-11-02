@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "@/App";
@@ -63,5 +64,18 @@ describe("done issues", () => {
     expect(await screen.findByRole("textbox", { name: "返答" })).toBeInTheDocument();
     expect(screen.getAllByText("完了")[0]).toBeInTheDocument();
     expect(screen.queryByText("このissueは待ちではなくなりました。返答は送れません。")).toBeNull();
+  });
+
+  it("say a reply was sent while the issue stays done", async () => {
+    const d = {
+      ref: "gh:o/r#50", title: "Finished", url: "https://github.test/o/r/issues/50", waiting: false, done: true, host: "desk",
+      state: "done", reason: "?", since: new Date(Date.now() - 2 * 3600_000).toISOString(), post: "### The work is done",
+    };
+    answer({ "GET /api/inbox": { items: [done], errors: [], fetched_at: "" }, "GET /api/issue?ref=gh%3Ao%2Fr%2350": d, "POST /api/reply": {} });
+    at("/issue/gh%3Ao%2Fr%2350");
+    await userEvent.type(await screen.findByRole("textbox", { name: "返答" }), "もう一つ直して");
+    await userEvent.click(screen.getByRole("button", { name: "返答を送る" }));
+    expect(await screen.findByText("送りました。エージェントが作業を再開します。")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "返答" })).toBeNull();
   });
 });

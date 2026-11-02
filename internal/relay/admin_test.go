@@ -147,7 +147,7 @@ func TestRemoveHook(t *testing.T) {
 
 func TestAddTokenShowsOnlyTheHash(t *testing.T) {
 	store, out := memStore{}, &bytes.Buffer{}
-	if err := AddToken(adminConfig(), "ubuntu-b", store, out); err != nil {
+	if err := AddToken(adminConfig(), "ubuntu-b", false, store, out); err != nil {
 		t.Fatal(err)
 	}
 	tok := store["switchboard/relay-ubuntu-b"]
@@ -163,7 +163,35 @@ func TestAddTokenShowsOnlyTheHash(t *testing.T) {
 			t.Errorf("the output lacks %q:\n%s", want, s)
 		}
 	}
-	if err := AddToken(adminConfig(), "bad name!", store, out); err == nil {
+	if err := AddToken(adminConfig(), "bad name!", false, store, out); err == nil {
 		t.Error("a host name with a space was accepted")
+	}
+}
+
+// The inbox service's token is a host of its own, <host>-inbox, and the entry to paste goes under inbox.
+func TestAddTokenForTheInbox(t *testing.T) {
+	store, out := memStore{}, &bytes.Buffer{}
+	if err := AddToken(adminConfig(), "ubuntu-b", true, store, out); err != nil {
+		t.Fatal(err)
+	}
+	tok := store["switchboard/relay-ubuntu-b-inbox"]
+	if len(tok) < 40 {
+		t.Fatalf("token %q", tok)
+	}
+	if _, ok := store["switchboard/relay-ubuntu-b"]; ok {
+		t.Fatal("the agent's token was written")
+	}
+	s := out.String()
+	if strings.Contains(s, tok) {
+		t.Fatalf("the token is shown:\n%s", s)
+	}
+	for _, want := range []string{"- name: ubuntu-b-inbox", "token_hash: " + hashOf(tok), "Add this to inbox in", "service install --inbox",
+		"url: http://127.0.0.1:8782/events", "token_ref: switchboard/relay-ubuntu-b-inbox"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("the output lacks %q:\n%s", want, s)
+		}
+	}
+	if strings.Contains(s, "to agent in") {
+		t.Errorf("the output points at agent.relay:\n%s", s)
 	}
 }

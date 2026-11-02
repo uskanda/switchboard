@@ -88,14 +88,17 @@ func relayHookRemove(args []string, stdout, stderr io.Writer) int {
 }
 
 func relayTokenAdd(args []string, stdout, stderr io.Writer) int {
-	cfg, fs, code := parse("relay token add", args, stderr, nil)
+	var inbox bool
+	cfg, fs, code := parse("relay token add", args, stderr, func(fs *flag.FlagSet) {
+		fs.BoolVar(&inbox, "inbox", false, "make the token of the host's inbox service (<host>-inbox) instead of its agent")
+	})
 	if code >= 0 {
 		return code
 	} else if fs.NArg() != 1 {
-		fmt.Fprintln(stderr, "usage: switchboard relay token add <host> [--config FILE]")
+		fmt.Fprintln(stderr, "usage: switchboard relay token add [--inbox] <host> [--config FILE]")
 		return 2
 	}
-	if err := relay.AddToken(cfg, fs.Arg(0), keyring, stdout); err != nil {
+	if err := relay.AddToken(cfg, fs.Arg(0), inbox, keyring, stdout); err != nil {
 		return fail(stderr, err)
 	}
 	return 0

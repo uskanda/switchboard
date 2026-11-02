@@ -401,6 +401,46 @@ Web表示は、端末で受信ポートを開く唯一の部品である（ADR-0
    sudo firewall-cmd --reload
    ```
 
+#### 中継のイベントで一覧をすぐ取り直す
+
+中継（[中継で返答にすぐ着手する](#中継で返答にすぐ着手する)）を置いた端末では、受信箱のサービスも中継につなげられる。webhookのイベントが届くと、`inbox.refresh_interval` を待たずに一覧を取り直す。続けて届いたイベントは、最初のイベントから2秒の間をまとめて1回にする。前回の取り直しから10秒たつまでは取り直さない。webhookの無いプロジェクト（GitHubのプロジェクトなど）の変化は、これまでどおり `inbox.refresh_interval` ごとの問い合わせで画面に出る。中継につないでいても、この間隔は延ばさない。
+
+受信箱のサービスは、サービスが動いている間ずっと中継につなぐ。画面を開いていないときにイベントが届いたら、一覧のキャッシュを捨て、次に画面を開いたときに取り直す。
+
+1. 受信箱のサービス用のトークンを作る。エージェントとは別のトークンになり、`switchboard/relay-<端末名>-inbox` に置かれる。画面には、`relay.hosts` に足す項目（名前は `<端末名>-inbox`）と、`inbox.relay` に足す項目が出る
+
+   ```bash
+   switchboard relay token add --inbox <端末名>
+   ```
+
+2. 表示された項目を、設定ファイルの `relay.hosts` と `inbox:` 節に貼り付ける
+
+   ```yaml
+   relay:
+     hosts:
+       - name: <端末名>-inbox
+         token_hash: sha256:<16進>
+   inbox:
+     relay:
+       url: http://127.0.0.1:8782/events
+       token_ref: switchboard/relay-<端末名>-inbox
+   ```
+
+3. 中継と受信箱のサービスを置き直す。受信箱のサービスには、このトークンも暗号化したクレデンシャルとして渡る
+
+   ```bash
+   switchboard service install --relay
+   switchboard service install --inbox
+   ```
+
+ヘッダの自動更新の表示は、中継の状態で次のように変わる。中継につながったときと切れたときは、受信箱のサービスのログ（`journalctl -u switchboard-inbox.service`）にも出る。
+
+| 表示 | 意味 |
+|---|---|
+| 自動更新中（即時） | 中継につながっている。webhookのあるプロジェクトの変化は数秒で出る |
+| 自動更新中（30秒ごと） | 中継が切れている。変化は `inbox.refresh_interval` ごとに出る（数字はその秒数） |
+| 自動更新中 | `inbox.relay` を設定していない |
+
 #### 画面からプロジェクトを足す
 
 設定の画面の「プロジェクト」の節に、この端末のプロジェクトが並ぶ。それぞれ、クローンの有無と、足りない状態ラベルが出る。`config.yaml` に `inbox.project_root` を書くと、この節からプロジェクトを足せるようになる。

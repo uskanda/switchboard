@@ -76,6 +76,16 @@ function questionsOf(detail: Detail | null) {
   return parsed && { index, parsed, key: JSON.stringify([detail.ref, c.created_at, c.body]), defaults: defaultAnswers(parsed.questions) };
 }
 
+/** SentMark tells one wait apart from the next: its start and the agent's latest post of a wait. */
+type SentMark = { since: string | null; waitKey: string };
+
+/** markOf reads the mark of the wait detail shows; a back end without the thread gives the agent's post alone. */
+function markOf(detail: Detail): SentMark {
+  const comments = detail.comments ?? [];
+  const last = comments.reduce<(typeof comments)[number] | null>((at, c) => (c.agent && c.kind === "waiting" ? c : at), null);
+  return { since: detail.since, waitKey: JSON.stringify(last ? [last.created_at, last.body] : [detail.post]) };
+}
+
 /**
  * IssuePane shows one issue and its reply form. It reads the issue again whenever the issue's row on the list
  * moves (watchKey), keeping what is typed in the reply. An issue that left the list stays shown, marked as such.
@@ -83,6 +93,8 @@ function questionsOf(detail: Detail | null) {
  * same question comment is shown, and start over with the next round's.
  * An issue read before in this tab shows its last read at once, marked as being brought up to date until the read
  * arrives; one never read shows that it is loading.
+ * Once a reply is sent, it says so while the issue comes back in the wait answered; once the issue runs, queues,
+ * waits anew or leaves the list, it shows that state instead, with the reply form again for a new wait.
  */
 export function IssuePane({ issueRef }: { issueRef: string }) {
   const { inbox } = useInbox();
@@ -96,14 +108,15 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
   const [error, setError] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState(false);
+  // sentAt is the wait a reply was sent to, or null when none was.
+  const [sentAt, setSentAt] = useState<SentMark | null>(null);
   const [choices, setChoices] = useState<{ key: string; answers: Answer[] } | null>(null);
 
   // A new issue starts with an empty reply.
   useEffect(() => {
     setDetail(cachedIssue(issueRef));
     setText("");
-    setSent(false);
+    setSentAt(null);
     setError(null);
     setChoices(null);
   }, [issueRef]);
@@ -155,7 +168,7 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
     setError(null);
     try {
       await postReply(issueRef, reply);
-      setSent(true);
+      if (detail) setSentAt(markOf(detail));
       setText("");
       setChoices(null);
     } catch (err) {
@@ -175,6 +188,13 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
   // An open done issue takes a reply too: a comment resumes the work until the issue is closed.
   const replyable = !!detail && (detail.waiting || !!detail.done);
   const finished = !!detail?.done && !running && !queued;
+  const now = detail && markOf(detail);
+  // The reply stays said to be sent only while the issue is still in the wait (or the done state) it answered.
+  const sent = !!sentAt && !!detail && !!now && !gone && replyable && !running && !queued && now.since === sentAt.since && now.waitKey === sentAt.waitKey;
+  // Once out of that wait, the mark goes, so coming back to it later does not say sent again.
+  useEffect(() => {
+    if (sentAt && !sent) setSentAt(null);
+  }, [sentAt, sent]);
   // The form stays while something is typed or chosen, so a draft survives the issue leaving its wait.
   const showForm = detail && !sent && (replyable || text !== "" || touched);
 

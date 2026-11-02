@@ -50,6 +50,28 @@ type world struct {
 
 func newWorld(t *testing.T) *world {
 	t.Helper()
+	w := newServer(t)
+	dir, err := os.MkdirTemp("", "is")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "inbox.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hs := &http.Server{Handler: w.srv}
+	go hs.Serve(ln)
+	w.stop = func() { hs.Close() }
+	t.Cleanup(w.stop)
+	w.c = &inboxapi.Client{Socket: sock}
+	return w
+}
+
+// newServer is the world without the socket: the tests call the server's methods themselves.
+func newServer(t *testing.T) *world {
+	t.Helper()
 	w := &world{f: fake.New(nil), now: time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)}
 	me := w.f.AddUser("me", 1)
 	w.bot = w.f.AddUser("bot", 2)
@@ -78,22 +100,6 @@ func newWorld(t *testing.T) *world {
 	w.f.AddLabel(w.ref, "agent:waiting", w.bot)
 	w.f.PostAs = "me"
 	w.srv = &Server{Inbox: b, Now: func() time.Time { return w.now }}
-
-	dir, err := os.MkdirTemp("", "is")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.RemoveAll(dir) })
-	sock := filepath.Join(dir, "inbox.sock")
-	ln, err := net.Listen("unix", sock)
-	if err != nil {
-		t.Fatal(err)
-	}
-	hs := &http.Server{Handler: w.srv}
-	go hs.Serve(ln)
-	w.stop = func() { hs.Close() }
-	t.Cleanup(w.stop)
-	w.c = &inboxapi.Client{Socket: sock}
 	return w
 }
 

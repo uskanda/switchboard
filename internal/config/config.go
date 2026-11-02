@@ -135,10 +135,12 @@ type Plan struct {
 
 // Inbox controls the inbox service (switchboard inbox serve). RefreshInterval is how often it reads the forges
 // again while a page listens for changes; 30s when unset, at least MinRefreshInterval. ProjectRoot is the directory
-// the projects added from the web inbox are cloned under; adding is disabled without it.
+// the projects added from the web inbox are cloned under; adding is disabled without it. With Relay set, the
+// service also follows the relay's events with a token of its own, and reads the forges again soon after each one.
 type Inbox struct {
 	RefreshInterval time.Duration `yaml:"refresh_interval"`
 	ProjectRoot     string        `yaml:"project_root"`
+	Relay           *AgentRelay   `yaml:"relay"`
 }
 
 // ProjectAddEnabled reports whether projects may be added through the inbox service.
@@ -461,6 +463,10 @@ func (c *Config) validate() error {
 		if c.Agent.ReconcileInterval < c.Agent.PollInterval {
 			errs = append(errs, errors.New("agent.reconcile_interval must not be shorter than poll_interval"))
 		}
+	}
+	if r := c.Inbox.Relay; r != nil {
+		need(r.URL, "inbox.relay.url")
+		need(r.TokenRef, "inbox.relay.token_ref")
 	}
 	errs = append(errs, c.validateRelay()...)
 	errs = append(errs, c.validateNotify()...)

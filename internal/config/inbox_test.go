@@ -63,3 +63,24 @@ func TestInboxWithoutProjectRootDisablesAdding(t *testing.T) {
 		t.Error("adding projects is enabled without inbox.project_root")
 	}
 }
+
+func TestInboxRelayIsRead(t *testing.T) {
+	c, err := Load(write(t, valid+"inbox:\n  relay:\n    url: http://127.0.0.1:8782/events\n    token_ref: switchboard/relay-ubuntu-a-inbox\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := c.Inbox.Relay; r == nil || r.URL != "http://127.0.0.1:8782/events" || r.TokenRef != "switchboard/relay-ubuntu-a-inbox" {
+		t.Fatalf("inbox.relay = %+v", c.Inbox.Relay)
+	}
+}
+
+func TestInboxRelayNeedsURLAndTokenRef(t *testing.T) {
+	for want, body := range map[string]string{
+		"inbox.relay.url":       "inbox:\n  relay:\n    token_ref: switchboard/relay-ubuntu-a-inbox\n",
+		"inbox.relay.token_ref": "inbox:\n  relay:\n    url: http://127.0.0.1:8782/events\n",
+	} {
+		if _, err := Load(write(t, valid+body)); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("err = %v, want %s required", err, want)
+		}
+	}
+}

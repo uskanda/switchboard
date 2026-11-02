@@ -44,12 +44,22 @@ type ForgeError struct {
 	Message string `json:"message"`
 }
 
-// Inbox is the answer to GET /v1/inbox.
+// Inbox is the answer to GET /v1/inbox. Relay is whether the service follows the relay's events (RelayConnected,
+// RelayDisconnected, or "" when inbox.relay is not set); RefreshIntervalSeconds is how often it reads the forges
+// while a page listens.
 type Inbox struct {
-	Items     []Item       `json:"items"`
-	Errors    []ForgeError `json:"errors"`
-	FetchedAt time.Time    `json:"fetched_at"`
+	Items                  []Item       `json:"items"`
+	Errors                 []ForgeError `json:"errors"`
+	FetchedAt              time.Time    `json:"fetched_at"`
+	Relay                  string       `json:"relay"`
+	RefreshIntervalSeconds int          `json:"refresh_interval_seconds"`
 }
+
+// The states of Inbox.Relay. While disconnected (or connecting), changes show at the refresh interval.
+const (
+	RelayConnected    = "connected"
+	RelayDisconnected = "disconnected"
+)
 
 // EventInbox names the events of GET /v1/events. Each carries a whole Inbox as its data: the listing when the
 // stream opens, then each listing that differs from the one before. Lines starting with ":" keep the stream alive.
