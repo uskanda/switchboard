@@ -62,3 +62,15 @@ func TestInboxAPIOpensIssuesWithTheInboxForges(t *testing.T) {
 		t.Error("a forge without a client has an entry")
 	}
 }
+
+func TestInboxAPIMergesWithTheInboxForges(t *testing.T) {
+	cfg := load(t, bothForges)
+	gh := fake.New(nil)
+	api, _ := inboxAPI(cfg, map[string]forge.Forge{forge.GitHub: gh}, instructions.Store{})
+	if api.Merges[forge.GitHub] != gh {
+		t.Fatalf("merges = %+v, want the inbox forges by kind", api.Merges)
+	}
+	if _, ok := api.Merges[forge.GitLab]; ok {
+		t.Error("a forge without a client has an entry")
+	}
+}
