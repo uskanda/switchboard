@@ -32,10 +32,14 @@ func (c Check) Failed() bool {
 	return c.Done && (c.Conclusion == Failure || c.Conclusion == TimedOut)
 }
 
-// ChangeRequestState is where a change request stands: open, closed or merged, and the commit its head is at.
+// ChangeRequestState is where a change request stands: open, closed or merged, the commit its head is at, and
+// whether it conflicts with its base.
 type ChangeRequestState struct {
 	State string
 	Head  string
+	// Conflict is true when the forge found that the change request conflicts with its base. It is false while the
+	// forge still computes it, and for a change request that is only behind its base.
+	Conflict bool
 }
 
 // The states of a change request.
@@ -52,7 +56,7 @@ type CI interface {
 	CommitChecks(ctx context.Context, owner, repo, sha string) ([]Check, error)
 	// CheckLog returns the log of the job of c, as the forge serves it.
 	CheckLog(ctx context.Context, owner, repo string, c Check) (string, error)
-	// ChangeRequestHead returns the state and the head commit of the change request number.
+	// ChangeRequestHead returns the state, the head commit and the conflict with the base of the change request number.
 	ChangeRequestHead(ctx context.Context, owner, repo string, number int) (*ChangeRequestState, error)
 }
 

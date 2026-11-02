@@ -104,7 +104,7 @@ type Agent struct {
 	ReconcileInterval time.Duration `yaml:"reconcile_interval"`
 	Timeout           time.Duration `yaml:"timeout"`
 	MaxParallel       int           `yaml:"max_parallel"`
-	// PreferPlan takes the plan runs out of the queue before the other runs (ADR-044).
+	// PreferPlan takes the plan runs out of the queue before the other runs (ADR-045).
 	PreferPlan bool `yaml:"prefer_plan"`
 	MaxTurns   int  `yaml:"max_turns"`
 	// MaxFixAttempts caps the fix runs an issue gets from CI failures and rejected pushes before it waits; nil
