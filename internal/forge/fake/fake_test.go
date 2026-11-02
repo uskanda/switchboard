@@ -154,6 +154,10 @@ func TestFakeCI(t *testing.T) {
 	if st, err := f.ChangeRequestHead(ctx, "o", "r", n); err != nil || st.State != forge.CROpen || st.Head != "abc" {
 		t.Fatalf("ChangeRequestHead = %+v, %v", st, err)
 	}
+	f.SetConflict(n-1, true)
+	if st, _ := f.ChangeRequestHead(ctx, "o", "r", n); !st.Conflict || f.PRCalls() != 2 {
+		t.Errorf("ChangeRequestHead = %+v after %d calls, want a conflict after 2", st, f.PRCalls())
+	}
 	f.MergePR(n - 1)
 	if st, _ := f.ChangeRequestHead(ctx, "o", "r", n); st.State != forge.CRMerged {
 		t.Errorf("state = %s, want merged", st.State)

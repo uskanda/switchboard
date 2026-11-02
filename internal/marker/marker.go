@@ -26,7 +26,7 @@ type Marker struct {
 	Session string
 	Run     string
 	State   string // running (the claim of a run), progress (its progress comment), queued, waiting, done
-	Reason  string // for waiting: question, permission, error, verify, limit, plan-questions, plan, push, ci; for queued: the limit; for running: fix on a fix run's claim
+	Reason  string // for waiting: question, permission, error, verify, limit, plan-questions, plan, push, ci, conflict; for queued: the limit; for running: fix on a fix run's claim
 	Ack     int64  // the last comment ID the run took in
 	At      time.Time
 	Mode    string // on a claim made from a start label: plan or direct
@@ -44,10 +44,12 @@ const (
 	// The limits a queued issue waits on: agent.max_parallel, or its project's max_parallel.
 	QueuedHost    = "max-parallel"
 	QueuedProject = "project-max-parallel"
-	// Fix marks the claim of a fix run; Push and CI the waits a rejected push and a CI failure end in.
-	Fix  = "fix"
-	Push = "push"
-	CI   = "ci"
+	// Fix marks the claim of a fix run; Push, CI and Conflict the waits a rejected push, a CI failure and a change
+	// request conflicting with its base end in.
+	Fix      = "fix"
+	Push     = "push"
+	CI       = "ci"
+	Conflict = "conflict"
 )
 
 // The states a marker names.

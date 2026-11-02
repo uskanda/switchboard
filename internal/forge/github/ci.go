@@ -105,16 +105,20 @@ func (c *Client) CheckLog(ctx context.Context, owner, repo string, ch forge.Chec
 // ChangeRequestHead reads the state and the head commit of pull request number.
 func (c *Client) ChangeRequestHead(ctx context.Context, owner, repo string, number int) (*forge.ChangeRequestState, error) {
 	var pr struct {
-		State  string `json:"state"`
-		Merged bool   `json:"merged"`
-		Head   struct {
+		State          string `json:"state"`
+		Merged         bool   `json:"merged"`
+		Mergeable      *bool  `json:"mergeable"`
+		MergeableState string `json:"mergeable_state"`
+		Head           struct {
 			SHA string `json:"sha"`
 		} `json:"head"`
 	}
 	if _, err := c.do(ctx, http.MethodGet, c.url(fmt.Sprintf("/repos/%s/%s/pulls/%d", owner, repo, number), nil), nil, &pr, nil); err != nil {
 		return nil, err
 	}
-	st := &forge.ChangeRequestState{State: forge.CROpen, Head: pr.Head.SHA}
+	// mergeable is null while GitHub computes it; dirty is the one mergeable_state that means a conflict.
+	conflict := pr.Mergeable != nil && !*pr.Mergeable && pr.MergeableState == "dirty"
+	st := &forge.ChangeRequestState{State: forge.CROpen, Head: pr.Head.SHA, Conflict: conflict}
 	switch {
 	case pr.Merged:
 		st.State = forge.CRMerged

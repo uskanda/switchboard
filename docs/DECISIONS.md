@@ -187,3 +187,10 @@
 - 決定：pushはforceなしのまま変えない。baseとの衝突は `git merge origin/<base>` で解消させ、rebase、amend、履歴の書き換えはさせない。実装する実行の許可ツールに `git merge` を足す。ADR-041がpushの直しに限った `git merge` は、これで実装する実行のすべてに広がる
 - 決定：計画を先に立てるモードで承認済みの計画を実装したissueは、doneから再開しても、承認された計画の実装（approvedRun）として動かす。範囲を超える頼みは `agent:plan` を付け直して計画から立て直す
 - 理由：作ったPR/MRに問題やコンフリクトがあれば、doneの後もやりとりが要る。表示だけ残しても、返答で動かなければ目的を果たせない。PR/MRの作成の失敗（GitHubの422、GitLabの409）から既存のURLを読み取る形は、誤りの本文の形に頼る。force pushを入れると、人間がPRのブランチに積んだコミットを消すおそれがあり、PRは最後にsquash mergeすれば履歴も気にならない。承認した計画の範囲に収まる直しで、毎回承認を挟むと遅い（issue `gh:uskanda/switchboard` #53のQ1〜Q7）
+
+## ADR-043 doneのPR/MRとbaseの衝突への自動の対処（採用、2026-11-02）
+- 決定：ADR-041の直す実行のきっかけに、エージェントが作ったPR/MRとbaseとの衝突を加える。衝突とみなすのは、GitHubの `mergeable=false` かつ `mergeable_state=dirty` と、GitLabの `has_conflicts=true` だけとする。計算中は次の問い合わせに回し、`behind` と `blocked` は扱わない
+- 決定：CIの段（pushから6時間まで、`poll_interval` ごと）が終わっても見張りは外さない。PR/MRがopenでissueが `agent:done` の間、`reconcile_interval` ごとにPR/MRを1回読んで衝突を見る。PR/MRのheadがエージェントの最新のdoneのマーカーの `sha` と違えば見張りをやめ、人がpushした後の衝突は直さない
+- 決定：衝突を直す実行は `git merge origin/<base>` で解消させる。回数は、CIの失敗とnon-fast-forwardと同じ `agent.max_fix_attempts` で数える。上限を超える衝突では、issueを `waiting(reason=conflict)` で待たせる。CIの失敗と衝突が同時にあれば衝突を先に直す
+- 決定：トークンの権限は増やさない。衝突の有無はPR/MRの読み取りで分かり、GitHubの `Pull requests: Read`、GitLabの `api` スコープで足りる
+- 理由：GitHubは衝突のあるPRで `pull_request` のCIを走らせないので、ADR-041の見張りは「CIが現れない」として黙って終わり、人が気付くまで止まっていた（PR #71）。直す実行に渡すのはPR/MRの番号とbaseの名前だけで、フォージから読んだ文は入れない。grillingの記録は `detect-change-request-conflicts` の第1ラウンドQ1〜Q5、第2ラウンドQ6〜Q8

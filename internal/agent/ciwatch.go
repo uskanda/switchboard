@@ -16,12 +16,18 @@ import (
 	"github.com/uskanda/switchboard/internal/workspace"
 )
 
-// watch is a done issue whose CI the agent watches: the commit pushed, its change request, and when it was pushed.
+// watch is a done issue the agent watches: the commit pushed, its change request, and when it was pushed. It watches
+// the CI of the commit first, and then, until the change request closes, whether the change request conflicts with
+// its base.
 type watch struct {
 	project config.Project
 	sha     string
 	cr      int
 	pushed  time.Time
+	// conflictsOnly is set once the CI of the commit is over: the change request alone is read, every
+	// reconcile_interval, last at checked.
+	conflictsOnly bool
+	checked       time.Time
 	// giveUp is the wait written when the CI failed past the fix limit, kept until it is written back, so that a
 	// retry posts it once.
 	giveUp *outcome
@@ -40,20 +46,26 @@ func (a *Agent) now() time.Time {
 	return time.Now()
 }
 
-// startWatch watches the CI of the commit sha pushed to change request cr of ref at pushed.
+// startWatch watches the commit sha pushed to change request cr of ref at pushed: its CI while the CI may still
+// run, and then whether the change request conflicts with its base.
 func (a *Agent) startWatch(p config.Project, ref forge.IssueRef, sha string, cr int, pushed time.Time) {
 	if _, ok := a.forgeOf(ref).(forge.CI); !ok {
 		return
 	}
+	late := a.now().Sub(pushed) >= ciWatchFor
 	a.mu.Lock()
-	a.watches[ref] = &watch{project: p, sha: sha, cr: cr, pushed: pushed}
+	a.watches[ref] = &watch{project: p, sha: sha, cr: cr, pushed: pushed, conflictsOnly: late}
 	delete(a.unwatched, ref)
 	a.mu.Unlock()
+	if late {
+		a.logf("%s: watching %s for conflicts with the base", ref, sha)
+		return
+	}
 	a.logf("%s: watching the CI of %s", ref, sha)
 	a.retune() // the CI is read every poll_interval, also while the relay is up
 }
 
-// unwatch stops watching the CI of ref, for why.
+// unwatch stops watching ref, for why.
 func (a *Agent) unwatch(ref forge.IssueRef, why string) {
 	a.mu.Lock()
 	_, ok := a.watches[ref]
@@ -62,15 +74,31 @@ func (a *Agent) unwatch(ref forge.IssueRef, why string) {
 	if !ok {
 		return
 	}
-	a.logf("%s: stopped watching the CI: %s", ref, why)
+	a.logf("%s: stopped watching the change request: %s", ref, why)
 	a.Audit.Log("ci.watch.ended", map[string]any{"issue": ref.String(), "reason": why})
 }
 
-// watching reports whether the CI of some issue is watched.
+// ciOver ends the CI stage of the watch of ref, for why: the change request is still watched for conflicts.
+func (a *Agent) ciOver(ref forge.IssueRef, w *watch, why string) {
+	a.mu.Lock()
+	w.conflictsOnly = true
+	w.checked = a.now()
+	a.mu.Unlock()
+	a.logf("%s: stopped watching the CI: %s; still watching for conflicts with the base", ref, why)
+	a.Audit.Log("ci.watch.ended", map[string]any{"issue": ref.String(), "reason": why})
+}
+
+// watching reports whether the CI of some issue is watched. A watch for conflicts alone does not count: it is read
+// every reconcile_interval.
 func (a *Agent) watching() bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return len(a.watches) > 0
+	for _, w := range a.watches {
+		if !w.conflictsOnly {
+			return true
+		}
+	}
+	return false
 }
 
 // searchScope is the scope SearchOpenIssuesWithLabel takes for the issues of p.
@@ -81,9 +109,8 @@ func searchScope(p config.Project) string {
 	return "repo:" + p.FullName()
 }
 
-// scanWatches finds the done issues of this host's projects whose CI is still to watch: the latest post of the
-// agent is a done post naming a commit and a change request, posted within ciWatchFor. An issue found with nothing
-// to watch is read again only when it changes.
+// scanWatches finds the done issues of this host's projects to watch: the latest post of the agent is a done post
+// naming a commit and a change request. An issue found with nothing to watch is read again only when it changes.
 func (a *Agent) scanWatches(ctx context.Context) {
 	a.mu.Lock()
 	a.scanned = a.now()
@@ -124,7 +151,7 @@ func (a *Agent) findWatch(ctx context.Context, p config.Project, s forge.IssueSu
 			last = m
 		}
 	}
-	if last != nil && last.State == marker.Done && last.SHA != "" && last.CR != 0 && a.now().Sub(last.At) < ciWatchFor {
+	if last != nil && last.State == marker.Done && last.SHA != "" && last.CR != 0 {
 		a.startWatch(p, s.Ref, last.SHA, last.CR, last.At)
 		return
 	}
@@ -133,7 +160,7 @@ func (a *Agent) findWatch(ctx context.Context, p config.Project, s forge.IssueSu
 	a.mu.Unlock()
 }
 
-// checkWatches reads the CI of every watched issue that does not run, and acts on what finished. The done issues
+// checkWatches reads every watched issue that does not run, and acts on what it finds. The done issues
 // are searched again once every reconcile_interval. Call it with pollMu held.
 func (a *Agent) checkWatches(ctx context.Context) {
 	a.mu.Lock()
@@ -174,6 +201,14 @@ func (a *Agent) checkWatch(ctx context.Context, ref forge.IssueRef, w *watch) {
 		a.writeGiveUp(ctx, ref, w)
 		return
 	}
+	if w.conflictsOnly {
+		if a.now().Sub(w.checked) < a.Config.Agent.ReconcileInterval {
+			return
+		}
+		a.mu.Lock()
+		w.checked = a.now()
+		a.mu.Unlock()
+	}
 	st, err := ci.ChangeRequestHead(ctx, ref.Owner, ref.Repo, w.cr)
 	if err != nil {
 		a.ciError(ref, w, err)
@@ -186,6 +221,12 @@ func (a *Agent) checkWatch(ctx context.Context, ref forge.IssueRef, w *watch) {
 	case st.Head != w.sha:
 		a.unwatch(ref, "the change request moved on to another commit")
 		return
+	case st.Conflict:
+		// A conflicting change request gets no CI on GitHub, and the CI it had is moot once the base is merged.
+		a.conflicted(ctx, ref, w)
+		return
+	case w.conflictsOnly:
+		return
 	}
 	checks, err := ci.CommitChecks(ctx, ref.Owner, ref.Repo, w.sha)
 	if err != nil {
@@ -195,7 +236,7 @@ func (a *Agent) checkWatch(ctx context.Context, ref forge.IssueRef, w *watch) {
 	age := a.now().Sub(w.pushed)
 	if len(checks) == 0 {
 		if age >= ciAppearWithin {
-			a.unwatch(ref, "no CI ran on the commit")
+			a.ciOver(ref, w, "no CI ran on the commit")
 		}
 		return
 	}
@@ -203,7 +244,7 @@ func (a *Agent) checkWatch(ctx context.Context, ref forge.IssueRef, w *watch) {
 	for _, c := range checks {
 		if !c.Done {
 			if age >= ciWatchFor {
-				a.unwatch(ref, fmt.Sprintf("the CI did not finish within %s", ciWatchFor))
+				a.ciOver(ref, w, fmt.Sprintf("the CI did not finish within %s", ciWatchFor))
 			}
 			return
 		}
@@ -212,7 +253,7 @@ func (a *Agent) checkWatch(ctx context.Context, ref forge.IssueRef, w *watch) {
 		}
 	}
 	if len(failed) == 0 {
-		a.unwatch(ref, "the CI passed")
+		a.ciOver(ref, w, "the CI passed")
 		return
 	}
 	a.ciFailed(ctx, ref, w, ci, failed)
@@ -337,14 +378,81 @@ func ciReport(sha string, failed []forge.Check, logs map[int]string) string {
 	return workspace.Redact(b.String())
 }
 
+// conflicted starts a fix run that merges the base into the conflicting change request of w, or, past the fix
+// limit, makes the issue wait (reason conflict). A fix run that finds no free slot is tried again at the next poll.
+func (a *Agent) conflicted(ctx context.Context, ref forge.IssueRef, w *watch) {
+	fix := &fixInfo{cause: prompt.FixConflict, report: fmt.Sprintf("Change request %s conflicts with the base branch %s.", crName(ref, w.cr), w.project.BaseBranch)}
+	pl, err := a.fixPlan(ctx, w.project, ref, a.Config.Labels.Done, fix)
+	switch {
+	case err != nil:
+		a.logf("%s: read the issue for its conflict: %v; tried again at the next poll", ref, err)
+		return
+	case pl == nil:
+		a.unwatch(ref, "the issue no longer allows a fix run")
+		return
+	}
+	limit := a.Config.Agent.FixAttempts()
+	if fix.attempt > limit {
+		w.giveUp = a.conflictOutcome(pl, w, fix.attempt-1, limit)
+		a.writeGiveUp(ctx, ref, w)
+		return
+	}
+	limitOf := a.projectLimit(ref)
+	a.mu.Lock()
+	free, _, _ := a.hasSlot(ref, limitOf)
+	a.mu.Unlock()
+	if !free {
+		return
+	}
+	switch err := a.launch(ctx, pl); {
+	case err == nil:
+		a.unwatch(ref, "the change request conflicts with the base; a fix run started")
+	case errors.Is(err, errQueued):
+	default:
+		a.logf("%s: start the fix run: %v; tried again at the next poll", ref, err)
+	}
+}
+
+// crName is how the comments name change request cr of ref: #48 on GitHub, !48 on GitLab.
+func crName(ref forge.IssueRef, cr int) string {
+	if ref.Kind() == forge.GitLab {
+		return fmt.Sprintf("!%d", cr)
+	}
+	return fmt.Sprintf("#%d", cr)
+}
+
+// conflictOutcome is the wait (reason conflict) of a change request that kept conflicting with its base past the
+// fix limit: a summary of each fix run.
+func (a *Agent) conflictOutcome(pl *plan, w *watch, made, limit int) *outcome {
+	o := &outcome{Run: newID(), Ack: pl.ack(), msg: a.msg}
+	cr := crName(pl.issue.Ref, w.cr)
+	lead := fmt.Sprintf(a.msg.conflictFailed, cr, made, limit)
+	if limit == 0 {
+		lead = fmt.Sprintf(a.msg.conflictNoFixes, cr)
+	}
+	parts := append([]string{lead}, a.fixAttempts(pl)...)
+	parts = append(parts, a.msg.ciReply)
+	return o.set("waiting", marker.Conflict, a.msg.conflictTitle, parts...)
+}
+
+// fixAttempts is the list of the fix runs since the last reset, as a wait shows them, or nothing.
+func (a *Agent) fixAttempts(pl *plan) []string {
+	sums := pl.fixSummaries()
+	if len(sums) == 0 {
+		return nil
+	}
+	var lines []string
+	for i, s := range sums {
+		lines = append(lines, "- "+fmt.Sprintf(a.msg.ciAttempt, i+1)+": "+strings.Join(strings.Fields(s), " "))
+	}
+	return []string{"**" + a.msg.ciAttempts + "**\n\n" + strings.Join(lines, "\n")}
+}
+
 // giveUpOutcome is the wait (reason ci) of a CI that failed past the fix limit: the failed checks, a summary of each
 // fix run, and the ends of the logs.
 func (a *Agent) giveUpOutcome(pl *plan, w *watch, failed []forge.Check, logs map[int]string, made, limit int) *outcome {
 	o := &outcome{Run: newID(), Ack: pl.ack(), msg: a.msg}
-	cr := fmt.Sprintf("#%d", w.cr)
-	if pl.issue.Ref.Kind() == forge.GitLab {
-		cr = fmt.Sprintf("!%d", w.cr)
-	}
+	cr := crName(pl.issue.Ref, w.cr)
 	lead := fmt.Sprintf(a.msg.ciFailed, cr, made, limit)
 	if limit == 0 {
 		lead = fmt.Sprintf(a.msg.ciNoFixes, cr)
@@ -358,13 +466,7 @@ func (a *Agent) giveUpOutcome(pl *plan, w *watch, failed []forge.Check, logs map
 		checks = append(checks, line)
 	}
 	parts := []string{lead, "**" + a.msg.ciChecks + "**\n\n" + workspace.Redact(strings.Join(checks, "\n"))}
-	if sums := pl.fixSummaries(); len(sums) > 0 {
-		var lines []string
-		for i, s := range sums {
-			lines = append(lines, "- "+fmt.Sprintf(a.msg.ciAttempt, i+1)+": "+strings.Join(strings.Fields(s), " "))
-		}
-		parts = append(parts, "**"+a.msg.ciAttempts+"**\n\n"+strings.Join(lines, "\n"))
-	}
+	parts = append(parts, a.fixAttempts(pl)...)
 	for i, c := range failed {
 		if log, ok := logs[i]; ok {
 			parts = append(parts, "<details><summary>"+fmt.Sprintf(a.msg.ciLog, c.Name)+"</summary>\n\n```\n"+tail(log)+"\n```\n\n</details>")
@@ -377,10 +479,10 @@ func (a *Agent) giveUpOutcome(pl *plan, w *watch, failed []forge.Check, logs map
 // writeGiveUp writes back the kept wait of w; a failure is tried again at the next poll.
 func (a *Agent) writeGiveUp(ctx context.Context, ref forge.IssueRef, w *watch) {
 	if err := a.writeBack(ctx, ref, w.giveUp); err != nil {
-		a.logf("%s: write back the failed CI: %v; tried again at the next poll", ref, err)
+		a.logf("%s: write back the wait past the fix limit: %v; tried again at the next poll", ref, err)
 		return
 	}
-	a.unwatch(ref, "the CI failed past the limit of fix runs")
+	a.unwatch(ref, "past the limit of fix runs, the issue waits ("+w.giveUp.Reason+")")
 	if ref.Kind() == forge.GitLab {
 		a.keepNotes(a.ctx, w.project, ref)
 	}

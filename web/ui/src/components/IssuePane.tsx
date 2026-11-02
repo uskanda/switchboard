@@ -56,6 +56,13 @@ function PlanHint({ reason, word, answerable }: { reason: string; word: string; 
       </p>
     );
   }
+  if (reason === "conflict") {
+    return (
+      <p className="text-label-md text-muted">
+        返信するとエージェントが実行を再開し、baseとの衝突を自動で直す回数を数え直します。
+      </p>
+    );
+  }
   if (reason === "push") {
     return (
       <p className="text-label-md text-muted">

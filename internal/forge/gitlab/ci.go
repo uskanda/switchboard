@@ -82,13 +82,17 @@ func (c *Client) CheckLog(ctx context.Context, owner, repo string, ch forge.Chec
 // ChangeRequestHead reads the state and the head commit of merge request number.
 func (c *Client) ChangeRequestHead(ctx context.Context, owner, repo string, number int) (*forge.ChangeRequestState, error) {
 	var mr struct {
-		State string `json:"state"`
-		SHA   string `json:"sha"`
+		State        string `json:"state"`
+		SHA          string `json:"sha"`
+		HasConflicts bool   `json:"has_conflicts"`
+		MergeStatus  string `json:"detailed_merge_status"`
 	}
 	if _, err := c.do(ctx, http.MethodGet, c.url(fmt.Sprintf("%s/merge_requests/%d", project(owner, repo), number), nil), nil, &mr); err != nil {
 		return nil, err
 	}
-	st := &forge.ChangeRequestState{State: forge.CRClosed, Head: mr.SHA}
+	// has_conflicts may still hold the old answer while GitLab checks the merge again.
+	conflict := mr.HasConflicts && mr.MergeStatus != "checking"
+	st := &forge.ChangeRequestState{State: forge.CRClosed, Head: mr.SHA, Conflict: conflict}
 	switch mr.State {
 	case "opened":
 		st.State = forge.CROpen

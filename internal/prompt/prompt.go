@@ -164,12 +164,13 @@ Do not reopen decisions that the issue's comments already settled. End with stat
 
 // What a fix run fixes.
 const (
-	FixCI   = "ci"   // the CI of the change request failed
-	FixPush = "push" // origin's issue branch moved on, so the push was refused
+	FixCI       = "ci"       // the CI of the change request failed
+	FixPush     = "push"     // origin's issue branch moved on, so the push was refused
+	FixConflict = "conflict" // the change request conflicts with its base branch
 )
 
 // FixSystem returns the system prompt of a fix run: the rules of System, and what to fix. base is the project's
-// base branch; cause is FixCI or FixPush.
+// base branch; cause is FixCI, FixPush or FixConflict.
 func FixSystem(lang, base, cause string) string {
 	s := System(lang, base) + `
 ## This run fixes a failure
@@ -181,6 +182,12 @@ An earlier run of this issue finished, and switchboard pushed its work. Then som
 - Run git merge origin/<the current branch>, resolve any conflict so that both their changes and yours work, run the checks, and commit. Never run git rebase: it would rewrite commits a person pushed.
 - End with status "done" when the merge is committed, or "waiting" with a question when the two sets of changes contradict each other.
 `
+	}
+	if cause == FixConflict {
+		return s + fmt.Sprintf(`- The change request conflicts with its base branch, which moved on after the push. origin/%[1]s is fetched.
+- Run git merge origin/%[1]s, resolve every conflict so that both the base's changes and yours work, run the checks, and commit the merge. Never run git rebase: switchboard pushes without force.
+- End with status "done" when the merge is committed, or "waiting" with a question when the base's changes contradict yours and you cannot tell which to keep.
+`, base)
 	}
 	return s + `- The CI of the change request failed. Find the cause in the report and in the code, fix it, run the checks you can run here, and commit.
 - Fix the code, not the checks: do not delete, skip or weaken a test to make it pass, and do not change the CI configuration.
