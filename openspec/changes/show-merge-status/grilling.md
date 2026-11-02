@@ -19,4 +19,4 @@ issue `gh:uskanda/switchboard` #84の計画である。マージの確認ダイ�
 
 ## 状態
 
-frontier は空。共有理解は 2026-11-02 に確認済み。
+frontierは空。共有理解は2026-11-02に確認済み。

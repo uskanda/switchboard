@@ -220,6 +220,26 @@ export const merge = (ref: string, sha: string) =>
     body: JSON.stringify({ ref, sha }),
   });
 
+/** CheckStatus is one CI check of the commit. name is the forge's data: show it as text only. */
+export type CheckStatus = { name: string; status: "success" | "failure" | "running" | "other"; url: string };
+
+/**
+ * MergeStatus is where the change request of a done issue stands before the merge (ADR-047): its state on the forge,
+ * whether its head moved from the commit the page showed, whether it conflicts (computing while the forge works it
+ * out), and the checks of that commit. ci is "forbidden" when the inbox token may not read CI, "none" without checks.
+ */
+export type MergeStatus = {
+  state: "open" | "closed" | "merged";
+  head_moved: boolean;
+  mergeable: "clean" | "conflict" | "computing";
+  ci: "ok" | "none" | "forbidden";
+  checks: CheckStatus[];
+};
+
+/** mergeStatus reads the status of the change request of a done issue at sha, for the merge dialog. */
+export const mergeStatus = (ref: string, sha: string) =>
+  call<MergeStatus>(`/api/merge-status?ref=${encodeURIComponent(ref)}&sha=${encodeURIComponent(sha)}`);
+
 /** issuePath is the page of one issue; the ref is one path segment. */
 export const issuePath = (ref: string) => `/issue/${encodeURIComponent(ref)}`;
 

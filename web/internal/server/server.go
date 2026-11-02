@@ -29,6 +29,7 @@ type Inbox interface {
 	IssueTargets(ctx context.Context) (*inboxapi.IssueTargets, error)
 	CreateIssue(ctx context.Context, req inboxapi.CreateIssueRequest) (*inboxapi.CreateIssueResponse, error)
 	Merge(ctx context.Context, ref, sha string) error
+	MergeStatus(ctx context.Context, ref, sha string) (*inboxapi.MergeStatus, error)
 	Events(ctx context.Context, fn func(*inboxapi.Inbox)) error
 }
 
@@ -78,6 +79,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.createIssue(w, r)
 	case r.URL.Path == "/api/merge" && r.Method == http.MethodPost:
 		s.merge(w, r)
+	case r.URL.Path == "/api/merge-status" && r.Method == http.MethodGet:
+		// It only reads, as /api/issue does; the merge itself is a POST with the checks of a reply.
+		q := r.URL.Query()
+		out, err := s.Inbox.MergeStatus(r.Context(), q.Get("ref"), q.Get("sha"))
+		s.answer(w, out, err)
 	case strings.HasPrefix(r.URL.Path, "/api/"):
 		send(w, http.StatusNotFound, inboxapi.Error{Code: inboxapi.CodeNotFound, Message: "no such endpoint"})
 	case r.Method == http.MethodGet || r.Method == http.MethodHead:
