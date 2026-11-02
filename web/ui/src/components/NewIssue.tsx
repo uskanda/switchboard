@@ -1,5 +1,6 @@
 import { useId, useRef, useState, type FormEvent } from "react";
 import { IssueRef } from "@/components/IssueRef";
+import { Loading } from "@/components/Loading";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -110,6 +111,7 @@ export function NewIssue() {
           <h2 id={`${id}-heading`} className="text-headline-md font-semibold">
             新規issue
           </h2>
+          {!targets && !error && <Loading />}
           <div className="flex flex-col gap-xs">
             <label htmlFor={`${id}-project`} className="text-label-md font-medium">
               プロジェクト
@@ -119,7 +121,7 @@ export function NewIssue() {
               value={project}
               onChange={(e) => setProject(e.target.value)}
               disabled={sending || !targets}
-              className="h-11 w-full min-w-0 rounded-md border border-outline bg-surface-raised px-md font-mono text-mono-sm focus-visible:outline-2 focus-visible:outline-primary"
+              className="h-11 w-full min-w-0 rounded-md border border-field-outline bg-surface-raised px-md font-mono text-mono-sm focus-visible:outline-2 focus-visible:outline-primary"
             >
               {targets?.items.map((it) => (
                 <option key={it.ref} value={it.ref}>

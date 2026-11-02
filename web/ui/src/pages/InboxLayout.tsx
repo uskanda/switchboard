@@ -4,6 +4,8 @@ import { Header } from "@/components/Header";
 import { InboxList } from "@/components/InboxList";
 import { IssuePane } from "@/components/IssuePane";
 import { LIST_WIDTH_DEFAULT, LIST_WIDTH_MAX, LIST_WIDTH_MIN, LIST_WIDTH_STEP, useListWidth } from "@/lib/paneWidth";
+import { useInbox } from "@/lib/inbox";
+import { usePageTitle } from "@/lib/title";
 import { cn } from "@/lib/utils";
 
 /**
@@ -62,6 +64,8 @@ function PaneBorder({ width, setWidth }: { width: number; setWidth: (w: number) 
 export function InboxLayout() {
   const ref = useParams().ref;
   const [width, setWidth] = useListWidth();
+  const { inbox } = useInbox();
+  usePageTitle(ref && (inbox?.items.find((it) => it.ref === ref)?.title ?? ref));
   return (
     <div className="flex min-h-dvh flex-col lg:h-dvh">
       <Header />
@@ -73,9 +77,11 @@ export function InboxLayout() {
           <InboxList selected={ref} />
         </nav>
         <PaneBorder width={width} setWidth={setWidth} />
-        <main className={cn("px-lg py-xl lg:overflow-y-auto", !ref && "hidden lg:block")}>
+        {/* No padding on top: the issue's pinned head brings its own, so nothing shows above it once scrolled. */}
+        <main className={cn("px-lg pb-xl lg:overflow-y-auto", !ref && "hidden lg:block")}>
+
           <div className="mx-auto max-w-[720px]">
-            {ref ? <IssuePane issueRef={ref} /> : <p className="text-muted">左の一覧からissueを選んでください</p>}
+            {ref ? <IssuePane issueRef={ref} /> : <p className="pt-xl text-muted">左の一覧からissueを選んでください</p>}
           </div>
         </main>
       </div>

@@ -44,7 +44,7 @@ describe("queued issues", () => {
     expect(screen.getAllByText("端末の上限に達しています")[0]).toBeInTheDocument();
     expect(screen.getAllByText("プロジェクトの上限に達しています")[0]).toBeInTheDocument();
     expect(screen.getAllByText("5分前")[0]).toBeInTheDocument();
-    expect(screen.getByLabelText("待ち1件、実行中1件、順番待ち2件")).toBeInTheDocument();
+    expect(screen.getByText("待ち1件、実行中1件、順番待ち2件")).toBeInTheDocument();
   });
 
   it("show that one waits for a slot, with its queued comment folded", async () => {
