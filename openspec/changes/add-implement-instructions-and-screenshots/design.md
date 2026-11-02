@@ -22,14 +22,14 @@
 
 ## Decisions
 
-### D1. 取り決めの節は<prompt.WithScreenshots>で足す
-`System`は直す実行の`FixSystem`からも呼ばれる。ここに節を入れると、直す実行にも入ってしまう。そこで`work`が、直接の実装と承認のあとの実装でだけ<prompt.WithScreenshots>を呼ぶ。system promptの規則はほかの節と同じく英語で書き、出力の言語だけを設定に合わせる。
+### D1. 取り決めの節は`prompt.WithScreenshots`で足す
+`System`は直す実行の`FixSystem`からも呼ばれる。ここに節を入れると、直す実行にも入ってしまう。そこで`work`が、直接の実装と承認のあとの実装でだけ`prompt.WithScreenshots`を呼ぶ。system promptの規則はほかの節と同じく英語で書き、出力の言語だけを設定に合わせる。
 
 ### D2. 添付のコメントのマーカーは状態`attachment`とし、`Transient()`に含める
 `Transient()`の使い手は3つある。`hasReply`、CIの見張りの再開、受信箱の`latestPost`である。どれも「issueがなぜ待つか、runがどう終わったか」を探している。画像のコメントはどちらも語らないので、読み飛ばされるのが正しい。別の判定を足すより、使い手を1つも変えずに済む。
 
-### D3. 添付は<forge.Attacher>の型アサーションで選ぶ
-`forge.Forge`に足すと、テストの偽物をすべて直すことになる。<forge.Attacher>を別のインターフェースにする。`forgeOf(ref)`の返すものがこれを満たすときだけ添付する。満たさなければ、「このフォージには添付できない」を理由として書く。
+### D3. 添付は`forge.Attacher`の型アサーションで選ぶ
+`forge.Forge`に足すと、テストの偽物をすべて直すことになる。`forge.Attacher`を別のインターフェースにする。`forgeOf(ref)`の返すものがこれを満たすときだけ添付する。満たさなければ、「このフォージには添付できない」を理由として書く。
 
 ### D4. GitHubは`gh`を`internal/forge/github`の中で呼ぶ
 引数は`gh issue comment <N> -R owner/repo --body-file - --attach <file>...`とする。環境は次のものだけにする。
@@ -39,6 +39,8 @@
 
 コメントのIDは、`gh`が標準出力に返すコメントのURL（`#issuecomment-<id>`）から読む。RESTで読み直す案より呼び出しが1回で済み、別の投稿と取り違えない。URLが読めないときはIDを0とし、添付は成功として扱う。
 
+マーカーは本文の最後の行でないと読まれない。`gh`が画像を本文のどこに入れるかは確かめていない（V43）。そこで、作られたコメントをRESTで読み直す。最後の行がマーカーでなければ、マーカーを末尾に移すよう編集する。
+
 ### D5. GitLabはuploads APIを`internal/forge/gitlab`に足す
 `POST /projects/:id/uploads`に、画像を1枚ずつmultipartで上げる。返った`markdown`を本文のあとに並べ、ノートを1件作る。
 
@@ -46,7 +48,7 @@
 worktreeでは`.git`がファイルなので、パスを自分で組み立てず、gitから得る。共通のディレクトリの`info/exclude`は、同じクローンのほかのworktreeでも読まれる。置き場所の名前はswitchboardの取り決めなので、差し支えない。
 
 ### D7. 画像はpushのあとでrunのディレクトリへ移す
-`finish`は、pushとPR/MRを済ませてから、<workspace.CollectScreenshots>で画像を`runs/<run>/screenshots/`へ移す。控えた名前と理由は`outcome`に入れ、`outcome.json`に残す。書き戻しのやり直しと、再起動のあとの回復は、`outcome.json`とrunのディレクトリから読む。
+`finish`は、pushとPR/MRを済ませてから、`internal/workspace`の`CollectScreenshots`で画像を`runs/<run>/screenshots/`へ移す。控えた名前と理由は`outcome`に入れ、`outcome.json`に残す。書き戻しのやり直しと、再起動のあとの回復は、`outcome.json`とrunのディレクトリから読む。
 
 ### D8. 画像のコメントは、マーカーのrunと状態で二重の投稿を防ぐ
 `writeOut`は、doneの投稿とラベルの付け替えのあとで添付する。同じrunで状態`attachment`の投稿があれば、何もしない。添付に失敗したら、理由だけのコメントを同じマーカーで投稿する。このため、やり直しても2件目は付かない。理由のコメントの投稿まで失敗したら、書き戻し全体の失敗とし、次のpollでやり直す。
