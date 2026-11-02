@@ -34,6 +34,10 @@ type texts struct {
 	// The progress comment of a run: its heading, the separators of a line, and a line withheld for a secret.
 	progressTitle, toolSep, purposeSep, noTools, progressWithheld string
 	hours, minutes                                                string // elapsed-time formats
+
+	// The images of a done run (ADR-047): the line of the done post, the title of the comment that attaches them, the
+	// heading of the files left out and why each was, and the lines of an attachment that failed.
+	shotsNext, shotsTitle, shotsSkipped, shotsTooLarge, shotsTooMany, shotsNotImage, shotsFailed, shotsNoAttach string
 }
 
 var english = texts{
@@ -114,6 +118,15 @@ var english = texts{
 	progressWithheld: "(this line was withheld because it looks like it contains a secret)",
 	hours:            "%dh%dm",
 	minutes:          "%dm",
+
+	shotsNext:     "The screenshots are in the next comment.",
+	shotsTitle:    "Screenshots",
+	shotsSkipped:  "Files not attached",
+	shotsTooLarge: "larger than %d MB",
+	shotsTooMany:  "more than %d files",
+	shotsNotImage: "not a .png, .jpg, .jpeg or .webp file",
+	shotsFailed:   "The images could not be attached: %s",
+	shotsNoAttach: "this forge has no way to attach images",
 }
 
 var japanese = texts{
@@ -194,6 +207,15 @@ var japanese = texts{
 	progressWithheld: "（秘密情報を含むように見えるため、この行を伏せました）",
 	hours:            "%d時間%d分",
 	minutes:          "%d分",
+
+	shotsNext:     "スクリーンショットは次のコメントにあります。",
+	shotsTitle:    "スクリーンショット",
+	shotsSkipped:  "付けなかったファイル",
+	shotsTooLarge: "%d MBより大きい",
+	shotsTooMany:  "%d枚を超えた",
+	shotsNotImage: ".png・.jpg・.jpeg・.webpのどれでもない",
+	shotsFailed:   "画像を付けられませんでした：%s",
+	shotsNoAttach: "このフォージには画像を付ける手段がありません",
 }
 
 func textsFor(lang string) texts {

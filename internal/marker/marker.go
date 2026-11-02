@@ -25,7 +25,7 @@ type Marker struct {
 	Host    string
 	Session string
 	Run     string
-	State   string // running (the claim of a run), progress (its progress comment), queued, waiting, done
+	State   string // running (the claim of a run), progress (its progress comment), queued, waiting, done, attachment
 	Reason  string // for waiting: question, permission, error, verify, limit, plan-questions, plan, push, ci, conflict; for queued: the limit; for running: fix on a fix run's claim
 	Ack     int64  // the last comment ID the run took in
 	At      time.Time
@@ -59,12 +59,14 @@ const (
 	Queued   = "queued" // the comment of an issue waiting for a free slot
 	Waiting  = "waiting"
 	Done     = "done"
+	// Attachment marks the comment that attaches the images of a done run, posted after its done post (ADR-047).
+	Attachment = "attachment"
 )
 
-// Transient reports whether m marks a post that lasts only while a run goes on or waits for a slot: its claim, its
-// progress comment, or the queued comment. Such a post says nothing about why an issue waits or how a run ended.
+// Transient reports whether m marks a post that says nothing about why an issue waits or how a run ended: the claim
+// of a run, its progress comment, the queued comment, or the comment that attaches a run's images.
 func (m *Marker) Transient() bool {
-	return m.State == Running || m.State == Progress || m.State == Queued
+	return m.State == Running || m.State == Progress || m.State == Queued || m.State == Attachment
 }
 
 // clean keeps a value on one token: spaces become underscores and the comment terminator cannot appear.

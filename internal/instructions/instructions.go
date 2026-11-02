@@ -1,6 +1,6 @@
 // Package instructions keeps the user's additional instructions for the runs: one file for every project and one per
-// project, in the instructions directory next to the configuration file. There are two kinds: plan.md for the runs in
-// the plan stage, run.md for the runs that write files.
+// project, in the instructions directory next to the configuration file. There are three kinds: plan.md for the runs in
+// the plan stage, run.md for the runs that write files, implement.md for the runs that implement an issue.
 package instructions
 
 import (
@@ -30,13 +30,20 @@ var (
 	ErrSecret = errors.New("the instructions look like they hold a secret")
 )
 
-// Kind tells the instructions of the plan runs from those of the runs that write files.
+// Kind tells the instructions of the plan runs from those of the runs that write files, and from those of the runs
+// that implement an issue (ADR-047).
 type Kind string
 
 const (
 	Plan Kind = "plan"
 	Run  Kind = "run"
+	// Implement are the instructions of the direct runs and the runs of an approved plan only: no plan run and no
+	// fix run gets them.
+	Implement Kind = "implement"
 )
+
+// Kinds are the kinds of instructions, in the order the inbox API and the settings page list them.
+var Kinds = []Kind{Plan, Run, Implement}
 
 // ParseKind reads a kind as the inbox API sends it; "" is Plan, so that a client that does not know kinds saves the
 // plan instructions as before.
@@ -44,10 +51,10 @@ func ParseKind(s string) (Kind, error) {
 	switch Kind(s) {
 	case "", Plan:
 		return Plan, nil
-	case Run:
-		return Run, nil
+	case Run, Implement:
+		return Kind(s), nil
 	}
-	return "", fmt.Errorf("%q is not a kind of instructions (plan or run)", s)
+	return "", fmt.Errorf("%q is not a kind of instructions (plan, run or implement)", s)
 }
 
 // Store reads and writes the instruction files of one Kind under Dir; the zero Kind is Plan. Audit records every save;

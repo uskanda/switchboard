@@ -210,6 +210,9 @@ func (s *Space) CheckOutput(ctx context.Context, extraProtected, texts []string)
 		if isProtected(f, extraProtected) {
 			problems = append(problems, fmt.Sprintf("the change touches the protected path %s", f))
 		}
+		if strings.HasPrefix(f, ScreenshotDir+"/") {
+			problems = append(problems, fmt.Sprintf("the change commits %s; images in %s/ are attached to the issue and must not be committed", f, ScreenshotDir))
+		}
 		diff, err := s.git(ctx, dir, nil, "diff", s.base()+"...HEAD", "--", f)
 		if err != nil {
 			return nil, err

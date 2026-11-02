@@ -32,6 +32,11 @@ type outcome struct {
 	Q       int    `json:"q,omitempty"`   // for plan-questions: the number of the last question
 	SHA     string `json:"sha,omitempty"` // for done: the commit pushed, whose CI is watched
 	CR      int    `json:"cr,omitempty"`  // for done: the number of the change request
+	// For done: the images kept in the run directory's screenshots/ to attach, the files left out, and why the
+	// images could not be collected (ADR-047).
+	Shots      []string            `json:"shots,omitempty"`
+	Skipped    []workspace.Skipped `json:"skipped,omitempty"`
+	ShotsError string              `json:"shots_error,omitempty"`
 
 	msg texts
 	// next, set instead of a state, hands the issue to a fix run of a refused push; such an outcome is not written.
@@ -148,14 +153,87 @@ func (a *Agent) writeOut(ctx context.Context, ref forge.IssueRef, o *outcome, se
 		}
 	}
 	a.dropProgress(ctx, ref, o.Run, comments)
-	if !setLabel {
+	if setLabel {
+		to := a.Config.Labels.Waiting
+		if o.State == "done" {
+			to = a.Config.Labels.Done
+		}
+		if err := a.swapper(ref).Swap(ctx, ref, to); err != nil {
+			return err
+		}
+	}
+	return a.attach(ctx, ref, o, comments)
+}
+
+// attach posts the comment with the images of a done run, after its done post and its label (ADR-047), unless
+// comments hold one of the same run. When the images cannot be attached, the comment says why instead; the done
+// stays. Only a failure to post that comment fails the write-back, which is then tried again.
+func (a *Agent) attach(ctx context.Context, ref forge.IssueRef, o *outcome, comments []forge.Comment) error {
+	if o.State != "done" || len(o.Shots) == 0 && len(o.Skipped) == 0 && o.ShotsError == "" {
 		return nil
 	}
-	to := a.Config.Labels.Waiting
-	if o.State == "done" {
-		to = a.Config.Labels.Done
+	agentID := a.judgeOf(ref).AgentIDOf(ref)
+	for _, c := range comments {
+		if m, ok := marker.Parse(c.Body); ok && c.Author.ID == agentID && m.Run == o.Run && m.State == marker.Attachment {
+			return nil
+		}
 	}
-	return a.swapper(ref).Swap(ctx, ref, to)
+	body := "### " + a.msg.shotsTitle
+	if len(o.Skipped) > 0 {
+		var lines []string
+		for _, s := range o.Skipped {
+			lines = append(lines, "- `"+strings.ReplaceAll(s.Name, "`", "'")+"`: "+a.skipReason(s.Reason))
+		}
+		list := strings.Join(lines, "\n")
+		if workspace.HasSecret(list) {
+			list = fmt.Sprintf(a.msg.withheld, o.Run) // the names come from the run
+		}
+		body += "\n\n**" + a.msg.shotsSkipped + "**\n\n" + list
+	}
+	m := marker.Marker{Host: a.Config.Host.Name, Session: o.Session, Run: o.Run, State: marker.Attachment, At: time.Now()}
+	why := o.ShotsError
+	if len(o.Shots) > 0 && why == "" {
+		files := make([]string, len(o.Shots))
+		for i, n := range o.Shots {
+			files[i] = filepath.Join(a.runDir(o.Run), "screenshots", n)
+		}
+		at, ok := a.forgeOf(ref).(forge.Attacher)
+		if !ok {
+			why = a.msg.shotsNoAttach
+		} else {
+			c, err := at.AttachComment(ctx, ref, body+"\n\n"+m.Format()+"\n", files)
+			if err == nil {
+				a.Audit.Log("attachment.posted", map[string]any{"issue": ref.String(), "run": o.Run, "comment": c.ID, "files": len(files)})
+				return nil
+			}
+			if ctx.Err() != nil {
+				return err
+			}
+			why = err.Error()
+		}
+	}
+	if why != "" {
+		why = workspace.Redact(why)
+		a.Audit.Log("attachment.failed", map[string]any{"issue": ref.String(), "run": o.Run, "error": why})
+		body += "\n\n" + fmt.Sprintf(a.msg.shotsFailed, why)
+	}
+	c, err := a.forgeOf(ref).PostComment(ctx, ref, body+"\n\n"+m.Format()+"\n")
+	if err != nil {
+		return fmt.Errorf("post the screenshots comment: %w", err)
+	}
+	a.Audit.Log("attachment.posted", map[string]any{"issue": ref.String(), "run": o.Run, "comment": c.ID, "files": 0})
+	return nil
+}
+
+// skipReason is the text of why a file was not attached.
+func (a *Agent) skipReason(reason string) string {
+	switch reason {
+	case workspace.SkipTooLarge:
+		return fmt.Sprintf(a.msg.shotsTooLarge, workspace.MaxScreenshotSize>>20)
+	case workspace.SkipTooMany:
+		return fmt.Sprintf(a.msg.shotsTooMany, workspace.MaxScreenshots)
+	}
+	return a.msg.shotsNotImage
 }
 
 // checkComment runs comments.check_command on the comment, written to name in the run directory. A failure is
