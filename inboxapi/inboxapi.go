@@ -117,23 +117,26 @@ type ReplyRequest struct {
 	Force bool   `json:"force,omitempty"`
 }
 
-// Instruction is one file of the additional instructions of the plan runs. Target is "" for the instructions of
-// every project, else a project as gh:owner/repo or gl:group/project. Content is "" when there is no file.
+// Instruction is one file of the additional instructions. Target is "" for the instructions of every project, else a
+// project as gh:owner/repo or gl:group/project. Kind is "plan" for the plan runs' instructions, "run" for those of
+// the runs that write files. Content is "" when there is no file.
 type Instruction struct {
 	Target  string `json:"target"`
+	Kind    string `json:"kind"`
 	Content string `json:"content"`
 }
 
-// Instructions is the answer to GET /v1/instructions: the global instructions, then one item per configured
-// project, all read on Host, the machine of the inbox service.
+// Instructions is the answer to GET /v1/instructions: the global instructions, then those of each configured project,
+// the plan kind before the run kind for each, all read on Host, the machine of the inbox service.
 type Instructions struct {
 	Host  string        `json:"host"`
 	Items []Instruction `json:"items"`
 }
 
-// SaveInstructionsRequest is the body of PUT /v1/instructions.
+// SaveInstructionsRequest is the body of PUT /v1/instructions. An empty Kind saves the plan runs' instructions.
 type SaveInstructionsRequest struct {
 	Target  string `json:"target"`
+	Kind    string `json:"kind,omitempty"`
 	Content string `json:"content"`
 }
 

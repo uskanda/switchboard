@@ -83,6 +83,7 @@ echo "$session" > "$ctl/session-$n"
 prev=""
 for a in "$@"; do
   [ "$prev" = "--append-system-prompt-file" ] && cp "$a" "$ctl/system-$n.md"
+  [ "$prev" = "--settings" ] && cp "$a" "$ctl/settings-$n.json"
   prev=$a
 done
 cat > "$ctl/prompt-$n.md"

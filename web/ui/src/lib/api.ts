@@ -106,8 +106,12 @@ export type Comment = {
 export const watchKey = (it: Item) =>
   JSON.stringify([it.updated_at ?? null, it.notes ?? 0, it.state ?? "waiting", it.reason, it.progress ?? null]);
 
-/** One file of the plan runs' additional instructions; target "" is the one for every project. */
-export type Instruction = { target: string; content: string };
+/**
+ * One file of the additional instructions; target "" is the one for every project. kind "plan" is for the plan runs,
+ * "run" for the runs that write files; an inbox service older than kinds leaves it out, which means "plan".
+ */
+export type InstructionKind = "plan" | "run";
+export type Instruction = { target: string; kind?: InstructionKind; content: string };
 
 /** Instructions are read on host, the machine of the inbox service. */
 export type Instructions = { host: string; items: Instruction[] };
@@ -162,11 +166,11 @@ export const postReply = (ref: string, text: string) =>
 
 export const getInstructions = () => call<Instructions>("/api/instructions");
 
-export const saveInstructions = (target: string, content: string) =>
+export const saveInstructions = (target: string, kind: InstructionKind, content: string) =>
   call<void>("/api/instructions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ target, content }),
+    body: JSON.stringify({ target, kind, content }),
   });
 
 export const getProjects = () => call<Projects>("/api/projects");

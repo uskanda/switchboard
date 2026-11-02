@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -17,14 +18,18 @@ func init() {
 	cli.Register("instructions edit", instructionsEdit)
 }
 
-// instructionsEdit opens the additional instructions of the plan runs in $EDITOR: the global ones, or a project's.
+// instructionsEdit opens the additional instructions in $EDITOR: the global ones, or a project's; those of the plan
+// runs, or with --run those of the runs that write files.
 func instructionsEdit(args []string, stdout, stderr io.Writer) int {
-	cfg, fs, code := parse("instructions edit", args, stderr, nil)
+	var run *bool
+	cfg, fs, code := parse("instructions edit", args, stderr, func(fs *flag.FlagSet) {
+		run = fs.Bool("run", false, "edit the instructions of the runs that write files instead of the plan runs")
+	})
 	if code >= 0 {
 		return code
 	}
 	if fs.NArg() > 1 {
-		fmt.Fprintln(stderr, "usage: switchboard instructions edit [gh:owner/repo|gl:group/project] [--config FILE]")
+		fmt.Fprintln(stderr, "usage: switchboard instructions edit [--run] [gh:owner/repo|gl:group/project] [--config FILE]")
 		return 2
 	}
 	target := fs.Arg(0)
@@ -36,6 +41,9 @@ func instructionsEdit(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 	s := instructions.For(cfg.Path, d.Audit())
+	if *run {
+		s = s.Of(instructions.Run)
+	}
 	path, err := s.Path(target)
 	if err != nil {
 		return fail(stderr, err)
