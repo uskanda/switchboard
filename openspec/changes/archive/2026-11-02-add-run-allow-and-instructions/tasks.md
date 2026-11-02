@@ -37,6 +37,6 @@
 
 ## 7. 開発者の端末（手作業）
 
-- [ ] 7.1 `switchboard` をこの変更を入れた版にして、常駐のサービスを入れ直す。設定に `<agent.allow_tools_extra>`（`Skill`）を書く。OpenSpecを使うプロジェクトには `<projects[].allow_tools_extra>`（`Bash(openspec *)`）を書く
-- [ ] 7.2 6.3の記入例をもとに、`<instructions/run.md>` を `switchboard instructions edit --run` で書く
-- [ ] 7.3 `agent:plan` のissueを1つ承認まで進める。実装の実行の最初のコミットで `openspec/changes/` にchangeができることを確かめる。`stream.jsonl` で、Skillと `openspec` の呼び出しが拒否されていないことを確かめる
+- [x] 7.1 `switchboard` をこの変更を入れた版にして、常駐のサービスを入れ直す。設定に `<agent.allow_tools_extra>`（`Skill`）を書く。OpenSpecを使うプロジェクトには `<projects[].allow_tools_extra>`（`Bash(openspec *)`）を書く
+- [x] 7.2 6.3の記入例をもとに、`<instructions/run.md>` を `switchboard instructions edit --run` で書く
+- [x] 7.3 `agent:plan` のissueを1つ承認まで進める。実装の実行の最初のコミットで `openspec/changes/` にchangeができることを確かめる。`stream.jsonl` で、Skillと `openspec` の呼び出しが拒否されていないことを確かめる
