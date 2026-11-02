@@ -24,7 +24,7 @@
 | T2 | 中継サーバーの侵害による任意指示の注入 | 中継は ID のみを流し、本文はローカルがフォージから再取得。中継にフォージのトークンを置かない |
 | T3 | 偽装 webhook の送信 | 署名検証（定数時間比較）。検証失敗はログに残し破棄 |
 | T4 | webhook の再送・リプレイ | 配信ID による重複排除。エージェント側でも「処理済みコメントID」を記録 |
-| T5 | 端末への直接攻撃（受信口） | 端末は受信ポートを開かない。中継への接続は外向きのみ。例外は受信箱のWeb表示で、LANのアドレスに限って待ち、返答のPOSTは `Origin` と `Host` を検査する。issueの作成のPOSTも同じ検査をする（ADR-040）。認証は当面しない（ADR-036） |
+| T5 | 端末への直接攻撃（受信口） | 端末は受信ポートを開かない。中継への接続は外向きのみ。例外は受信箱のWeb表示で、LANのアドレスに限って待ち、返答のPOSTは `Origin` と `Host` を検査する。issueの作成のPOSTも同じ検査をする（ADR-040）。完了のPR/MRのマージのPOSTも同じ検査をし、画面で見たコミットに限ってマージする（ADR-043）。認証は当面しない（ADR-036） |
 | T6 | フォージトークンの漏えい | 最小権限（対象リポジトリの issues 読み書き・contents 必要最小）。fine-grained PAT / Project Access Token を使い、OS キーチェーンに保存 |
 | T7 | エージェントの暴走による破壊的操作 | 許可ツールの明示、main への push・マージ・リリースの拒否、worktree での作業、タイムアウト |
 | T8 | 隠しマーカーの偽装による受信箱の混乱 | マーカーは投稿者がエージェント用アカウント（または自分）のコメントのみ採用 |
@@ -34,7 +34,7 @@
 
 - GitHub：fine-grained PAT。対象リポジトリのみ、Issues: Read/Write、Pull requests: Read/Write、Contents: Read/Write（PR作成に必要な範囲）、Actions: ReadとCommit statuses: Read（PRのCIを見張るため。ADR-041）
 - GitLab：Project Access Token または PAT の `api` スコープ（最小化できない場合は対象プロジェクト限定の Project Access Token を推奨）
-- 受信箱専用に読み取り＋コメント投稿のみのトークンを分けることを検討（ADR-008）
+- 受信箱専用のトークン（`inbox_token_ref`）は人の身元で、エージェントのトークンと分ける（ADR-008）。権限は、GitHubではIssues、Pull requests、Contentsの読み書きとする。Pull requestsとContentsの書き込みは、受信箱のWeb表示から完了のPRをマージするために使う（ADR-043）。GitLabは `api` スコープで足りる
 - 中継サーバーが持つのは webhook シークレットのみ
 
 ## 5. 監査

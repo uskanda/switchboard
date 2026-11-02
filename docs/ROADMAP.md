@@ -95,6 +95,9 @@
 | V36 | `Actions: Read` と `Commit statuses: Read` を足したfine-grained PATで、workflow run、job、jobのログ（302のリダイレクトの先）、combined statusを読めるか。足さないトークンでは403になるか | 未確認（`handle-push-and-ci-failures` の実装の時点。sandboxのリポジトリで確かめる） | |
 | V37 | usknasの常駐のサービスで、わざと失敗するテストを含むissueのPRのCIが失敗したとき、直す実行が同じPRにpushし、CIが通って見張りが終わるか。人が `switchboard/issue-<n>` にコミットを足してから再実行させると、`git merge` で取り込んでpushされるか | 未確認（`handle-push-and-ci-failures` の実装の時点） | |
 | V34 | usknasの常駐のサービスのWUIから `gh:uskanda/switchboard-sandbox` に `agent:plan` でissueを作ると、エージェントが受信箱のトークンの身元を信頼済みと判断し、計画から着手するか。`Origin` の無いPOSTは403になるか | 未確認（`add-web-issue-create` の実装の時点。常駐のサービスで確かめる） | |
+| V38 | GitHubのfine-grained PATで、GraphQLの `markPullRequestReadyForReview` と、`sha` を付けた `PUT /repos/<owner>/<repo>/pulls/<n>/merge` が通るか。Pull requestsとContentsの書き込みが無いトークンでは403になるか（GraphQLは200で `FORBIDDEN` の誤りを返すか）。`sha` が違えば409、マージできなければ405になるか | 未確認（issue #69の実装の時点。実装は、409をheadの移動、405と422をフォージの拒否として扱う） | |
+| V39 | GitLabで、タイトルから `Draft: ` を外す `PUT /projects/:id/merge_requests/:iid` と、`sha` を付けた `PUT /projects/:id/merge_requests/:iid/merge` が通るか。`sha` が違うとき、マージできないときの応答のコードは何か（405、406、409） | 未確認（issue #69の実装の時点。実装は、409をheadの移動、405と406と422をフォージの拒否として扱う） | |
+| V40 | usknasの常駐のサービスのWUIから、`gh:uskanda/switchboard-sandbox` のdraftのPRをマージすると、PRの `Closes` でissueが閉じ、受信箱から消えるか | 未確認（issue #69の実装の時点。受信箱のトークンにREADMEの手順で権限を足してから確かめる） | |
 
 ### 検証で分かった、設計に関わる点
 
