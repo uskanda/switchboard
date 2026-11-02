@@ -356,3 +356,40 @@ func TestSearchOpenIssuesWithAnyOfTheLabels(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestErrorIncludesDetails(t *testing.T) {
+	s, c := newServer(t)
+	s.on("POST /repos/o/r/pulls", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = io.WriteString(w, `{"message":"Validation Failed","errors":[`+
+			`{"resource":"PullRequest","code":"custom","message":"A pull request already exists for o:h."},`+
+			`{"resource":"PullRequest","code":"invalid","field":"base"}]}`)
+	})
+	_, err := c.CreateChangeRequest(ctx, forge.ChangeRequest{Owner: "o", Repo: "r", Title: "x", Head: "h", Base: "main"})
+	want := "github: POST /repos/o/r/pulls: 422 Validation Failed: A pull request already exists for o:h.; invalid base"
+	if err == nil || err.Error() != want {
+		t.Fatalf("err = %v, want %q", err, want)
+	}
+}
+
+func TestOpenChangeRequest(t *testing.T) {
+	s, c := newServer(t)
+	s.on("GET /repos/o/r/pulls", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		if q.Get("state") != "open" || q.Get("base") != "main" {
+			t.Errorf("query = %s", r.URL.RawQuery)
+		}
+		if q.Get("head") == "o:switchboard/issue-3" {
+			jsonReply([]map[string]any{{"html_url": "https://github.test/o/r/pull/48"}})(w, r)
+			return
+		}
+		jsonReply([]any{})(w, r)
+	})
+	url, err := c.OpenChangeRequest(ctx, "o", "r", "switchboard/issue-3", "main")
+	if err != nil || url != "https://github.test/o/r/pull/48" {
+		t.Fatalf("OpenChangeRequest = %q, %v", url, err)
+	}
+	if _, err := c.OpenChangeRequest(ctx, "o", "r", "switchboard/issue-4", "main"); !errors.Is(err, forge.ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound", err)
+	}
+}

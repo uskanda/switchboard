@@ -28,14 +28,15 @@ function failure(err: unknown): string {
 /**
  * PlanHint says how to answer a wait of the plan stage: the approval word approves a plan, and questions are answered
  * by choosing (answerable) or in words. It never offers the approval word for questions: after a plan, it would
- * approve that plan.
+ * approve that plan. For a CI that failed past the fix limit and a refused push, it says what a reply does and what
+ * to check first.
  */
 function PlanHint({ reason, word, answerable }: { reason: string; word: string; answerable: boolean }) {
   const code = <code className="font-mono text-mono-sm">{word}</code>;
   if (reason === "plan") {
     return (
       <p className="text-label-md text-muted">
-        この計画で進めるなら {code} と送ると承認になり、作業が始まります。直してほしいところがあれば、そのまま書いて送ってください。
+        この計画で進めるなら「承認する」を押すか、{code} と送ると承認になり、作業が始まります。直してほしいところがあれば、そのまま書いて「返答を送る」を押してください。
       </p>
     );
   }
@@ -45,6 +46,20 @@ function PlanHint({ reason, word, answerable }: { reason: string; word: string; 
         {answerable
           ? "問いごとに選んで「この内容で返答」を押します。返答の欄に書いた文は、全体への補足として加わります。返答の欄の文だけを送るなら「返答を送る」を押します。"
           : "問いごとの答えを、返答の欄に書いて送ってください。"}
+      </p>
+    );
+  }
+  if (reason === "ci") {
+    return (
+      <p className="text-label-md text-muted">
+        返信するとエージェントが実行を再開し、CIの失敗を自動で直す回数を数え直します。
+      </p>
+    );
+  }
+  if (reason === "push") {
+    return (
+      <p className="text-label-md text-muted">
+        pushが拒否されました。返信する前に、エージェントのトークンかリモートの設定（ブランチの保護など）を確かめてください。
       </p>
     );
   }
@@ -131,6 +146,9 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
   const plan = found && ((detail?.waiting && detail.reason === "plan-questions") || touched) ? found : null;
   const answers = plan ? (touched ? choices!.answers : plan.defaults) : [];
   const composed = plan ? composeReply(plan.parsed.questions, answers, text) : "";
+  const word = detail?.approve_word || "/ok";
+  // A wait on a plan is approved by its approval word alone, sent in one click while the reply is empty.
+  const approving = detail?.reason === "plan" && !plan;
 
   async function send(reply: string) {
     setSending(true);
@@ -230,7 +248,7 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
               <label htmlFor="reply" className="text-label-md font-medium">
                 返答
               </label>
-              <PlanHint reason={detail.reason} word={detail.approve_word || "/ok"} answerable={!!plan} />
+              <PlanHint reason={detail.reason} word={word} answerable={!!plan} />
               <Textarea id="reply" value={text} onChange={(e) => setText(e.target.value)} disabled={sending} />
               {finished && <p className="text-label-md text-muted">作業は終わっています。返答すると、エージェントが同じPR/MRで作業を再開します。</p>}
               {!replyable && <p className="text-muted">このissueは待ちではなくなりました。返答は送れません。</p>}
@@ -251,6 +269,15 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
                     </Button>
                   </div>
                 </>
+              ) : approving ? (
+                <div className="flex flex-wrap justify-end gap-sm">
+                  <Button type="submit" variant="secondary" disabled={sending || !detail.waiting || text.trim() === ""}>
+                    返答を送る
+                  </Button>
+                  <Button type="button" disabled={sending || !detail.waiting || text.trim() !== ""} onClick={() => void send(word)}>
+                    {sending ? "送っています" : `承認する（${word} を送る）`}
+                  </Button>
+                </div>
               ) : (
                 <Button type="submit" disabled={sending || !replyable || text.trim() === ""} className="self-end">
                   {sending ? "送っています" : "返答を送る"}

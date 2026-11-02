@@ -164,6 +164,23 @@ func HasSecret(s string) bool {
 	return false
 }
 
+// credentialsInURL matches the user and password of a URL; privateKey a whole private key block.
+var (
+	credentialsInURL = regexp.MustCompile(`://[^/@\s]+@`)
+	privateKey       = regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----(?s:.*?)(?:-----END [A-Z ]*PRIVATE KEY-----|\z)`)
+)
+
+// Redact replaces what looks like a token, a private key, or the credentials of a URL in s with [redacted], so that
+// s may be posted or handed to claude.
+func Redact(s string) string {
+	s = privateKey.ReplaceAllString(s, "[redacted]")
+	s = credentialsInURL.ReplaceAllString(s, "://[redacted]@")
+	for _, p := range secretPatterns {
+		s = p.ReplaceAllString(s, "[redacted]")
+	}
+	return s
+}
+
 // CheckOutput returns the reasons the issue branch must not be pushed: it is not the issue branch, it has no
 // commit ahead of the base, it changes a protected path, or a diff, a commit message or one of texts contains a
 // secret. A problem names the file or the text by its position, never the secret itself.
@@ -250,7 +267,30 @@ func (s *Space) Push(ctx context.Context) error {
 		return err
 	}
 	defer cleanup()
-	_, err = s.git(ctx, s.Dir(), env, "push", "-q", "origin", "refs/heads/"+b+":refs/heads/"+b)
+	cmd := exec.CommandContext(ctx, "git", "push", "-q", "origin", "refs/heads/"+b+":refs/heads/"+b)
+	cmd.Dir = s.Dir()
+	cmd.Env = append(append([]string(nil), s.Env...), env...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		o := strings.TrimSpace(string(out))
+		return &PushError{Kind: ClassifyPush(o), Output: o, err: err}
+	}
+	return nil
+}
+
+// FetchIssueBranch fetches the issue branch of origin into origin/<branch>, for a fix run to merge.
+func (s *Space) FetchIssueBranch(ctx context.Context) error {
+	env, cleanup, err := s.authEnv()
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	defer s.lockClone()()
+	b := s.branch()
+	_, err = s.git(ctx, s.Repo, env, "fetch", "-q", "origin", "+refs/heads/"+b+":refs/remotes/origin/"+b)
 	return err
 }
 

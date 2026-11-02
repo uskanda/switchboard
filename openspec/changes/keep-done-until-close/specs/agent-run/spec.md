@@ -24,7 +24,7 @@ GitLabでは、コメントでissueの更新時刻が変わらないので、エ
 ## REMOVED Requirements
 
 ### Requirement: 完了後のコメント
-**Reason**: doneの後も、PR/MRの問題やコンフリクトのためにやりとりが要る（ADR-040）。
+**Reason**: doneの後も、PR/MRの問題やコンフリクトのためにやりとりが要る（ADR-042）。
 **Migration**: 要件の返答による再開に、`agent:done` のissueを含めた。人間がラベルを付けただけで、エージェントのdoneの投稿が無い `agent:done` のissueは、今までどおり再開しない。
 
 ## ADDED Requirements

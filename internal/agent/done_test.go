@@ -22,7 +22,7 @@ func (x *h) doneOnce() post {
 }
 
 // A trusted comment on a done issue resumes it: the run takes the comment in, and its done keeps the open pull
-// request instead of opening a second one (ADR-040).
+// request instead of opening a second one (ADR-042).
 func TestTrustedCommentOnADoneIssueResumesAndUpdatesThePullRequest(t *testing.T) {
 	x := newH(t, "", nil)
 	x.doneOnce()
@@ -83,7 +83,7 @@ func TestImplementingRunMayMerge(t *testing.T) {
 func TestClosedPullRequestIsNotReused(t *testing.T) {
 	x := newH(t, "", nil)
 	x.doneOnce()
-	x.f.CloseChangeRequest(1)
+	x.f.ClosePR(0)
 	x.step(2, commit("b.txt", "b")+done("Again."))
 	x.f.AddComment(x.ref, "Once more.", x.master)
 	x.poll()

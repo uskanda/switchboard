@@ -96,3 +96,22 @@ func TestQueuedMarker(t *testing.T) {
 		t.Errorf("QueuedProject = %q", QueuedProject)
 	}
 }
+
+func TestDoneMarkerCarriesCommitAndChangeRequest(t *testing.T) {
+	m := Marker{Host: "h", Run: "r", State: Done, At: at, SHA: "abc123", CR: 48}
+	got, ok := Parse(m.Format())
+	if !ok || got.SHA != "abc123" || got.CR != 48 {
+		t.Fatalf("Parse(%q) = %+v", m.Format(), got)
+	}
+	if strings.Contains((Marker{Host: "h", State: Done, At: at}).Format(), "sha=") {
+		t.Error("a marker without a commit must not write sha")
+	}
+}
+
+func TestFixClaimMarker(t *testing.T) {
+	m := Marker{Host: "h", Run: "r", State: Running, Reason: Fix, At: at}
+	got, ok := Parse(m.Format())
+	if !ok || got.Reason != "fix" || got.State != Running {
+		t.Fatalf("Parse(%q) = %+v", m.Format(), got)
+	}
+}

@@ -55,7 +55,8 @@ func (e *apiError) Unwrap() error {
 	return nil
 }
 
-// do sends one request. in, when non-nil, is sent as JSON; out, when non-nil, receives the JSON response.
+// do sends one request. in, when non-nil, is sent as JSON; out, when non-nil, receives the JSON response, or the
+// raw body when it is a *[]byte.
 func (c *Client) do(ctx context.Context, method, rawURL string, in, out any) (*http.Response, error) {
 	var body io.Reader
 	if in != nil {
@@ -85,6 +86,10 @@ func (c *Client) do(ctx context.Context, method, rawURL string, in, out any) (*h
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return nil, &apiError{method: method, path: req.URL.Path, status: resp.StatusCode, message: message(data)}
+	}
+	if raw, ok := out.(*[]byte); ok {
+		*raw = data
+		return resp, nil
 	}
 	if out != nil && len(data) > 0 {
 		if err := json.Unmarshal(data, out); err != nil {
@@ -415,19 +420,19 @@ func (c *Client) CreateChangeRequest(ctx context.Context, cr forge.ChangeRequest
 	return out.WebURL, err
 }
 
-// FindOpenChangeRequest implements forge.Forge with the opened merge requests of the source branch.
-func (c *Client) FindOpenChangeRequest(ctx context.Context, owner, repo, head string) (string, bool, error) {
+// OpenChangeRequest implements forge.Forge with the open merge requests from head to base.
+func (c *Client) OpenChangeRequest(ctx context.Context, owner, repo, head, base string) (string, error) {
 	var out []struct {
 		WebURL string `json:"web_url"`
 	}
-	q := url.Values{"source_branch": {head}, "state": {"opened"}, "per_page": {"1"}}
+	q := url.Values{"state": {"opened"}, "source_branch": {head}, "target_branch": {base}}
 	if _, err := c.do(ctx, http.MethodGet, c.url(project(owner, repo)+"/merge_requests", q), nil, &out); err != nil {
-		return "", false, err
+		return "", err
 	}
 	if len(out) == 0 {
-		return "", false, nil
+		return "", forge.ErrNotFound
 	}
-	return out[0].WebURL, true, nil
+	return out[0].WebURL, nil
 }
 
 type glProject struct {

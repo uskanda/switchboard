@@ -24,7 +24,7 @@ func doneIssue(w *world, n int, link string, ago time.Duration) forge.IssueRef {
 	return ref
 }
 
-// An open done issue stays in the inbox until it is closed (ADR-040): after the waiting ones, oldest done first,
+// An open done issue stays in the inbox until it is closed (ADR-042): after the waiting ones, oldest done first,
 // numbered on from them.
 func TestListShowsOpenDoneIssuesAfterTheWaitingOnes(t *testing.T) {
 	w := newWorld(t)

@@ -200,7 +200,7 @@ projects:
 	if got := strings.Join(states, " | "); got != "running | waiting | reply by me | running | done" {
 		t.Fatalf("thread = %s", got)
 	}
-	// The open done issue stays in the inbox, with its pull request, until it is closed (ADR-040).
+	// The open done issue stays in the inbox, with its pull request, until it is closed (ADR-042).
 	if items, err := box.List(ctx); err != nil || len(items) != 1 || items[0].State != inbox.Done || items[0].ChangeURL != "https://forge.test/me/tool/pull/1" {
 		t.Fatalf("inbox after done = %+v, %v", items, err)
 	}

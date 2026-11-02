@@ -19,10 +19,10 @@ type Subscriber interface {
 
 // interval is how long the loop waits between polls: reconcile_interval while the relay is up and has a webhook for
 // every project, else poll_interval. A project without a webhook in relay.hooks gets no event, so it is polled as
-// if there were no relay. Something to try again (a write-back, an evaluation that failed) also brings the loop
-// back to poll_interval until it is done.
+// if there were no relay. Something to try again (a write-back, an evaluation that failed) or a CI to watch also
+// brings the loop back to poll_interval until it is done.
 func (a *Agent) interval() time.Duration {
-	retrying := len(a.retried()) > 0 || a.pendingWriteBacks()
+	retrying := len(a.retried()) > 0 || a.pendingWriteBacks() || a.watching()
 	a.rmu.Lock()
 	defer a.rmu.Unlock()
 	if a.connected && len(a.uncovered()) == 0 && !retrying {

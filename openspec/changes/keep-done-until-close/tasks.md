@@ -2,14 +2,14 @@
 
 ## 1. 文書
 
-- [x] 1.1 `docs/DECISIONS.md` にADR-040を足す
+- [x] 1.1 `docs/DECISIONS.md` にADR-042を足す
 - [x] 1.2 `docs/SPEC.md` の状態図と受信箱の説明に、doneからの再開と完了の節を足す
 - [x] 1.3 README.mdの実行の終わり、受信箱、WUIの説明を直す
 
 ## 2. フォージ（`internal/forge`）
 
-- [x] 2.1 `FindOpenChangeRequest` をインターフェースに足し、GitHubとGitLabで実装する（design D2）。要求の形と応答の読み方を `httptest` のテストで確かめる
-- [x] 2.2 偽フォージに `FindOpenChangeRequest` と、PRを閉じる `CloseChangeRequest` を足す
+- [x] 2.1 開いたPR/MRを探す操作を、GitHubとGitLabで使えるようにする（design D2）。mainとのマージで、`reuse-open-change-request` の `OpenChangeRequest` に置き換えた
+- [x] 2.2 偽フォージで、開いたPRを探す操作とPRを閉じる操作を使えるようにする。mainとのマージで、`OpenChangeRequest` と `ClosePR` に置き換えた
 
 ## 3. エージェント（`internal/agent`）
 

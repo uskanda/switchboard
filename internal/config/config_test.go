@@ -298,3 +298,27 @@ func TestProjectMaxParallelBelowOneIsRefused(t *testing.T) {
 		t.Fatalf("err = %v, want projects[0].max_parallel reported", err)
 	}
 }
+
+func TestMaxFixAttempts(t *testing.T) {
+	c, err := Load(write(t, valid))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Agent.FixAttempts(); got != 2 {
+		t.Errorf("fix attempts without the key = %d, want 2", got)
+	}
+	c, err = Load(write(t, valid+"agent:\n  max_fix_attempts: 0\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Agent.FixAttempts(); got != 0 {
+		t.Errorf("fix attempts = %d, want 0 (no automatic fixes)", got)
+	}
+}
+
+func TestMaxFixAttemptsBelowZeroIsRefused(t *testing.T) {
+	_, err := Load(write(t, valid+"agent:\n  max_fix_attempts: -1\n"))
+	if err == nil || !strings.Contains(err.Error(), "max_fix_attempts") {
+		t.Fatalf("err = %v, want max_fix_attempts reported", err)
+	}
+}

@@ -59,7 +59,7 @@ func DefaultCache() string {
 // come from the marker of the agent's latest done post, and ChangeURL is the pull or merge request it names. On a
 // running issue, Host and RunningSince come from the marker of the claim of the run, and Progress is the last line of
 // its progress comment ("?" without one). On a queued issue, Host, QueuedSince and Reason (the limit reached) come
-// from the marker of its queued comment. Waiting and done issues are numbered, in this order (ADR-040).
+// from the marker of its queued comment. Waiting and done issues are numbered, in this order (ADR-042).
 type Item struct {
 	N            int        `json:"n,omitempty"`
 	State        string     `json:"state"` // waiting, done, running or queued
@@ -643,7 +643,7 @@ type Detail struct {
 	Title   string     `json:"title"`
 	URL     string     `json:"url"`
 	Waiting bool       `json:"waiting"` // open and labeled waiting
-	Done    bool       `json:"done"`    // open and labeled done: it takes a reply too, until it is closed (ADR-040)
+	Done    bool       `json:"done"`    // open and labeled done: it takes a reply too, until it is closed (ADR-042)
 	Host    string     `json:"host"`
 	State   string     `json:"state"` // the state of the agent's latest post, running while the issue runs, or queued
 	Reason  string     `json:"reason"`
@@ -783,7 +783,7 @@ func PrintDetail(w io.Writer, d *Detail) {
 }
 
 // Reply posts text on the issue. Unless force is set, the issue must be open and waiting or done: a comment on an open
-// done issue resumes it (ADR-040).
+// done issue resumes it (ADR-042).
 func (b *Inbox) Reply(ctx context.Context, ref forge.IssueRef, text string, force bool) error {
 	text = strings.TrimSpace(text)
 	if text == "" {

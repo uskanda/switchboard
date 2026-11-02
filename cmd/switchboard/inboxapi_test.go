@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/uskanda/switchboard/internal/config"
+	"github.com/uskanda/switchboard/internal/forge"
+	"github.com/uskanda/switchboard/internal/forge/fake"
 	"github.com/uskanda/switchboard/internal/instructions"
 )
 
@@ -43,5 +45,20 @@ func TestInboxAPIReloadTakesTheProjectsOnly(t *testing.T) {
 	c := api.Projects.Config
 	if len(c.Projects) != 3 || c.Agent.PollInterval != cfg.Agent.PollInterval || c.Path != cfg.Path {
 		t.Errorf("config = %+v, want the new projects and the rest as started", c)
+	}
+	if n := api.NewIssues.Config; n != c {
+		t.Errorf("new issues' config = %+v, want the reloaded one", n)
+	}
+}
+
+func TestInboxAPIOpensIssuesWithTheInboxForges(t *testing.T) {
+	cfg := load(t, bothForges)
+	gh := fake.New(nil)
+	api, _ := inboxAPI(cfg, map[string]forge.Forge{forge.GitHub: gh}, instructions.Store{})
+	if api.NewIssues == nil || api.NewIssues.Config != cfg || api.NewIssues.Issues[forge.GitHub] != gh {
+		t.Fatalf("new issues = %+v, want the inbox forges by kind", api.NewIssues)
+	}
+	if _, ok := api.NewIssues.Issues[forge.GitLab]; ok {
+		t.Error("a forge without a client has an entry")
 	}
 }

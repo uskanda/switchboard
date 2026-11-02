@@ -13,17 +13,16 @@ import (
 
 // Forge holds repositories, issues, comments, label events, users and pull requests in memory.
 type Forge struct {
-	mu     sync.Mutex
-	kind   string // forge.GitHub or forge.GitLab
-	now    func() time.Time
-	nextID int64
-	repos  map[string]*repo
-	users  map[string]forge.User
-	PRs    []forge.ChangeRequest
-	// closedPRs holds the pull requests closed by CloseChangeRequest, by their number (from 1).
-	closedPRs map[int]bool
-	Comments  int // number of PostComment calls, for tests that count writes
-	Edits     int // number of EditComment calls
+	mu       sync.Mutex
+	kind     string // forge.GitHub or forge.GitLab
+	now      func() time.Time
+	nextID   int64
+	repos    map[string]*repo
+	users    map[string]forge.User
+	PRs      []forge.ChangeRequest
+	closed   map[int]bool // indexes into PRs that ClosePR closed
+	Comments int          // number of PostComment calls, for tests that count writes
+	Edits    int          // number of EditComment calls
 	// PostAs is the login PostComment posts as; "agent" when empty.
 	PostAs string
 	// FailSetLabels, when set, is returned by the next SetLabels call and then cleared.
@@ -44,6 +43,9 @@ type Forge struct {
 	failThreadOf             *forge.IssueRef // FailNthThreadOf: only the calls for this issue count
 	// FailSearch, when set, is returned by the next SearchOpenIssuesWithLabel call and then cleared.
 	FailSearch error
+	// FailCI, when set, is returned by every CommitChecks and CheckLog call.
+	FailCI error
+	ci     *ci
 }
 
 type repo struct {
@@ -471,26 +473,27 @@ func (f *Forge) CreateChangeRequest(_ context.Context, cr forge.ChangeRequest) (
 	return fmt.Sprintf("https://forge.test/%s/%s/pull/%d", cr.Owner, cr.Repo, len(f.PRs)), nil
 }
 
-// CloseChangeRequest closes the n-th pull request created (from 1), as a person merging or closing it does.
-func (f *Forge) CloseChangeRequest(n int) {
+// OpenChangeRequest implements forge.Forge.
+func (f *Forge) OpenChangeRequest(_ context.Context, owner, repo, head, base string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.closedPRs == nil {
-		f.closedPRs = map[int]bool{}
-	}
-	f.closedPRs[n] = true
-}
-
-// FindOpenChangeRequest implements forge.Forge.
-func (f *Forge) FindOpenChangeRequest(_ context.Context, owner, name, head string) (string, bool, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	for i, cr := range f.PRs {
-		if cr.Owner == owner && cr.Repo == name && cr.Head == head && !f.closedPRs[i+1] {
-			return fmt.Sprintf("https://forge.test/%s/%s/pull/%d", cr.Owner, cr.Repo, i+1), true, nil
+	for i := len(f.PRs) - 1; i >= 0; i-- {
+		cr := f.PRs[i]
+		if !f.closed[i] && cr.Owner == owner && cr.Repo == repo && cr.Head == head && cr.Base == base {
+			return fmt.Sprintf("https://forge.test/%s/%s/pull/%d", owner, repo, i+1), nil
 		}
 	}
-	return "", false, nil
+	return "", forge.ErrNotFound
+}
+
+// ClosePR closes the i-th change request in PRs, counted from 0.
+func (f *Forge) ClosePR(i int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.closed == nil {
+		f.closed = map[int]bool{}
+	}
+	f.closed[i] = true
 }
 
 // RepoPrivate implements forge.Forge.

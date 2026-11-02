@@ -147,6 +147,33 @@ export const addProject = (ref: string, planFirst: boolean) =>
     body: JSON.stringify({ ref, plan_first: planFirst }),
   });
 
+/** The kinds of start label a new issue can carry: the configuration's labels.ready, labels.plan and labels.go. */
+export type StartKind = "ready" | "plan" | "go";
+
+/**
+ * IssueTargets are every configured project, each with host, the machine that runs it, and the start labels the
+ * configuration names.
+ */
+export type IssueTargets = {
+  items: { ref: string; host: string }[];
+  starts: { kind: StartKind; label: string }[];
+};
+
+/** NewIssue is what a new issue is opened with; the inbox service turns start into the label. */
+export type NewIssue = { ref: string; title: string; body: string; start: StartKind };
+
+/** CreatedIssue is the issue opened: its reference and its page on the forge. */
+export type CreatedIssue = { ref: string; url: string };
+
+export const getIssueTargets = () => call<IssueTargets>("/api/issue-targets");
+
+export const createIssue = (issue: NewIssue) =>
+  call<CreatedIssue>("/api/issues", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(issue),
+  });
+
 /** issuePath is the page of one issue; the ref is one path segment. */
 export const issuePath = (ref: string) => `/issue/${encodeURIComponent(ref)}`;
 
@@ -171,4 +198,4 @@ export function elapsed(since: string | null | undefined, now: Date = new Date()
 }
 
 /** attention tells the reasons that wait on a decision from the ones that report a failure. */
-export const isFailure = (reason: string) => reason === "error" || reason === "permission";
+export const isFailure = (reason: string) => ["error", "permission", "push", "ci"].includes(reason);

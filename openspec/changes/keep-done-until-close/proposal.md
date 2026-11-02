@@ -11,7 +11,7 @@
 - 受信箱の返答（CLI、API、WUI）を、waitingとdoneの両方で受け付ける
 - doneで終える実行は、issueのブランチの開いたPR/MRを探し、あればそれを使い続ける
 - 実装する実行のシステムプロンプトに、baseとの衝突をmergeで解消する規則を足し、許可ツールに `git merge` を足す
-- ADR-040を追加する
+- ADR-042を追加する（mainのADR-040、ADR-041と重ならない番号にした）
 
 ## Capabilities
 
@@ -29,9 +29,9 @@
 
 ## Impact
 
-- `internal/forge`：`FindOpenChangeRequest` をインターフェースとGitHub、GitLab、偽フォージに足す
+- `internal/forge`：開いたPR/MRを探す操作は、`reuse-open-change-request` の `OpenChangeRequest` を使う
 - `internal/agent`：`evaluateOnce`、`decide`、`hasReply`、`pollReplies`、`keepNotes`、`afterRun`、`finish`、許可ツール、文言
 - `internal/prompt`：`System` と `ApprovedSystem` がbaseのブランチを受け取る
 - `internal/inbox`、`inboxapi`、`internal/inboxserve`：状態 `done`、項目 `done_since` と `change_url`、詳細の `done`
 - `web/ui`：一覧、ヘッダ、1件の表示
-- `docs/DECISIONS.md`（ADR-040）、`docs/SPEC.md`、README.md
+- `docs/DECISIONS.md`（ADR-042）、`docs/SPEC.md`、README.md

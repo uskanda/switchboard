@@ -35,10 +35,10 @@ GitLabでは、`pollReplies` と `keepNotes` の検索に `agent:done` を足す
 
 ### D2. 開いたPR/MRを探す
 
-`forge.Forge` に `FindOpenChangeRequest(ctx, owner, repo, head) (url, found, err)` を足す。
+mainへ先に入った `reuse-open-change-request` の `OpenChangeRequest(ctx, owner, repo, head, base)` を使う。同じ働きの操作を、この変更では足さない。見つからないときは `forge.ErrNotFound` が返る。
 
-- GitHub：`GET /repos/{o}/{r}/pulls?head={o}:{branch}&state=open`
-- GitLab：`GET /projects/:id/merge_requests?source_branch={branch}&state=opened`
+- GitHub：`GET /repos/{o}/{r}/pulls?state=open&head={o}:{branch}&base={base}`
+- GitLab：`GET /projects/:id/merge_requests?state=opened&source_branch={branch}&target_branch={base}`
 
 `finish` はpushの後にこれを呼び、見つかればそのURLでdoneにする。投稿の行は「PRを更新しました：URL」（MRなら「MRを更新しました」）にする。探す操作の失敗は、PR/MRを作れなかったときと同じ文言で、waiting（error）にする。
 
