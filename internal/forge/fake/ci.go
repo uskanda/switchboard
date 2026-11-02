@@ -98,10 +98,22 @@ func (f *Forge) CheckLog(_ context.Context, _, _ string, c forge.Check) (string,
 	return f.ciState().logs[c.Job], nil
 }
 
-// ChangeRequestHead implements forge.CI.
+// ChangeRequestHead implements forge.CI. A change request recorded with SetChange is reported as recorded; the others
+// are the ones of PRs.
 func (f *Forge) ChangeRequestHead(_ context.Context, owner, repo string, number int) (*forge.ChangeRequestState, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if c, ok := f.changes[changeKey(owner, repo, number)]; ok {
+		f.ciState().prCalls++
+		st := &forge.ChangeRequestState{State: forge.CROpen, Head: c.Head, Conflict: c.Conflict, Computing: c.Computing}
+		switch {
+		case c.Merged:
+			st.State = forge.CRMerged
+		case c.Closed:
+			st.State = forge.CRClosed
+		}
+		return st, nil
+	}
 	i := number - 1
 	if i < 0 || i >= len(f.PRs) || f.PRs[i].Owner != owner || f.PRs[i].Repo != repo {
 		return nil, fmt.Errorf("fake: change request %s/%s#%d: %w", owner, repo, number, forge.ErrNotFound)

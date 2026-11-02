@@ -16,6 +16,10 @@ type Change struct {
 	Merged bool
 	// Refuse, when set, is the reason the forge refuses to merge it.
 	Refuse string
+	// Closed, Conflict and Computing are what ChangeRequestHead reports of it.
+	Closed    bool
+	Conflict  bool
+	Computing bool
 }
 
 func changeKey(owner, repo string, number int) string {

@@ -46,12 +46,14 @@ func socketPath(flagValue string) string {
 }
 
 // inboxAPI is the inbox service's handler for cfg: the inbox over forges (the inbox token's clients), the
-// instructions in store, the projects, the opening of new issues, the merges of done change requests, and the interval the forges are read at while a page listens. reload takes
+// instructions in store, the projects, the opening of new issues, the merges of done change requests and what the
+// merge dialog reads of them, and the interval the forges are read at while a page listens. reload takes
 // the projects of a new configuration file; the other settings stay as cfg has them until a restart.
 func inboxAPI(cfg *config.Config, forges map[string]forge.Forge, store instructions.Store) (api *inboxserve.Server, reload func([]config.Project)) {
 	repos := map[string]forge.Repos{}
 	issues := map[string]forge.Issues{}
 	merges := map[string]forge.Merges{}
+	ci := map[string]forge.CI{}
 	for kind, f := range forges {
 		if r, ok := f.(forge.Repos); ok {
 			repos[kind] = r
@@ -62,12 +64,16 @@ func inboxAPI(cfg *config.Config, forges map[string]forge.Forge, store instructi
 		if m, ok := f.(forge.Merges); ok {
 			merges[kind] = m
 		}
+		if c, ok := f.(forge.CI); ok {
+			ci[kind] = c
+		}
 	}
 	api = &inboxserve.Server{Inbox: newInbox(cfg, forges), Interval: cfg.Inbox.RefreshInterval, Relay: cfg.Inbox.Relay != nil,
 		Instructions: &inboxserve.Instructions{Store: store, Projects: refsOf(cfg.Projects), Host: cfg.Host.Name},
 		Projects:     &inboxserve.Projects{Config: cfg, Repos: repos},
 		NewIssues:    &inboxserve.NewIssues{Config: cfg, Issues: issues},
 		Merges:       merges,
+		CI:           ci,
 	}
 	reload = func(ps []config.Project) {
 		next := *cfg

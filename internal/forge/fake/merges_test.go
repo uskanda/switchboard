@@ -33,3 +33,21 @@ func TestMergeChangeRequest(t *testing.T) {
 		t.Fatalf("refused: err = %v", err)
 	}
 }
+
+func TestChangeRequestHeadReportsASetChange(t *testing.T) {
+	f := New(nil)
+	ctx := context.Background()
+	f.SetChange("o", "r", 9, Change{Head: "abc", Conflict: true, Computing: true})
+	st, err := f.ChangeRequestHead(ctx, "o", "r", 9)
+	if err != nil || *st != (forge.ChangeRequestState{State: forge.CROpen, Head: "abc", Conflict: true, Computing: true}) {
+		t.Fatalf("ChangeRequestHead = %+v, %v", st, err)
+	}
+	f.SetChange("o", "r", 9, Change{Head: "abc", Merged: true})
+	if st, _ := f.ChangeRequestHead(ctx, "o", "r", 9); st.State != forge.CRMerged {
+		t.Fatalf("merged change = %+v", st)
+	}
+	f.SetChange("o", "r", 9, Change{Head: "abc", Closed: true})
+	if st, _ := f.ChangeRequestHead(ctx, "o", "r", 9); st.State != forge.CRClosed {
+		t.Fatalf("closed change = %+v", st)
+	}
+}
