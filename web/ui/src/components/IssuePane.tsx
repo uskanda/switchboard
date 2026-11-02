@@ -28,14 +28,15 @@ function failure(err: unknown): string {
 /**
  * PlanHint says how to answer a wait of the plan stage: the approval word approves a plan, and questions are answered
  * by choosing (answerable) or in words. It never offers the approval word for questions: after a plan, it would
- * approve that plan.
+ * approve that plan. For a CI that failed past the fix limit and a refused push, it says what a reply does and what
+ * to check first.
  */
 function PlanHint({ reason, word, answerable }: { reason: string; word: string; answerable: boolean }) {
   const code = <code className="font-mono text-mono-sm">{word}</code>;
   if (reason === "plan") {
     return (
       <p className="text-label-md text-muted">
-        この計画で進めるなら {code} と送ると承認になり、作業が始まります。直してほしいところがあれば、そのまま書いて送ってください。
+        この計画で進めるなら「承認する」を押すか、{code} と送ると承認になり、作業が始まります。直してほしいところがあれば、そのまま書いて「返答を送る」を押してください。
       </p>
     );
   }
@@ -45,6 +46,20 @@ function PlanHint({ reason, word, answerable }: { reason: string; word: string; 
         {answerable
           ? "問いごとに選んで「この内容で返答」を押します。返答の欄に書いた文は、全体への補足として加わります。返答の欄の文だけを送るなら「返答を送る」を押します。"
           : "問いごとの答えを、返答の欄に書いて送ってください。"}
+      </p>
+    );
+  }
+  if (reason === "ci") {
+    return (
+      <p className="text-label-md text-muted">
+        返信するとエージェントが実行を再開し、CIの失敗を自動で直す回数を数え直します。
+      </p>
+    );
+  }
+  if (reason === "push") {
+    return (
+      <p className="text-label-md text-muted">
+        pushが拒否されました。返信する前に、エージェントのトークンかリモートの設定（ブランチの保護など）を確かめてください。
       </p>
     );
   }
@@ -144,6 +159,9 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
   const plan = found && ((detail?.waiting && detail.reason === "plan-questions") || touched) ? found : null;
   const answers = plan ? (touched ? choices!.answers : plan.defaults) : [];
   const composed = plan ? composeReply(plan.parsed.questions, answers, text) : "";
+  const word = detail?.approve_word || "/ok";
+  // A wait on a plan is approved by its approval word alone, sent in one click while the reply is empty.
+  const approving = detail?.reason === "plan" && !plan;
 
   async function send(reply: string) {
     setSending(true);
@@ -167,15 +185,18 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
 
   const running = detail?.state === "running";
   const queued = detail?.state === "queued";
+  // An open done issue takes a reply too: a comment resumes the work until the issue is closed.
+  const replyable = !!detail && (detail.waiting || !!detail.done);
+  const finished = !!detail?.done && !running && !queued;
   const now = detail && markOf(detail);
-  // The reply stays said to be sent only while the issue is still in the wait it answered.
-  const sent = !!sentAt && !!detail && !!now && !gone && detail.waiting && !running && !queued && now.since === sentAt.since && now.waitKey === sentAt.waitKey;
+  // The reply stays said to be sent only while the issue is still in the wait (or the done state) it answered.
+  const sent = !!sentAt && !!detail && !!now && !gone && replyable && !running && !queued && now.since === sentAt.since && now.waitKey === sentAt.waitKey;
   // Once out of that wait, the mark goes, so coming back to it later does not say sent again.
   useEffect(() => {
     if (sentAt && !sent) setSentAt(null);
   }, [sentAt, sent]);
   // The form stays while something is typed or chosen, so a draft survives the issue leaving its wait.
-  const showForm = detail && !sent && (detail.waiting || text !== "" || touched);
+  const showForm = detail && !sent && (replyable || text !== "" || touched);
 
   return (
     <article className="flex flex-col gap-lg">
@@ -199,6 +220,8 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
                 <span className="font-medium">実行中</span>
               ) : queued ? (
                 <span className="font-medium">順番待ち</span>
+              ) : finished ? (
+                <span className="font-medium">完了</span>
               ) : (
                 <ReasonBadge reason={detail.reason} />
               )}
@@ -245,9 +268,10 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
               <label htmlFor="reply" className="text-label-md font-medium">
                 返答
               </label>
-              <PlanHint reason={detail.reason} word={detail.approve_word || "/ok"} answerable={!!plan} />
+              <PlanHint reason={detail.reason} word={word} answerable={!!plan} />
               <Textarea id="reply" value={text} onChange={(e) => setText(e.target.value)} disabled={sending} />
-              {!detail.waiting && <p className="text-muted">このissueは待ちではなくなりました。返答は送れません。</p>}
+              {finished && <p className="text-label-md text-muted">作業は終わっています。返答すると、エージェントが同じPR/MRで作業を再開します。</p>}
+              {!replyable && <p className="text-muted">このissueは待ちではなくなりました。返答は送れません。</p>}
               {plan ? (
                 <>
                   <span id="reply-preview" className="text-label-md font-medium text-muted">
@@ -257,24 +281,33 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
                     {composed}
                   </section>
                   <div className="flex flex-wrap justify-end gap-sm">
-                    <Button type="submit" variant="secondary" disabled={sending || !detail.waiting || text.trim() === ""}>
+                    <Button type="submit" variant="secondary" disabled={sending || !replyable || text.trim() === ""}>
                       返答を送る
                     </Button>
-                    <Button type="button" disabled={sending || !detail.waiting} onClick={() => void send(composed)}>
+                    <Button type="button" disabled={sending || !replyable} onClick={() => void send(composed)}>
                       {sending ? "送っています" : "この内容で返答"}
                     </Button>
                   </div>
                 </>
+              ) : approving ? (
+                <div className="flex flex-wrap justify-end gap-sm">
+                  <Button type="submit" variant="secondary" disabled={sending || !detail.waiting || text.trim() === ""}>
+                    返答を送る
+                  </Button>
+                  <Button type="button" disabled={sending || !detail.waiting || text.trim() !== ""} onClick={() => void send(word)}>
+                    {sending ? "送っています" : `承認する（${word} を送る）`}
+                  </Button>
+                </div>
               ) : (
-                <Button type="submit" disabled={sending || !detail.waiting || text.trim() === ""} className="self-end">
+                <Button type="submit" disabled={sending || !replyable || text.trim() === ""} className="self-end">
                   {sending ? "送っています" : "返答を送る"}
                 </Button>
               )}
             </form>
           )}
           {running && !sent && !showForm && <p className="text-muted">実行中のため返答できません</p>}
-          {queued && !detail.waiting && !sent && !showForm && <p className="text-muted">順番待ちのため、まだ返答は要りません</p>}
-          {!detail.waiting && !running && !queued && !sent && !showForm && <p className="text-muted">このissueは待ちではありません。返答は送れません。</p>}
+          {queued && !replyable && !sent && !showForm && <p className="text-muted">順番待ちのため、まだ返答は要りません</p>}
+          {!replyable && !running && !queued && !sent && !showForm && <p className="text-muted">このissueは待ちではありません。返答は送れません。</p>}
         </>
       )}
     </article>

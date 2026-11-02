@@ -1,17 +1,35 @@
 import { Link } from "react-router";
+import { NewIssue } from "@/components/NewIssue";
 import { ReasonBadge } from "@/components/ReasonBadge";
 import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
 import { Table, TableCell, TableHead } from "@/components/ui/table";
-import { age, elapsed, isQueued, isRunning, issuePath, queueText, type Item } from "@/lib/api";
+import { age, elapsed, isDone, isQueued, isRunning, issuePath, queueText, type Item } from "@/lib/api";
 import { useInbox } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
 
+/** ChangeLink is the pull or merge request of a done issue, a link of its own beside the issue's. */
+function ChangeLink({ it }: { it: Item }) {
+  if (!isDone(it) || !it.change_url) return null;
+  return (
+    <a href={it.change_url} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center break-all font-mono text-mono-sm text-muted underline">
+      {it.change_url}
+    </a>
+  );
+}
+
 /**
  * What a row shows: a waiting issue its reason, question and wait; a running one its progress and how long it ran; a
- * queued one the limit it waits on and since when.
+ * queued one the limit it waits on and since when; a done one since when it is done.
  */
 function cells(it: Item) {
+  if (isDone(it)) {
+    return {
+      tag: <span className="text-label-md font-medium">完了</span>,
+      line: "closeすると一覧から消えます。コメントすると作業を再開します",
+      time: age(it.done_since ?? null),
+    };
+  }
   if (isQueued(it)) {
     return {
       tag: <span className="text-label-md font-medium">順番待ち</span>,
@@ -60,6 +78,7 @@ function Items({ items, timeHead, selected }: { items: Item[]; timeHead: string;
                     <span className="block truncate font-medium">{it.title}</span>
                     <span className="block truncate text-label-md text-muted">{c.line}</span>
                   </Link>
+                  <ChangeLink it={it} />
                 </TableCell>
                 <TableCell className="whitespace-nowrap">{c.tag}</TableCell>
                 <TableCell className="whitespace-nowrap text-label-md text-muted">{it.host}</TableCell>
@@ -91,6 +110,7 @@ function Items({ items, timeHead, selected }: { items: Item[]; timeHead: string;
                   <span className="text-label-md text-muted break-words">{c.line}</span>
                 </Card>
               </Link>
+              <ChangeLink it={it} />
             </li>
           );
         })}
@@ -99,15 +119,20 @@ function Items({ items, timeHead, selected }: { items: Item[]; timeHead: string;
   );
 }
 
-/** InboxList is the list of waiting issues, then the running and the queued ones under their own headings. */
+/**
+ * InboxList is the button for a new issue, the list of waiting issues, then the running, the queued and the done ones
+ * (open, waiting to be closed) under their own headings.
+ */
 export function InboxList({ selected }: { selected?: string }) {
   const { inbox, error } = useInbox();
-  const waiting = inbox?.items.filter((it) => !isRunning(it) && !isQueued(it)) ?? [];
+  const waiting = inbox?.items.filter((it) => !isRunning(it) && !isQueued(it) && !isDone(it)) ?? [];
   const running = inbox?.items.filter(isRunning) ?? [];
   const queued = inbox?.items.filter(isQueued) ?? [];
+  const done = inbox?.items.filter(isDone) ?? [];
   return (
     <div className="flex flex-col gap-lg">
       <h2 className="sr-only">一覧</h2>
+      <NewIssue />
       {error && <Alert>{error}</Alert>}
       {inbox?.errors.map((e) => (
         <Alert key={e.forge}>
@@ -126,6 +151,12 @@ export function InboxList({ selected }: { selected?: string }) {
         <section className="flex flex-col gap-sm">
           <h2 className="text-label-md font-semibold text-muted">順番待ち</h2>
           <Items items={queued} timeHead="順番待ち" selected={selected} />
+        </section>
+      )}
+      {done.length > 0 && (
+        <section className="flex flex-col gap-sm">
+          <h2 className="text-label-md font-semibold text-muted">完了（close待ち）</h2>
+          <Items items={done} timeHead="完了" selected={selected} />
         </section>
       )}
     </div>

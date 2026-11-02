@@ -3,6 +3,7 @@
 //	<!-- switchboard v=1 host=<host> session=<id> run=<id> state=<state> reason=<reason> ack=<comment-id> at=<RFC3339> -->
 //
 // A claim made from a start label also carries mode=<plan|direct>, and a post of plan questions q=<last number>.
+// A done post that names a change request carries sha=<the commit pushed> and cr=<its number>.
 // Unknown keys are ignored, so that a newer version's marker still parses.
 package marker
 
@@ -25,11 +26,13 @@ type Marker struct {
 	Session string
 	Run     string
 	State   string // running (the claim of a run), progress (its progress comment), queued, waiting, done
-	Reason  string // for waiting: question, permission, error, verify, limit, plan-questions, plan; for queued: the limit
+	Reason  string // for waiting: question, permission, error, verify, limit, plan-questions, plan, push, ci; for queued: the limit; for running: fix on a fix run's claim
 	Ack     int64  // the last comment ID the run took in
 	At      time.Time
 	Mode    string // on a claim made from a start label: plan or direct
 	Q       int    // on a post of plan questions: the number of its last question
+	SHA     string // on a done post: the commit pushed, whose CI the agent watches
+	CR      int    // on a done post: the number of the change request
 }
 
 // The modes a claim names, and the reasons of the waits in the plan stage.
@@ -41,6 +44,10 @@ const (
 	// The limits a queued issue waits on: agent.max_parallel, or its project's max_parallel.
 	QueuedHost    = "max-parallel"
 	QueuedProject = "project-max-parallel"
+	// Fix marks the claim of a fix run; Push and CI the waits a rejected push and a CI failure end in.
+	Fix  = "fix"
+	Push = "push"
+	CI   = "ci"
 )
 
 // The states a marker names.
@@ -89,6 +96,10 @@ func (m Marker) Format() string {
 	if m.Q != 0 {
 		fmt.Fprintf(&b, " q=%d", m.Q)
 	}
+	add("sha", m.SHA)
+	if m.CR != 0 {
+		fmt.Fprintf(&b, " cr=%d", m.CR)
+	}
 	b.WriteString(" -->")
 	return b.String()
 }
@@ -129,6 +140,10 @@ func Parse(body string) (*Marker, bool) {
 			m.Mode = v
 		case "q":
 			m.Q, _ = strconv.Atoi(v)
+		case "sha":
+			m.SHA = v
+		case "cr":
+			m.CR, _ = strconv.Atoi(v)
 		}
 	}
 	if m.V < 1 {

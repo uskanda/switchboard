@@ -57,8 +57,11 @@ type Server struct {
 	Interval time.Duration
 	// Projects, when set, serves /v1/projects.
 	Projects *Projects
+	// NewIssues, when set, serves /v1/issue-targets and /v1/issues.
+	NewIssues *NewIssues
 
-	// vmu guards Inbox, Instructions.Projects and Projects.Config, which Reload replaces while requests read them.
+	// vmu guards Inbox, Instructions.Projects, Projects.Config and NewIssues.Config, which Reload replaces while
+	// requests read them.
 	vmu sync.RWMutex
 
 	mu     sync.Mutex
@@ -79,8 +82,8 @@ func (s *Server) inbox() Inbox {
 	return s.Inbox
 }
 
-// Reload takes a configuration with new projects and the inbox b made for it: the listing, the instructions and
-// the projects of the API follow it from the next request, and the cached listing is dropped.
+// Reload takes a configuration with new projects and the inbox b made for it: the listing, the instructions, the
+// projects and the targets of new issues follow it from the next request, and the cached listing is dropped.
 func (s *Server) Reload(cfg *config.Config, b Inbox) {
 	s.vmu.Lock()
 	s.Inbox = b
@@ -89,6 +92,9 @@ func (s *Server) Reload(cfg *config.Config, b Inbox) {
 	}
 	if s.Projects != nil {
 		s.Projects.Config = cfg
+	}
+	if s.NewIssues != nil {
+		s.NewIssues.Config = cfg
 	}
 	s.vmu.Unlock()
 	s.mu.Lock()
@@ -129,6 +135,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.Projects != nil {
 		routes["/v1/projects"] = route{"", s.projects}
+	}
+	if s.NewIssues != nil {
+		routes["/v1/issue-targets"] = route{http.MethodGet, s.issueTargets}
+		routes["/v1/issues"] = route{http.MethodPost, s.createIssue}
 	}
 	rt := routes[r.URL.Path]
 	switch {
@@ -340,7 +350,7 @@ func (s *Server) issue(w http.ResponseWriter, r *http.Request) {
 // detailOf is d as the API's type: the same fields, the comments copied one by one.
 func detailOf(d *inbox.Detail) inboxapi.Detail {
 	out := inboxapi.Detail{
-		Ref: d.Ref, Title: d.Title, URL: d.URL, Waiting: d.Waiting, Host: d.Host, State: d.State, Reason: d.Reason,
+		Ref: d.Ref, Title: d.Title, URL: d.URL, Waiting: d.Waiting, Done: d.Done, Host: d.Host, State: d.State, Reason: d.Reason,
 		Since: d.Since, Post: d.Post, ApproveWord: d.ApproveWord, Author: d.Author, CreatedAt: d.CreatedAt, Body: d.Body,
 		Comments: []inboxapi.Comment{},
 	}

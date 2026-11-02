@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -85,11 +86,12 @@ func declaration(res *claudecode.Result) (*Declaration, string) {
 	return &d, ""
 }
 
-// settings are what a run may do without asking. The deny rules are not a boundary (Phase 0, V5); keeping the
-// forge token away from claude is.
+// settings are what a run may do without asking. A run may merge, to resolve a conflict with the base (ADR-042) or
+// take in origin's issue branch after a refused push; no run may rebase. The deny rules are not a boundary (Phase 0,
+// V5); keeping the forge token away from claude is.
 func settings(verifyCommand string) claudecode.Settings {
 	allow := []string{"Read", "Edit", "Write", "Glob", "Grep"}
-	for _, c := range []string{"git status", "git diff", "git log", "git add", "git commit"} {
+	for _, c := range []string{"git status", "git diff", "git log", "git add", "git commit", "git merge"} {
 		allow = append(allow, "Bash("+c+")", "Bash("+c+" *)")
 	}
 	if f := strings.Fields(verifyCommand); len(f) > 0 {
@@ -97,7 +99,7 @@ func settings(verifyCommand string) claudecode.Settings {
 	}
 	return claudecode.Settings{
 		Allow: allow,
-		Deny:  []string{"Bash(git push)", "Bash(git push *)", "Bash(gh)", "Bash(gh *)", "WebFetch"},
+		Deny:  []string{"Bash(git push)", "Bash(git push *)", "Bash(git rebase)", "Bash(git rebase *)", "Bash(gh)", "Bash(gh *)", "WebFetch"},
 	}
 }
 
@@ -128,6 +130,9 @@ func (a *Agent) execute(ctx context.Context, pl *plan, act *active) string {
 	rec := record{Issue: ref.String(), Run: act.run, Session: newUUID(), State: "running", Started: act.started, Ack: pl.ack()}
 	a.saveRecord(ref, rec)
 	o := a.work(ctx, pl, rec)
+	for o != nil && o.next != nil {
+		o = a.fixAgain(ctx, pl, act, &rec, o)
+	}
 	if o == nil {
 		rec.State, rec.Ended = "canceled", time.Now().UTC()
 		a.saveRecord(ref, rec)
@@ -155,13 +160,16 @@ func (a *Agent) execute(ctx context.Context, pl *plan, act *active) string {
 
 // ended records a run whose outcome was written back.
 func (a *Agent) ended(p config.Project, ref forge.IssueRef, rec record, o *outcome) {
-	if o.State == "waiting" && ref.Kind() == forge.GitLab {
+	if ref.Kind() == forge.GitLab {
 		a.keepNotes(a.ctx, p, ref)
 	}
 	rec.State, rec.Ended, rec.Result = "finished", time.Now().UTC(), o.result()
 	a.saveRecord(ref, rec)
 	_ = a.State.WriteJSON("last.json", rec)
 	a.logf("%s: run %s ended: %s", ref, rec.Run, rec.Result)
+	if o.State == "done" && o.SHA != "" && o.CR != 0 {
+		a.startWatch(p, ref, o.SHA, o.CR, a.now())
+	}
 }
 
 // work prepares the worktree, runs claude and judges the result. It returns nil when the run was canceled.
@@ -208,7 +216,7 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) *outcome {
 	lang, word := a.Config.Comments.Language, a.Config.Plan.ApproveWord
 	req := claudecode.Request{
 		Binary: a.Config.Claude.Binary, Dir: dir, RunDir: a.runDir(rec.Run), SessionID: rec.Session,
-		SystemPrompt: prompt.System(lang), Settings: settings(p.VerifyCommand), MaxTurns: a.Config.Agent.MaxTurns,
+		SystemPrompt: prompt.System(lang, p.BaseBranch), Settings: settings(p.VerifyCommand), MaxTurns: a.Config.Agent.MaxTurns,
 		Schema: Schema, Auth: a.Config.Claude.Auth, Timeout: a.Config.Agent.Timeout,
 		IntGrace: a.IntGrace, TermGrace: a.TermGrace, Env: a.Env,
 	}
@@ -221,7 +229,10 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) *outcome {
 			return o.fail(fmt.Sprintf(a.msg.prepare, err))
 		}
 	case approvedRun:
-		req.SystemPrompt = prompt.ApprovedSystem(lang, pl.planID, pl.okID)
+		req.SystemPrompt = prompt.ApprovedSystem(lang, p.BaseBranch, pl.planID, pl.okID)
+	case fixRun:
+		in.Task, in.Failure = prompt.FixTask, pl.fix.report
+		req.SystemPrompt = prompt.FixSystem(lang, p.BaseBranch, pl.fix.cause)
 	}
 	req.Prompt = prompt.Build(in)
 	stopProgress := a.followProgress(ctx, is.Ref, rec, filepath.Join(a.runDir(rec.Run), "stream.jsonl"))
@@ -289,29 +300,68 @@ func (a *Agent) finish(ctx context.Context, pl *plan, sp *workspace.Space, d *De
 	if len(problems) > 0 {
 		return o.verify(a.msg.notPushed + "\n\n- " + strings.Join(problems, "\n- "))
 	}
-	if err := sp.Push(ctx); err != nil {
+	if err := a.push(ctx, sp); err != nil {
+		if ctx.Err() != nil {
+			return nil
+		}
+		var pe *workspace.PushError
+		if !errors.As(err, &pe) {
+			return o.fail(fmt.Sprintf(a.msg.pushFailed, err))
+		}
+		out := workspace.Redact(pe.Output)
+		if pe.Kind == workspace.PushTransient {
+			return o.fail(fmt.Sprintf(a.msg.pushFailed, "\n\n```\n"+tail(out)+"\n```"))
+		}
+		made, limit := pl.fixesDone(), a.Config.Agent.FixAttempts()
+		if pe.Kind == workspace.PushNonFastForward && made < limit {
+			if err := sp.FetchIssueBranch(ctx); err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
+				return o.fail(fmt.Sprintf(a.msg.pushFailed, workspace.Redact(err.Error())))
+			}
+			return o.again(&fixInfo{cause: prompt.FixPush, report: out})
+		}
+		return o.pushRefused(pe.Kind, out, made, limit)
+	}
+	sha, err := sp.Head(ctx)
+	if err != nil {
 		if ctx.Err() != nil {
 			return nil
 		}
 		return o.fail(fmt.Sprintf(a.msg.pushFailed, err))
 	}
-	url, err := a.forgeOf(is.Ref).CreateChangeRequest(ctx, forge.ChangeRequest{
-		Owner: is.Ref.Owner, Repo: is.Ref.Repo, Title: is.Title, Body: body,
-		Head: sp.IssueBranch(), Base: p.BaseBranch, Draft: true,
-	})
+	// A rerun pushes to the pull request an earlier run opened, such as a run resumed after done (ADR-042); opening
+	// a second one would fail.
+	gitlab := is.Ref.Kind() == forge.GitLab
+	f := a.forgeOf(is.Ref)
+	url, err := f.OpenChangeRequest(ctx, is.Ref.Owner, is.Ref.Repo, sp.IssueBranch(), p.BaseBranch)
+	switch {
+	case err == nil:
+		line := a.msg.prUpdated
+		if gitlab {
+			line = a.msg.mrUpdated
+		}
+		return o.done(d, url, sha, fmt.Sprintf(line, url))
+	case errors.Is(err, forge.ErrNotFound):
+		url, err = f.CreateChangeRequest(ctx, forge.ChangeRequest{
+			Owner: is.Ref.Owner, Repo: is.Ref.Repo, Title: is.Title, Body: body,
+			Head: sp.IssueBranch(), Base: p.BaseBranch, Draft: true,
+		})
+	}
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil
 		}
-		if is.Ref.Kind() == forge.GitLab {
+		if gitlab {
 			return o.fail(fmt.Sprintf(a.msg.mrFailed, err))
 		}
 		return o.fail(fmt.Sprintf(a.msg.prFailed, err))
 	}
-	if is.Ref.Kind() == forge.GitLab {
-		return o.done(d, url, fmt.Sprintf(a.msg.mr, url))
+	if gitlab {
+		return o.done(d, url, sha, fmt.Sprintf(a.msg.mr, url))
 	}
-	return o.done(d, url, fmt.Sprintf(a.msg.pr, url))
+	return o.done(d, url, sha, fmt.Sprintf(a.msg.pr, url))
 }
 
 // shell runs cmd with sh in dir and env, within the run timeout, and returns its combined output.

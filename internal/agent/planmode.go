@@ -17,10 +17,11 @@ const (
 	planRun                    // ask the open questions or present the plan; change nothing
 	approvedRun                // implement the approved plan
 	conflictRun                // more than one start label: report it, run nothing
+	fixRun                     // fix what failed after a done run: its CI, or a push refused as the branch moved on
 )
 
 func (k runKind) String() string {
-	return [...]string{"direct", "plan", "approved", "conflict"}[k]
+	return [...]string{"direct", "plan", "approved", "conflict", "fix"}[k]
 }
 
 // modeFor returns the mode a start label asks for: plan for the plan label, direct for the go label, and the

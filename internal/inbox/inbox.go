@@ -54,14 +54,15 @@ func DefaultCache() string {
 	return filepath.Join(base, "switchboard", "inbox.json")
 }
 
-// Item is one waiting, running or queued issue. On a waiting issue, Host, WaitingSince and Reason come only from the
-// marker of the agent's latest post; "?" (or null) when there is none. On a running issue, Host and RunningSince come
-// from the marker of the claim of the run, and Progress is the last line of its progress comment ("?" without one).
-// On a queued issue, Host, QueuedSince and Reason (the limit reached) come from the marker of its queued comment.
-// Only waiting issues are numbered.
+// Item is one waiting, done, running or queued issue. On a waiting issue, Host, WaitingSince and Reason come only from
+// the marker of the agent's latest post; "?" (or null) when there is none. On an open done issue, Host and DoneSince
+// come from the marker of the agent's latest done post, and ChangeURL is the pull or merge request it names. On a
+// running issue, Host and RunningSince come from the marker of the claim of the run, and Progress is the last line of
+// its progress comment ("?" without one). On a queued issue, Host, QueuedSince and Reason (the limit reached) come
+// from the marker of its queued comment. Waiting and done issues are numbered, in this order (ADR-042).
 type Item struct {
 	N            int        `json:"n,omitempty"`
-	State        string     `json:"state"` // waiting, running or queued
+	State        string     `json:"state"` // waiting, done, running or queued
 	Ref          string     `json:"ref"`
 	Project      string     `json:"project"`
 	Number       int        `json:"number"`
@@ -74,6 +75,8 @@ type Item struct {
 	RunningSince *time.Time `json:"running_since,omitempty"`
 	Progress     string     `json:"progress,omitempty"`
 	QueuedSince  *time.Time `json:"queued_since,omitempty"`
+	DoneSince    *time.Time `json:"done_since,omitempty"`
+	ChangeURL    string     `json:"change_url,omitempty"`
 	// UpdatedAt and Notes are the forge's update time and count of people's comments (GitLab's user_notes_count, 0
 	// on GitHub): a page watching one issue reads it again when either moves.
 	UpdatedAt *time.Time `json:"updated_at"`
@@ -83,12 +86,14 @@ type Item struct {
 // The states of an Item.
 const (
 	Waiting = "waiting"
+	Done    = "done" // open and labeled done: the agent finished, and the issue waits to be closed
 	Running = "running"
 	Queued  = "queued"
 )
 
-// stateRank orders the listing: waiting, then running, then queued.
-var stateRank = map[string]int{Waiting: 0, Running: 1, Queued: 2}
+// stateRank orders the listing: waiting, then done, then running, then queued. The numbered states come first, so
+// that the row numbers run on without a gap.
+var stateRank = map[string]int{Waiting: 0, Done: 1, Running: 2, Queued: 3}
 
 func refString(r forge.IssueRef) string { return r.String() }
 
@@ -191,9 +196,8 @@ type ForgeError struct {
 func (e ForgeError) Error() string { return e.Forge + " could not be read: " + e.Err.Error() }
 func (e ForgeError) Unwrap() error { return e.Err }
 
-// Collect lists the waiting issues as List does, numbered, and after them the running issues, without recording the
-// rows. The forges that could not
-// be read are returned beside what the others listed.
+// Collect lists the issues as List does: the waiting and the done issues, numbered, then the running and the queued
+// ones, without recording the rows. The forges that could not be read are returned beside what the others listed.
 func (b *Inbox) Collect(ctx context.Context) ([]Item, []ForgeError) {
 	var kinds []string
 	for _, k := range []string{forge.GitHub, forge.GitLab} {
@@ -234,6 +238,8 @@ func (b *Inbox) Collect(ctx context.Context) ([]Item, []ForgeError) {
 			a, c = items[i].RunningSince, items[j].RunningSince
 		case Queued:
 			a, c = items[i].QueuedSince, items[j].QueuedSince
+		case Done:
+			a, c = items[i].DoneSince, items[j].DoneSince
 		}
 		switch {
 		case a == nil || c == nil:
@@ -244,7 +250,7 @@ func (b *Inbox) Collect(ctx context.Context) ([]Item, []ForgeError) {
 		return items[i].Ref < items[j].Ref
 	})
 	for i := range items {
-		if items[i].State == Waiting {
+		if items[i].State == Waiting || items[i].State == Done {
 			items[i].N = i + 1
 		}
 	}
@@ -321,6 +327,10 @@ func (b *Inbox) list(ctx context.Context, kind string) ([]Item, error) {
 			items = append(items, withUpdate(queuedItem(s, qm), s))
 			continue
 		}
+		if st == b.Config.Labels.Done {
+			items = append(items, withUpdate(doneItem(s, comments, agentID), s))
+			continue
+		}
 		if st != b.Config.Labels.Waiting {
 			continue // a start label the agent has not taken up yet
 		}
@@ -337,12 +347,12 @@ func (b *Inbox) list(ctx context.Context, kind string) ([]Item, error) {
 	return items, nil
 }
 
-// listed are the labels the listing searches: waiting, running, and the start labels, under which an issue may be
-// queued.
+// listed are the labels the listing searches: waiting, done (an open done issue waits to be closed), running, and the
+// start labels, under which an issue may be queued.
 func (b *Inbox) listed() []string {
 	n := b.Config.Labels
 	var out []string
-	for _, l := range []string{n.Waiting, n.Running, n.Ready, n.Plan, n.Go} {
+	for _, l := range []string{n.Waiting, n.Done, n.Running, n.Ready, n.Plan, n.Go} {
 		if l != "" {
 			out = append(out, l)
 		}
@@ -358,6 +368,35 @@ func queuedItem(s forge.IssueSummary, m *marker.Marker) Item {
 		it.QueuedSince = &at
 	}
 	return it
+}
+
+// doneItem is the row of an open done issue: where and since when the agent finished it, from the marker of its
+// latest done post, and the pull or merge request that post names.
+func doneItem(s forge.IssueSummary, comments []forge.Comment, agentID int64) Item {
+	it := Item{State: Done, Ref: refString(s.Ref), Project: s.Ref.Project(), Number: s.Ref.Number, Title: s.Title, URL: s.URL, Host: "?"}
+	c, m := latestOf(comments, agentID, marker.Done)
+	if c == nil {
+		return it
+	}
+	it.Host, it.ChangeURL = orQ(m.Host), ChangeURL(body(c.Body))
+	if !m.At.IsZero() {
+		at := m.At
+		it.DoneSince = &at
+	}
+	return it
+}
+
+var firstURL = regexp.MustCompile(`https?://[^\s)>\]]+`)
+
+// ChangeURL is the URL of the pull or merge request a done post names: the first URL of its first paragraph after
+// the heading, where the agent puts the line "Pull request: <url>". "" when there is none.
+func ChangeURL(post string) string {
+	for _, para := range strings.Split(strings.TrimSpace(post), "\n\n") {
+		if p := strings.TrimSpace(para); p != "" && !strings.HasPrefix(p, "#") {
+			return firstURL.FindString(p)
+		}
+	}
+	return ""
 }
 
 // withUpdate sets what tells a watcher that the issue changed.
@@ -457,16 +496,18 @@ func age(since *time.Time, now time.Time) string {
 	return fmt.Sprintf("%dd", int(d.Hours()/24))
 }
 
-// Print writes the listing as aligned columns: the waiting issues, then the running and the queued ones under their
-// own headings.
+// Print writes the listing as aligned columns: the waiting issues, then the running, the queued and the done ones
+// under their own headings.
 func Print(w io.Writer, items []Item, now time.Time) {
-	var waiting, running, queued []Item
+	var waiting, done, running, queued []Item
 	for _, it := range items {
 		switch it.State {
 		case Running:
 			running = append(running, it)
 		case Queued:
 			queued = append(queued, it)
+		case Done:
+			done = append(done, it)
 		default:
 			waiting = append(waiting, it)
 		}
@@ -496,6 +537,15 @@ func Print(w io.Writer, items []Item, now time.Time) {
 		fmt.Fprintln(tw, "ISSUE\tHOST\tQUEUED\tLIMIT")
 		for _, it := range queued {
 			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", it.Ref, it.Host, age(it.QueuedSince, now), it.Reason)
+		}
+		tw.Flush()
+	}
+	if len(done) > 0 {
+		fmt.Fprintln(w, "\nDone (waiting for close)")
+		tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(tw, "#\tISSUE\tHOST\tDONE\tCHANGE")
+		for _, it := range done {
+			fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\n", it.N, it.Ref, it.Host, age(it.DoneSince, now), orQ(it.ChangeURL))
 		}
 		tw.Flush()
 	}
@@ -593,6 +643,7 @@ type Detail struct {
 	Title   string     `json:"title"`
 	URL     string     `json:"url"`
 	Waiting bool       `json:"waiting"` // open and labeled waiting
+	Done    bool       `json:"done"`    // open and labeled done: it takes a reply too, until it is closed (ADR-042)
 	Host    string     `json:"host"`
 	State   string     `json:"state"` // the state of the agent's latest post, running while the issue runs, or queued
 	Reason  string     `json:"reason"`
@@ -661,7 +712,9 @@ func (b *Inbox) Detail(ctx context.Context, ref forge.IssueRef) (*Detail, error)
 			return withThread(d, is, comments, agentID), nil
 		}
 	}
-	waiting := is.State == "open" && labels.StateOf(is.Labels, b.Config.Labels) == b.Config.Labels.Waiting
+	st := labels.StateOf(is.Labels, b.Config.Labels)
+	waiting := is.State == "open" && st == b.Config.Labels.Waiting
+	finished := is.State == "open" && st == b.Config.Labels.Done
 	c, m := latestPost(comments, agentID)
 	q, qm := latestOf(comments, agentID, marker.Queued)
 	if is.State != "open" {
@@ -670,7 +723,7 @@ func (b *Inbox) Detail(ctx context.Context, ref forge.IssueRef) (*Detail, error)
 	if c == nil && q == nil {
 		return nil, wrap(ErrNotFound, fmt.Errorf("%s has no post from the agent", refString(ref)))
 	}
-	d := &Detail{Ref: refString(ref), Title: is.Title, URL: is.URL, Waiting: waiting, ApproveWord: b.Config.Plan.ApproveWord}
+	d := &Detail{Ref: refString(ref), Title: is.Title, URL: is.URL, Waiting: waiting, Done: finished, ApproveWord: b.Config.Plan.ApproveWord}
 	if c != nil {
 		d.Host, d.State, d.Reason, d.Post = orQ(m.Host), orQ(m.State), orQ(m.Reason), body(c.Body)
 		if !m.At.IsZero() {
@@ -679,13 +732,13 @@ func (b *Inbox) Detail(ctx context.Context, ref forge.IssueRef) (*Detail, error)
 		}
 	}
 	if q != nil {
-		// Queued: the limit and since when, with the last wait's post while it still waits for a reply.
+		// Queued: the limit and since when, with the last wait's or done's post while the issue still takes a reply.
 		d.Host, d.State, d.Reason, d.Since = orQ(qm.Host), Queued, orQ(qm.Reason), nil
 		if !qm.At.IsZero() {
 			at := qm.At
 			d.Since = &at
 		}
-		if c == nil || !waiting {
+		if c == nil || (!waiting && !finished) {
 			d.Post = body(q.Body)
 		}
 	}
@@ -729,7 +782,8 @@ func PrintDetail(w io.Writer, d *Detail) {
 	fmt.Fprintf(w, "%s  %s\nhost %s, %s (%s), since %s\n\n%s\n", d.Ref, d.Title, d.Host, d.State, d.Reason, since, d.Post)
 }
 
-// Reply posts text on the issue. Unless force is set, the issue must still be waiting.
+// Reply posts text on the issue. Unless force is set, the issue must be open and waiting or done: a comment on an open
+// done issue resumes it (ADR-042).
 func (b *Inbox) Reply(ctx context.Context, ref forge.IssueRef, text string, force bool) error {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -743,7 +797,8 @@ func (b *Inbox) Reply(ctx context.Context, ref forge.IssueRef, text string, forc
 	if err != nil {
 		return err
 	}
-	if st := labels.StateOf(is.Labels, b.Config.Labels); !force && (is.State != "open" || st != b.Config.Labels.Waiting) {
+	n := b.Config.Labels
+	if st := labels.StateOf(is.Labels, n); !force && (is.State != "open" || (st != n.Waiting && st != n.Done)) {
 		now := st
 		if is.State != "open" {
 			now = "closed"
@@ -751,7 +806,7 @@ func (b *Inbox) Reply(ctx context.Context, ref forge.IssueRef, text string, forc
 		if now == "" {
 			now = "no state label"
 		}
-		return wrap(ErrNotWaiting, fmt.Errorf("%s is not waiting (%s); nothing was posted. Use --force to post anyway", refString(ref), now))
+		return wrap(ErrNotWaiting, fmt.Errorf("%s is neither waiting nor done (%s); nothing was posted. Use --force to post anyway", refString(ref), now))
 	}
 	_, err = f.PostComment(ctx, ref, text)
 	return err

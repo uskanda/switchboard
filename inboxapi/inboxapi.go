@@ -10,12 +10,14 @@ import (
 	"time"
 )
 
-// Item is one waiting, running or queued issue, as switchboard inbox --json lists it. Only waiting issues have a row
-// number (N); a running one has RunningSince and Progress, the last line of its progress comment ("?" without one); a
-// queued one has QueuedSince, and Reason names the limit reached (max-parallel or project-max-parallel).
+// Item is one waiting, done, running or queued issue, as switchboard inbox --json lists it. Waiting and done issues
+// have a row number (N), numbered in this order; an open done issue has DoneSince and ChangeURL, the pull or merge
+// request its done post names ("" without one); a running one has RunningSince and Progress, the last line of its
+// progress comment ("?" without one); a queued one has QueuedSince, and Reason names the limit reached (max-parallel
+// or project-max-parallel).
 type Item struct {
 	N            int        `json:"n,omitempty"`
-	State        string     `json:"state"` // waiting, running or queued
+	State        string     `json:"state"` // waiting, done, running or queued
 	Ref          string     `json:"ref"`
 	Project      string     `json:"project"`
 	Number       int        `json:"number"`
@@ -28,6 +30,8 @@ type Item struct {
 	RunningSince *time.Time `json:"running_since,omitempty"`
 	Progress     string     `json:"progress,omitempty"`
 	QueuedSince  *time.Time `json:"queued_since,omitempty"`
+	DoneSince    *time.Time `json:"done_since,omitempty"`
+	ChangeURL    string     `json:"change_url,omitempty"`
 	// UpdatedAt and Notes are the forge's update time and count of people's comments (GitLab's user_notes_count, 0
 	// on GitHub): a page watching one issue reads it again when either moves.
 	UpdatedAt *time.Time `json:"updated_at"`
@@ -55,12 +59,14 @@ const EventInbox = "inbox"
 // the refused operations, with what its marker says. While the issue runs, State is "running" and Post is the
 // progress comment of the run (the claim before there is one); a reply to it is refused as not waiting. While the
 // issue waits for a slot, State is "queued" and Since is when it was queued; Post is then the last wait's post while
-// the issue still waits for a reply (which is still taken), else the queued comment.
+// the issue still waits for a reply (which is still taken), else the queued comment. Done is set on an open done
+// issue, which takes a reply as a waiting one does (ADR-042).
 type Detail struct {
 	Ref     string     `json:"ref"`
 	Title   string     `json:"title"`
 	URL     string     `json:"url"`
 	Waiting bool       `json:"waiting"`
+	Done    bool       `json:"done"`
 	Host    string     `json:"host"`
 	State   string     `json:"state"`
 	Reason  string     `json:"reason"`
@@ -147,6 +153,53 @@ type AddProjectResponse struct {
 	Webhook string  `json:"webhook,omitempty"`
 }
 
+// The kinds of start label an issue can be opened with: the configuration's labels.ready, labels.plan and labels.go.
+const (
+	StartReady = "ready"
+	StartPlan  = "plan"
+	StartGo    = "go"
+)
+
+// IssueTarget is a project an issue can be opened in, with Host, the machine that runs it.
+type IssueTarget struct {
+	Ref  string `json:"ref"`
+	Host string `json:"host"`
+}
+
+// IssueStart is a kind of start label (StartReady, StartPlan, StartGo) and the label it stands for.
+type IssueStart struct {
+	Kind  string `json:"kind"`
+	Label string `json:"label"`
+}
+
+// IssueTargets is the answer to GET /v1/issue-targets: every configured project, whatever machine runs it, in the
+// order of the configuration, and the start labels the configuration names.
+type IssueTargets struct {
+	Items  []IssueTarget `json:"items"`
+	Starts []IssueStart  `json:"starts"`
+}
+
+// MaxIssueTitle and MaxIssueBody bound what POST /v1/issues takes: characters of the title, bytes of the body.
+const (
+	MaxIssueTitle = 256
+	MaxIssueBody  = 1 << 20
+)
+
+// CreateIssueRequest is the body of POST /v1/issues. Start is a kind of IssueStart; the inbox service puts the label
+// it stands for on the issue, and no other.
+type CreateIssueRequest struct {
+	Ref   string `json:"ref"`
+	Title string `json:"title"`
+	Body  string `json:"body"`
+	Start string `json:"start"`
+}
+
+// CreateIssueResponse is the answer to a POST /v1/issues that opened the issue: its reference and its page.
+type CreateIssueResponse struct {
+	Ref string `json:"ref"`
+	URL string `json:"url"`
+}
+
 // The codes of Error.
 const (
 	CodeInvalid        = "invalid"         // 400
@@ -212,8 +265,9 @@ var (
 	ErrInvalid    = errors.New("invalid request")
 	ErrNotFound   = errors.New("not found")
 	ErrNotWaiting = errors.New("the issue is not waiting")
-	// ErrTooLarge, ErrSecret and ErrUnknownProject are the refusals of a save of instructions.
-	ErrTooLarge       = errors.New("the instructions are too large")
+	// ErrTooLarge, ErrSecret and ErrUnknownProject are the refusals of a save of instructions; ErrTooLarge and
+	// ErrUnknownProject also refuse a new issue.
+	ErrTooLarge       = errors.New("too large")
 	ErrSecret         = errors.New("the instructions look like they hold a secret")
 	ErrUnknownProject = errors.New("the project is not in the configuration")
 	// The refusals of an addition of a project.

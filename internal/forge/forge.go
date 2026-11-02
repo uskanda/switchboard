@@ -41,6 +41,14 @@ type Repos interface {
 	LabelNames(ctx context.Context, owner, repo string) ([]string, error)
 }
 
+// Issues opens issues. It is kept apart from Forge: the agent never opens one, and the inbox service calls it with
+// the inbox token, so the issue is the person's own (ADR-040).
+type Issues interface {
+	// CreateIssue opens an issue in owner/repo carrying labels and returns it; ErrNotFound when the token cannot see
+	// the repository.
+	CreateIssue(ctx context.Context, owner, repo, title, body string, labels []string) (*IssueSummary, error)
+}
+
 // The forge kinds, as written before the colon of a project reference.
 const (
 	GitHub = "gh"
@@ -141,6 +149,8 @@ type Forge interface {
 	EnsureLabel(ctx context.Context, owner, repo, name, color, description string) (bool, error)
 	// CreateChangeRequest opens a pull request and returns its URL.
 	CreateChangeRequest(ctx context.Context, cr ChangeRequest) (string, error)
+	// OpenChangeRequest returns the URL of an open pull request from head to base, or ErrNotFound.
+	OpenChangeRequest(ctx context.Context, owner, repo, head, base string) (string, error)
 	// RepoPrivate reports whether the repository is private.
 	RepoPrivate(ctx context.Context, owner, repo string) (bool, error)
 	// User resolves a login to the user, with its numeric ID.

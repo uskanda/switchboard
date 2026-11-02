@@ -202,7 +202,7 @@ func TestReplyToAnIssueThatIsNotWaitingIsRefused(t *testing.T) {
 	w.f.AddLabel(w.a, "agent:running", w.bot)
 	before := w.f.Comments
 	err := w.b.Reply(ctx, w.a, "Go with B.", false)
-	if err == nil || !strings.Contains(err.Error(), "not waiting") || w.f.Comments != before {
+	if err == nil || !strings.Contains(err.Error(), "neither waiting nor done") || w.f.Comments != before {
 		t.Fatalf("Reply = %v, comments %d -> %d", err, before, w.f.Comments)
 	}
 	if err := w.b.Reply(ctx, w.a, "Go with B.", true); err != nil || w.f.Comments != before+1 {

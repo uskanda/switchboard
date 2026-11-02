@@ -25,13 +25,17 @@ type outcome struct {
 	Run     string `json:"run"`
 	Session string `json:"session"`
 	State   string `json:"state"`  // waiting or done
-	Reason  string `json:"reason"` // for waiting: question, permission, error, verify
+	Reason  string `json:"reason"` // for waiting: question, permission, error, verify, push, ci
 	Ack     int64  `json:"ack"`
 	Body    string `json:"body"` // the comment without its marker
 	PR      string `json:"pr,omitempty"`
-	Q       int    `json:"q,omitempty"` // for plan-questions: the number of the last question
+	Q       int    `json:"q,omitempty"`   // for plan-questions: the number of the last question
+	SHA     string `json:"sha,omitempty"` // for done: the commit pushed, whose CI is watched
+	CR      int    `json:"cr,omitempty"`  // for done: the number of the change request
 
 	msg texts
+	// next, set instead of a state, hands the issue to a fix run of a refused push; such an outcome is not written.
+	next *fixInfo
 }
 
 func (o *outcome) result() string {
@@ -71,10 +75,32 @@ func (o *outcome) wait(d *Declaration, denials []claudecode.Denial) *outcome {
 	return o.set("waiting", "question", o.msg.questionTitle, parts...)
 }
 
-// done records the change request at url; link is the comment's line that names it ("Pull request: ...").
-func (o *outcome) done(d *Declaration, url, link string) *outcome {
-	o.PR = url
+// done records the change request at url and the commit sha pushed to it; link is the comment's line that names it
+// ("Pull request: ...").
+func (o *outcome) done(d *Declaration, url, sha, link string) *outcome {
+	o.PR, o.SHA, o.CR = url, sha, forge.ChangeRequestNumber(url)
 	return o.set("done", "", o.msg.doneTitle, link, d.Summary)
+}
+
+// again hands the issue to a fix run of a refused push instead of writing an outcome.
+func (o *outcome) again(fix *fixInfo) *outcome {
+	o.next = fix
+	return o
+}
+
+// pushRefused writes back a push that the agent does not fix: its kind, git's output (redacted), and what a person
+// can do. done and limit are the fix runs made and allowed, for a branch that moved on.
+func (o *outcome) pushRefused(kind, output string, done, limit int) *outcome {
+	var why string
+	switch kind {
+	case workspace.PushAuth:
+		why = o.msg.pushAuth
+	case workspace.PushNonFastForward:
+		why = fmt.Sprintf(o.msg.pushMoved, done, limit)
+	default:
+		why = o.msg.pushRule
+	}
+	return o.set("waiting", marker.Push, o.msg.pushTitle, why, "**"+o.msg.gitOutput+"**\n\n```\n"+tail(output)+"\n```", o.msg.reply)
 }
 
 func (a *Agent) runDir(run string) string { return filepath.Join(a.State.Path, "runs", run) }
@@ -107,7 +133,7 @@ func (a *Agent) writeOut(ctx context.Context, ref forge.IssueRef, o *outcome, se
 			a.Audit.Log("comment.withheld", map[string]any{"issue": ref.String(), "run": o.Run})
 		}
 		posting := body
-		m := marker.Marker{Host: a.Config.Host.Name, Session: o.Session, Run: o.Run, State: o.State, Reason: o.Reason, Ack: o.Ack, At: time.Now(), Q: o.Q}
+		m := marker.Marker{Host: a.Config.Host.Name, Session: o.Session, Run: o.Run, State: o.State, Reason: o.Reason, Ack: o.Ack, At: time.Now(), Q: o.Q, SHA: o.SHA, CR: o.CR}
 		body += "\n\n" + m.Format() + "\n"
 		a.checkComment(ref, o.Run, "comment.md", body)
 		c, err := a.forgeOf(ref).PostComment(ctx, ref, body)
@@ -274,7 +300,7 @@ func (a *Agent) retryWriteBack(ctx context.Context, ref forge.IssueRef, w *pendi
 		a.dropWriteBack(ref)
 		a.Audit.Log("writeback.retried", map[string]any{"issue": ref.String(), "run": w.o.Run, "state": w.o.State})
 		a.ended(w.project, ref, a.recordOf(ref, w.o.Run), w.o)
-		if w.o.State == "waiting" {
+		if w.o.State == "waiting" || w.o.State == "done" {
 			a.resume(w.project, ref)
 		}
 		return

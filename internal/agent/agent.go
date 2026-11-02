@@ -59,6 +59,10 @@ type Agent struct {
 	NewRoute func(config.Project) (Route, error)
 	// CloneURL is the URL a project that appears on a reload is cloned from; the forge's https URL when nil.
 	CloneURL func(config.Project) string
+	// PushDelays are the waits between the tries of a push that failed for a moment; 5s and 20s when nil.
+	PushDelays []time.Duration
+	// Now is the clock of the CI watch; time.Now when nil.
+	Now func() time.Time
 
 	ctx    context.Context // runs end when it does
 	unlock func()
@@ -88,7 +92,13 @@ type Agent struct {
 	writebacks map[forge.IssueRef]*pendingWriteBack
 	notes      map[forge.IssueRef]int  // GitLab: the comment count of each waiting issue at its last evaluation
 	closed     map[forge.IssueRef]bool // closed issues whose worktree waits for their run to stop
-	wg         sync.WaitGroup
+	// watches holds the done issues whose CI the agent watches; they are found again from the done posts.
+	watches map[forge.IssueRef]*watch
+	// unwatched is the update time of each done issue a scan found nothing to watch on, so that it is not read again.
+	unwatched map[forge.IssueRef]time.Time
+	scanned   time.Time       // when the done issues were last searched for watches
+	forbidden map[string]bool // by project ref: the CI could not be read, already logged
+	wg        sync.WaitGroup
 
 	pollMu     sync.Mutex // one poll or relay refresh at a time
 	rmu        sync.Mutex
@@ -212,6 +222,10 @@ func (a *Agent) Start(ctx context.Context) error {
 	a.writebacks = map[forge.IssueRef]*pendingWriteBack{}
 	a.notes = map[forge.IssueRef]int{}
 	a.closed = map[forge.IssueRef]bool{}
+	a.watches = map[forge.IssueRef]*watch{}
+	a.unwatched = map[forge.IssueRef]time.Time{}
+	a.forbidden = map[string]bool{}
+	a.scanned = time.Time{}
 	a.wake = make(chan struct{}, 1)
 	a.tune = make(chan struct{}, 1)
 	a.pmu.Lock()
@@ -237,7 +251,11 @@ func (a *Agent) Start(ctx context.Context) error {
 		a.pmu.Unlock()
 	}
 	a.clearQueued(ctx)
-	return a.recover(ctx)
+	if err := a.recover(ctx); err != nil {
+		return err
+	}
+	a.scanWatches(ctx)
+	return nil
 }
 
 // Close releases the agent lock. Call it after Wait.
@@ -324,6 +342,7 @@ func (a *Agent) poll(ctx context.Context, ps []config.Project) error {
 	}
 	a.cleanClosed(ctx)
 	a.drain(ctx)
+	a.checkWatches(ctx)
 	return errors.Join(errs...)
 }
 
@@ -356,10 +375,10 @@ func (a *Agent) pollProject(ctx context.Context, p config.Project) []error {
 	return errs
 }
 
-// pollReplies evaluates the waiting issues of a GitLab project whose comment count changed. GitLab does not move an
-// issue's update time for a new comment (V22), so UpdatedIssues alone misses replies.
+// pollReplies evaluates the waiting and done issues of a GitLab project whose comment count changed. GitLab does not
+// move an issue's update time for a new comment (V22), so UpdatedIssues alone misses replies.
 func (a *Agent) pollReplies(ctx context.Context, p config.Project, f forge.Forge) []error {
-	waiting, err := f.SearchOpenIssuesWithLabel(ctx, p.FullName(), a.Config.Labels.Waiting)
+	waiting, err := f.SearchOpenIssuesWithLabel(ctx, p.FullName(), a.Config.Labels.Waiting, a.Config.Labels.Done)
 	if err != nil {
 		return []error{fmt.Errorf("%s: %w", p.Ref, err)}
 	}
@@ -464,6 +483,9 @@ func (a *Agent) isActive(ref forge.IssueRef) bool {
 func (a *Agent) evaluateOnce(ctx context.Context, p config.Project, s forge.IssueSummary) error {
 	n := a.Config.Labels
 	st := labels.StateOf(s.Labels, n)
+	if s.State != "open" || st != n.Done {
+		a.unwatch(s.Ref, "the issue is no longer done")
+	}
 	if a.isActive(s.Ref) {
 		if s.State == "open" && st == n.Running {
 			return nil
@@ -487,7 +509,7 @@ func (a *Agent) evaluateOnce(ctx context.Context, p config.Project, s forge.Issu
 		a.Audit.Log("labels.normalized", map[string]any{"issue": s.Ref.String(), "found": s.Labels, "kept": labels.StateOf(fixed, n)})
 		st = labels.StateOf(fixed, n)
 	}
-	if !labels.IsStart(st, n) && st != n.Waiting {
+	if !labels.IsStart(st, n) && st != n.Waiting && st != n.Done {
 		a.leaveQueue(ctx, s.Ref)
 		return nil
 	}
@@ -511,12 +533,16 @@ func (a *Agent) maybeCancel(ctx context.Context, ref forge.IssueRef) error {
 	}
 	a.mu.Lock()
 	act := a.active[ref]
+	run := ""
+	if act != nil {
+		run = act.run // a fix run that takes over a run changes it
+	}
 	a.mu.Unlock()
 	if act == nil {
 		return nil
 	}
-	a.logf("%s: stopping run %s: %s", ref, act.run, reason)
-	a.Audit.Log("run.cancel", map[string]any{"issue": ref.String(), "run": act.run, "reason": reason})
+	a.logf("%s: stopping run %s: %s", ref, run, reason)
+	a.Audit.Log("run.cancel", map[string]any{"issue": ref.String(), "run": run, "reason": reason})
 	act.cancel()
 	return nil
 }
@@ -541,11 +567,12 @@ type plan struct {
 	comments []forge.Comment
 	kinds    []trust.Kind
 
-	start        string  // the start label the run starts from, or "" when it resumes on a reply
-	mode         string  // with start: the mode its claim records
-	kind         runKind // set by classify
-	planID, okID int64   // for approvedRun: the plan and the comment that approved it
-	qNext        int     // for planRun: the number of its first question
+	start        string   // the start label the run starts from, or "" when it resumes on a reply
+	mode         string   // with start: the mode its claim records
+	kind         runKind  // set by classify
+	planID, okID int64    // for approvedRun: the plan and the comment that approved it
+	qNext        int      // for planRun: the number of its first question
+	fix          *fixInfo // for fixRun: what it fixes
 }
 
 // ack is the last comment the run takes in, or 0.
@@ -580,7 +607,7 @@ func (a *Agent) decide(ctx context.Context, p config.Project, ref forge.IssueRef
 		if !j.ReadyLabel(ref, actor) {
 			return nil, nil
 		}
-	case st == n.Waiting:
+	case st == n.Waiting, st == n.Done:
 	default:
 		return nil, nil
 	}
@@ -609,7 +636,7 @@ func (a *Agent) decide(ctx context.Context, p config.Project, ref forge.IssueRef
 		}
 	}
 	pl.classify(a.Config.Plan.ApproveWord)
-	if st == n.Waiting && !pl.hasReply() {
+	if (st == n.Waiting || st == n.Done) && !pl.hasReply() {
 		return nil, nil
 	}
 	if !j.Body(is) {
@@ -619,7 +646,8 @@ func (a *Agent) decide(ctx context.Context, p config.Project, ref forge.IssueRef
 }
 
 // hasReply reports whether a trusted comment follows the comment acknowledged by the agent's latest post, and that
-// post is a question (the issue is waiting because the agent made it wait).
+// post is a question (the issue is waiting because the agent made it wait) or a done (the issue stays open for more
+// work until it is closed, ADR-042).
 func (pl *plan) hasReply() bool {
 	var m *marker.Marker
 	for i := len(pl.comments) - 1; i >= 0 && m == nil; i-- {
@@ -629,7 +657,7 @@ func (pl *plan) hasReply() bool {
 			}
 		}
 	}
-	if m == nil || m.State != "waiting" {
+	if m == nil || (m.State != "waiting" && m.State != "done") {
 		return false
 	}
 	at := -1
@@ -661,6 +689,10 @@ func (a *Agent) launch(ctx context.Context, pl *plan) error {
 		return nil
 	}
 	if ok, limitKind, value := a.hasSlot(ref, limit); !ok {
+		if pl.fix != nil {
+			a.mu.Unlock()
+			return errQueued // the CI watch tries again at the next poll; a done issue is never queued
+		}
 		a.pending[ref] = pl.project
 		_, noted := a.queued[ref]
 		if !noted {
@@ -728,20 +760,20 @@ func (a *Agent) launch(ctx context.Context, pl *plan) error {
 	return nil
 }
 
-// afterRun starts what the end of a run makes ready: the next run of a waiting issue that got a reply meanwhile
-// (ADR-016), then the queued issues. It runs in turn with the polls, so that every launch is serialized with them:
-// a poll never sees an issue that is active but not yet labeled running (#25).
+// afterRun starts what the end of a run makes ready: the next run of a waiting or done issue that got a reply
+// meanwhile (ADR-016, ADR-042), then the queued issues. It runs in turn with the polls, so that every launch is
+// serialized with them: a poll never sees an issue that is active but not yet labeled running (#25).
 func (a *Agent) afterRun(p config.Project, ref forge.IssueRef, state string) {
 	a.pollMu.Lock()
 	defer a.pollMu.Unlock()
-	if state == "waiting" {
+	if state == "waiting" || state == "done" {
 		a.resume(p, ref)
 	}
 	a.drain(a.ctx)
 	a.retune() // a queued issue that failed to start is evaluated again within poll_interval
 }
 
-// resume starts the next run of an issue just made waiting, when a reply already arrived. A project removed from the
+// resume starts the next run of an issue just made waiting or done, when a reply already arrived. A project removed from the
 // configuration starts no new run.
 func (a *Agent) resume(p config.Project, ref forge.IssueRef) {
 	if !a.handles(p) {
@@ -885,7 +917,10 @@ func (a *Agent) claim(ctx context.Context, pl *plan, act *active) (bool, error) 
 	if pl.start != "" {
 		m.Mode = pl.mode // the claim starts a cycle; a resumed run's claim does not
 	}
-	mine, err := f.PostComment(ctx, ref, fmt.Sprintf(a.msg.claim, host)+"\n\n"+m.Format()+"\n")
+	if pl.fix != nil {
+		m.Reason = marker.Fix // counted toward agent.max_fix_attempts
+	}
+	mine, err := f.PostComment(ctx, ref, a.claimText(pl)+"\n\n"+m.Format()+"\n")
 	if err != nil {
 		return false, fmt.Errorf("post the claim: %w", err)
 	}
