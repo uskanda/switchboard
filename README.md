@@ -79,7 +79,7 @@ GitHubのfine-grained personal access tokenを2つ作り、Secret Serviceに登�
 | 用途 | 設定のキー | 権限（対象のリポジトリだけ） |
 |---|---|---|
 | エージェント（ラベル、コメント、push、PR、CIの見張り） | `token_ref` | Contents、Issues、Pull requestsの読み書き。Actions、Commit statusesの読み取り |
-| 受信箱（一覧、返答、WUIからのマージ） | `inbox_token_ref` | Issues、Pull requests、Contentsの読み書き |
+| 受信箱（一覧、返答、WUIからのマージ） | `inbox_token_ref` | Issues、Pull requests、Contentsの読み書き。Actions、Commit statusesの読み取り |
 
 ```bash
 secret-tool store --label='switchboard github' service switchboard/github username token
@@ -94,6 +94,8 @@ secret-tool store --label='switchboard github inbox' service switchboard/github-
 エージェントのトークンにActionsとCommit statusesの読み取りが無いと、エージェントはPRのCIを見張らない。ほかの動きは変わらない。`switchboard doctor` が警告を出す。
 
 受信箱のトークンのPull requestsとContentsの書き込みは、受信箱のWeb表示から完了のPRをマージするために使う（ADR-043）。マージは人の身元で行い、フォージにも人のマージとして残る。今のトークンに足すときは、GitHubのトークンの設定で、Pull requestsとContentsを「Read and write」にして保存する。トークンの値は変わらないので、登録し直さなくてよい。足さないうちは、マージだけが「権限がありません」で断られる。
+
+受信箱のトークンのActionsとCommit statusesの読み取りは、マージの確認ダイアログにCIの結果を出すために使う（ADR-047）。足し方は上と同じで、ActionsとCommit statusesを「Read-only」にする。足さないうちは、ダイアログに「CIを読む権限がありません」と出るだけで、マージはできる。`switchboard doctor` が警告を出す。
 
 GitLabのプロジェクトを使うときは、GitLabのpersonal access tokenを `api` スコープで作り、同じように登録する。エージェント用と受信箱用に、同じトークンを登録してもよい。このトークンは自分の全プロジェクトを操作できる。エージェントの影響を1つのプロジェクトに限りたいときは、後述のプロジェクトごとの上書きで、Project Access Tokenを使う。GitLab 19.2以降のfine-grainedのトークンでも絞れるが、switchboardが使うすべてのAPIで動くかは確かめていない。
 
@@ -393,7 +395,7 @@ issueが待ちになったときと完了したときに、エージェントが
 - 実行中の欄には、端末、経過時間、最新の進捗の1行が出る。実行中のissueには返答できない
 - 順番待ちの欄は実行中の欄の下にあり、当たった上限と、順番待ちになってからの時間が出る。返答の待ちから順番待ちになったissueには、今までどおり返答できる
 - 「完了（close待ち）」の欄は順番待ちの欄の下にあり、端末、完了からの時間、PR/MRへのリンクが出る。ヘッダの完了の件数は、1件以上のときだけ出る。完了のissueにも返答でき、返答すると同じPR/MRで作業を再開する。issueをcloseすると欄から消える
-- 完了の行と1件の表示には「マージ」のボタンが出る。確認のダイアログで「マージする」を押すと、受信箱のトークンでPR/MRのdraftを解除してマージする。マージするのは、エージェントが完了を知らせたときのコミットだけで、その後にPR/MRへコミットが足されていれば断る。CIの結果やコンフリクトでフォージが断ったときは、その理由がトーストに出る。issueは、PR/MRの本文の `Closes #N` でcloseされ、一覧から消える。baseが既定のブランチでないときはissueが閉じないので、手でcloseする（ADR-043）
+- 完了の行と1件の表示には「マージ」のボタンが出る。確認のダイアログには、PR/MRの衝突の有無と、CIの結果（成功・失敗・実行中の数と、失敗中・実行中のチェックへのリンク）が出る。どちらも情報だけで、マージは止めない（ADR-047）。ダイアログで「マージする」を押すと、受信箱のトークンでPR/MRのdraftを解除してマージする。マージするのは、エージェントが完了を知らせたときのコミットだけで、その後にPR/MRへコミットが足されていれば断る。CIの結果やコンフリクトでフォージが断ったときは、その理由がトーストに出る。issueは、PR/MRの本文の `Closes #N` でcloseされ、一覧から消える。baseが既定のブランチでないときはissueが閉じないので、手でcloseする（ADR-043）
 - 実行の失敗（理由が `error`）の待ちには「再実行する」のボタンが出る。返答の欄が空のときに押すと再実行を頼む決まった文を返答し、エージェントが同じ作業をやり直す
 - 画面を開いている間は、一覧と選んだissueが自動で更新される。返答の書きかけは、更新されても消えない
 - 一覧の上の「新規issue」から、設定にあるどのプロジェクトにもissueを作れる。開始ラベルは、設定の `labels.ready`、`labels.plan`、`labels.go` から1つを選ぶ（初期値はready）。issueは受信箱のトークンで作るので、エージェントがそのまま着手する（ADR-040）

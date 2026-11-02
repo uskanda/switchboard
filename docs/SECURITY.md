@@ -34,7 +34,7 @@
 
 - GitHub：fine-grained PAT。対象リポジトリのみ、Issues: Read/Write、Pull requests: Read/Write、Contents: Read/Write（PR作成に必要な範囲）、Actions: ReadとCommit statuses: Read（PRのCIを見張るため。ADR-041）。PRとbaseの衝突は `Pull requests: Read` で読むので、権限は増えない（ADR-044）
 - GitLab：Project Access Token または PAT の `api` スコープ（最小化できない場合は対象プロジェクト限定の Project Access Token を推奨）
-- 受信箱専用のトークン（`inbox_token_ref`）は人の身元で、エージェントのトークンと分ける（ADR-008）。権限は、GitHubではIssues、Pull requests、Contentsの読み書きとする。Pull requestsとContentsの書き込みは、受信箱のWeb表示から完了のPRをマージするために使う（ADR-043）。GitLabは `api` スコープで足りる
+- 受信箱専用のトークン（`inbox_token_ref`）は人の身元で、エージェントのトークンと分ける（ADR-008）。権限は、GitHubではIssues、Pull requests、Contentsの読み書きとする。Pull requestsとContentsの書き込みは、受信箱のWeb表示から完了のPRをマージするために使う（ADR-043）。加えて、Actions: ReadとCommit statuses: Readを持たせる。マージの確認ダイアログにCIの結果を出すために使う読み取りだけの権限で、無いときはダイアログにCIが出ないだけである（ADR-047）。GitLabは `api` スコープで足りる
 - 中継サーバーが持つのは webhook シークレットのみ
 
 ## 5. 監査
