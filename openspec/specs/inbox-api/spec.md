@@ -53,12 +53,16 @@ APIは、エージェントのアカウントのIDを、プロセスが動いて
 - **THEN** 着手のコメントはエージェントの投稿で種類が着手として返り、どちらの本文にもマーカーは含まれない
 
 ### Requirement: 返答
-APIは、指定したissueに返答を投稿しなければならない（MUST）。投稿の前の確認は、`switchboard reply` と同じにする。issueを取り直して `agent:waiting` を確かめ、空の返答とマーカーで終わる返答は拒む。
-待ちでないときは、投稿せずに、待ちでないことを区別できる誤りを返さなければならない（MUST）。
+APIは、指定したissueに返答を投稿しなければならない（MUST）。投稿の前の確認は、`switchboard reply` と同じにする。issueを取り直して、openで `agent:waiting` か `agent:done` が付いていることを確かめ、空の返答とマーカーで終わる返答は拒む。
+どちらでもないときは、投稿せずに、待ちでないことを区別できる誤りを返さなければならない（MUST）。
 
 #### Scenario: 既に再開していた
-- **WHEN** `agent:waiting` が外れたissueに返答を送る
+- **WHEN** `agent:waiting` が外れて `agent:running` が付いたissueへ、返答を送る
 - **THEN** 投稿されず、待ちでないことを示す誤りが返る
+
+#### Scenario: 完了のissueに返答する
+- **WHEN** openのまま `agent:done` のissueに返答を送る
+- **THEN** 返答が投稿される
 
 ### Requirement: 公開のクライアント
 核のモジュールは、このAPIを呼ぶGoのパッケージ `<inboxapi>` を、`internal/` の外に公開しなければならない（MUST）。パッケージは、要求と応答の型と、待ちでないことを示す誤りを持つ。
@@ -198,3 +202,198 @@ APIは、webhookを登録してはならない（MUST NOT）。
 #### Scenario: 返答の待ちで順番待ちのissueに返答する
 - **WHEN** `agent:waiting` が付いた順番待ちのissueに、返答を送る
 - **THEN** 返答は投稿され、順番が来た実行のプロンプトに入る
+
+### Requirement: 実行中のissue
+APIの一覧は、実行中のissueを、状態（`running`）とともに返さなければならない（MUST）。項目は `switchboard inbox --json` と同じにする。
+APIの1件の詳細は、実行中のissueについて、進捗のコメントの全文を返さなければならない（MUST）。実行中のissueへの返答は、待ちでないissueへの返答として拒む。
+
+#### Scenario: 実行中のissueを開く
+- **WHEN** 実行中のissueの詳細を求める
+- **THEN** 状態は `running` で、進捗のコメントの全文が返る
+
+### Requirement: issueを作れる先の一覧
+APIは、設定にあるすべてのプロジェクトを、設定の順に、担当の端末の名前とともに返さなければならない（MUST）。`switchboard inbox serve` が動く端末の担当でないプロジェクトも含める。
+APIは、開始ラベルの種別（`ready`、`plan`、`go`）と、それぞれのラベル名を返さなければならない（MUST）。設定でラベル名が空の種別は返さない。
+設定の読み直しで現れたプロジェクトは、再起動しなくても一覧へ出なければならない（MUST）。
+
+#### Scenario: ほかの端末の担当プロジェクト
+- **WHEN** `laptop` の担当の `gl:nas/sb` を含む設定で動く、端末 `usknas` の受信箱のサービスで、一覧を求める
+- **THEN** `gl:nas/sb` が担当の端末 `laptop` とともに返る
+
+#### Scenario: planのラベル名が空
+- **WHEN** `labels.plan` が空の設定で、一覧を求める
+- **THEN** 開始ラベルの種別として、`ready` と `go` だけが返る
+
+### Requirement: issueの作成
+APIは、`ref`、タイトル、本文、開始ラベルの種別を受けて、そのプロジェクトに、受信箱のトークンでissueを作らなければならない（MUST）。issueには、種別に当たる設定のラベルを1つだけ付ける。
+APIは、作ったissueの参照（`gh:owner/repo#n` の形）とフォージのページのURLを返さなければならない（MUST）。
+作ったあと、APIは一覧のキャッシュを捨て、フォージの読み直しを促さなければならない（MUST）。
+
+#### Scenario: 計画から始めるissue
+- **WHEN** `labels.plan` が `agent:plan` の設定で、`gl:nas/sb` に種別 `plan` のissueを作る
+- **THEN** `gl:nas/sb` に、受信箱のトークンの持ち主が作者で、`agent:plan` だけが付いたissueができ、その参照とURLが返る
+
+### Requirement: issueの作成の前の確認
+次のどれかに当たるとき、APIはissueを作ってはならず、それぞれを区別できる誤りを返さなければならない（MUST NOT）。
+- `ref` が設定に無い（`unknown_project`）
+- タイトルが空白だけか、256字を超える（`invalid`）
+- 本文が1MiBを超える（`too_large`）
+- 種別が、一覧で返す開始ラベルの種別に無い（`invalid`）
+- 本文がswitchboardのマーカー行で終わる（`invalid`）
+
+フォージがissueを作れなかったとき、APIは `forge` の誤りを返さなければならない（MUST）。
+
+#### Scenario: ラベル名を種別として送る
+- **WHEN** 種別に `agent:done` を送る
+- **THEN** issueは作られず、`invalid` の誤りが返る
+
+#### Scenario: 設定に無いプロジェクト
+- **WHEN** 設定に無い `gh:o/nope` を送る
+- **THEN** issueは作られず、`unknown_project` の誤りが返る
+
+### Requirement: 完了の項目
+一覧の要素は、openのまま `agent:done` のissueについて、状態 `done` と行番号を持たなければならない（MUST）。完了の時刻を `done_since` に、doneの投稿が名指すPR/MRのURLを `change_url` に入れる。
+1件の詳細は、openのまま `agent:done` のissueで `done` を真にしなければならない（MUST）。closeされたissueでは偽にする。
+
+#### Scenario: 完了のissueの要素
+- **WHEN** PRを作ってdoneになったopenのissueがある状態で、一覧を求める
+- **THEN** そのissueの要素は `state` が `done` で、`done_since` と `change_url` を持つ
+
+### Requirement: 中継のイベントによる取り直し
+`<inbox.relay>` があるとき、`switchboard inbox serve` は、動いている間ずっと中継の配信口につながなければならない（MUST）。つないだときと切れたときは、ログに残す。
+画面が `/v1/events` でつないでいる間に中継のイベントが届いたとき、受信箱のサービスは、`<inbox.refresh_interval>` を待たずに一覧を取り直さなければならない（MUST）。最初のイベントから2秒の間に届いたイベントは、1回の取り直しにまとめる。前回の取得から10秒たつまでは取り直さない。
+画面がつないでいないときは、中継のイベントが届いても、受信箱のサービスは、フォージを読まずに一覧のキャッシュを捨てなければならない（MUST）。
+中継につないでいる間も、受信箱のサービスは、`<inbox.refresh_interval>` ごとの取り直しを延ばしてはならない（MUST NOT）。
+
+#### Scenario: イベントが続けて届く
+- **WHEN** 画面を開いている間、中継からイベントが1秒のうちに3つ届く
+- **THEN** 一覧の取り直しは1回だけで、変化は間隔を待たずに画面へ出る
+
+#### Scenario: 画面が無いときにイベントが届く
+- **WHEN** 画面を閉じている間に中継からイベントが届き、そのあとで画面を開く
+- **THEN** 画面を開いたときに、キャッシュを使わずにフォージから一覧を取り直す
+
+### Requirement: 一覧の中継の状態と間隔
+一覧は、中継の状態を `relay` に持たなければならない（MUST）。値は、つながっていれば `connected`、`<inbox.relay>` があって切れていれば（つなぎに行っている間を含む）`disconnected`、`<inbox.relay>` が無ければ空とする。
+一覧は、`<inbox.refresh_interval>` の秒数を `refresh_interval_seconds` に持たなければならない（MUST）。
+中継の状態が変わったとき、受信箱のサービスは、フォージを読まずに、最後の一覧に新しい状態を入れて `/v1/events` に送らなければならない（MUST）。
+
+#### Scenario: 中継が切れる
+- **WHEN** 画面を開いている間に、中継が止まる
+- **THEN** フォージを読まずに、`relay` が `disconnected` の一覧が送られる
+
+### Requirement: 一覧の取得と要求の取り消し
+一覧を求めた要求が途中で取り消されたとき、APIは、その一覧のためのフォージへの問い合わせを打ち切ってはならない（MUST NOT）。
+
+#### Scenario: ブラウザが要求をやめる
+- **WHEN** ブラウザが一覧を求め、APIがフォージに問い合わせている間に、その要求を取り消す
+- **THEN** APIはフォージから一覧を最後まで取り、続けて一覧を求めた要求には、取り消しの誤りを含まない一覧が返る
+
+### Requirement: 一覧の取得の上限時間
+APIは、フォージから一覧を取る1回の取得を、30秒で打ち切らなければならない（MUST）。
+
+#### Scenario: フォージが応答しない
+- **WHEN** 一覧を求めたとき、あるフォージが30秒を過ぎても応答しない
+- **THEN** 30秒で取得を打ち切り、取得できた一覧と、そのフォージに届かなかったことが返る
+
+### Requirement: 届かなかったフォージがある一覧のキャッシュ
+一覧を取ったときに届かなかったフォージがあれば、APIは、その一覧を返さなければならない（MUST）。その一覧をキャッシュしてはならない（MUST NOT）。
+
+#### Scenario: 届かなかった次の要求
+- **WHEN** GitHubに届かなかった一覧を返したあと、60秒以内にもう一度一覧を求める
+- **THEN** APIはフォージに問い合わせ直し、GitHubに届けば、誤りを含まない一覧が返る
+
+### Requirement: 公開のクライアントのソケットの探し方
+ソケットの場所を指定されていない間、`<inboxapi>` のクライアントは、要求ごとにソケットの場所を探さなければならない（MUST）。
+
+#### Scenario: クライアントのあとに受信箱のサービスが起動する
+- **WHEN** ソケットの指定の無いクライアントが一覧を求めて届かず、そのあとで `switchboard inbox serve` が既定の場所にソケットを作り、クライアントがもう一度一覧を求める
+- **THEN** 1回目は受信箱のサービスに届かない誤りが返り、2回目はソケットを通して一覧が返る
+
+### Requirement: 既定のソケットの場所
+`<inboxapi>` のクライアントは、ソケットの場所を指定されていないとき、次の順に既定の場所を決めなければならない（MUST）。
+
+1. `/run/switchboard/inbox.sock` があれば、その場所
+2. `RUNTIME_DIRECTORY` があれば、その下の `inbox.sock`
+3. `XDG_RUNTIME_DIR` があれば、`$XDG_RUNTIME_DIR/switchboard/inbox.sock`
+4. どれにも当たらなければ、ソケットがまだ無くても `/run/switchboard/inbox.sock`
+
+#### Scenario: systemdから環境変数無しで起動する
+- **WHEN** `RUNTIME_DIRECTORY` と `XDG_RUNTIME_DIR` のどちらも無く、`/run/switchboard/inbox.sock` もまだ無いときに、既定の場所を求める
+- **THEN** `/run/switchboard/inbox.sock` が返る
+
+#### Scenario: 設置したサービスのソケットがある
+- **WHEN** `/run/switchboard/inbox.sock` があり、`XDG_RUNTIME_DIR` もあるときに、既定の場所を求める
+- **THEN** `/run/switchboard/inbox.sock` が返る
+
+### Requirement: 完了の項目のPR/MRとコミット
+openで `agent:done` のissueの、一覧の要素と詳細は、PR/MRの番号を `change_number` に、コミットを `change_sha` に入れなければならない（MUST）。どちらも、エージェントの最新のdoneの投稿のマーカーから取る。
+マーカーにPR/MRの番号かコミットが無いとき、APIは、その項目を空にしなければならない（MUST）。
+
+#### Scenario: PRを作って完了したissue
+- **WHEN** エージェントがPR #73を作り、マーカーに `cr=73` と `sha=17c509e` を残してdoneにしたopenのissueがある状態で、一覧を求める
+- **THEN** そのissueの要素は `change_number` が73で、`change_sha` が `17c509e` である
+
+#### Scenario: 古い完了の投稿
+- **WHEN** マーカーに `cr` の無い古いdoneの投稿で完了したissueの詳細を求める
+- **THEN** 詳細の `change_number` と `change_sha` は空である
+
+### Requirement: 完了のPR/MRのマージ
+APIは、issueの参照と、画面で見たコミット `sha` を受けて、そのissueのPR/MRを受信箱のトークンでマージしなければならない（MUST）。マージするのは、エージェントの最新のdoneの投稿のマーカーが名指すPR/MRで、マーカーのコミットのときに限る。
+PR/MRがdraftのとき、APIは、マージの前にdraftを解除しなければならない（MUST）。GitLabでは、タイトルの先頭の `Draft:`、`[Draft]`、`(Draft)` を外して解除する。
+APIは、マージの方式を指定してはならない（MUST NOT）。GitHubではAPIの既定のマージコミットになり、GitLabではプロジェクトの設定に従う。
+マージに成功したとき、APIは一覧のキャッシュを捨て、フォージの読み直しを促さなければならない（MUST）。
+
+#### Scenario: draftのPRをマージする
+- **WHEN** draftのPR #73で完了したissueに、マーカーと同じ `sha` を付けてマージを求める
+- **THEN** 受信箱のトークンでPR #73のdraftが解除されてからマージされる
+
+#### Scenario: GitLabのdraftのMR
+- **WHEN** タイトルが `Draft: Add a flag` のMR `!5` で完了したissueに、マージを求める
+- **THEN** MRのタイトルが `Add a flag` に変わってから、MRがマージされる
+
+### Requirement: マージの前の確認
+次のどれかに当たるとき、APIはマージしてはならず、`stale` の誤りを返さなければならない（MUST NOT）。
+- issueがcloseされているか、`agent:done` が付いていない
+- エージェントの最新のdoneの投稿のマーカーに、PR/MRの番号かコミットが無い
+- ブラウザが送った `sha` が、マーカーのコミットと違う
+- PR/MRのheadが、マーカーのコミットと違う
+
+`sha` が空のとき、APIはマージしてはならず、`invalid` の誤りを返さなければならない（MUST NOT）。
+PR/MRのheadが違うとき、APIは、draftを解除してはならない（MUST NOT）。
+
+#### Scenario: 画面を読んだ後にエージェントがpushした
+- **WHEN** 画面を読んだ後に、エージェントが再開してdoneの投稿を出し直し、マーカーのコミットが変わる。その後に、古い `sha` でマージを求める
+- **THEN** マージされず、`stale` の誤りが返る
+
+#### Scenario: 人がPRにコミットを足していた
+- **WHEN** doneの後に人がPRのブランチへpushし、headがマーカーのコミットと違う状態で、マージを求める
+- **THEN** PRはdraftのまま残り、`stale` の誤りが返る
+
+#### Scenario: 実行中のissue
+- **WHEN** `agent:running` のissueに、マージを求める
+- **THEN** マージされず、`stale` の誤りが返る
+
+### Requirement: マージの誤り
+フォージがマージを断ったとき、APIは、`not_mergeable` の誤りに、フォージが示した理由を付けて返さなければならない（MUST）。PR/MRが既にマージ済みか、閉じられているときも、`not_mergeable` を返す。
+受信箱のトークンにマージの権限が無いとき、APIは、`forbidden` の誤りを返さなければならない（MUST）。誤りの文は、GitHubで要る `Pull requests` と `Contents` の書き込みの権限と、GitLabで要る `api` のスコープを名指す。
+
+#### Scenario: CIが通っていない
+- **WHEN** ブランチの保護でCIの成功を必須にしたリポジトリで、CIの失敗したPRのマージを求める
+- **THEN** `not_mergeable` の誤りが、フォージの示した理由とともに返る
+
+#### Scenario: 権限を足していないトークン
+- **WHEN** Issuesの読み書きの権限だけを持つ受信箱のトークンで、GitHubのPRのマージを求める
+- **THEN** `forbidden` の誤りが返る。一覧、詳細、返答は今までどおり使える
+
+### Requirement: マージでのissueの扱い
+マージのとき、APIは、issueをcloseしてはならず、issueのラベルとコメントを変えてはならない（MUST NOT）。issueのcloseは、PR/MRの本文の `Closes #N` に任せる。
+マージのとき、APIは、PR/MRのブランチを消してはならない（MUST NOT）。
+
+#### Scenario: 既定のブランチへマージする
+- **WHEN** baseが既定のブランチのPRを、受信箱からマージする
+- **THEN** PRの `Closes #N` でissueがcloseされ、次の一覧にそのissueは出ない
+
+#### Scenario: 既定でないブランチへマージする
+- **WHEN** baseが `develop` のPRを、受信箱からマージする
+- **THEN** issueはopenのまま `agent:done` で残り、完了の項目として一覧に出る
