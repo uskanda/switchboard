@@ -195,3 +195,10 @@
 - 決定：受信箱のサービスは、issueを直接closeせず、ラベルとコメントにも触らない。issueのcloseは、PR/MRの本文の `Closes #N` に任せる。baseが既定のブランチでなければissueは閉じず、受信箱に残る。そのときもう一度押すと、フォージが「マージ済み」で断り、その理由を出すだけにとどめる。マージの方式は指定せず（GitHubはAPIの既定のマージコミット、GitLabはプロジェクトの設定）、リモートのブランチも消さない
 - 決定：認証の無いWUI（ADR-036、ADR-040）から、LANの中ならマージまでできるようになる。このことを受け入れる。マージのPOSTには、返答と同じ検査をかける。本文がJSONであること、`Origin` と `Host` が `listen` のアドレスと一致することである。認証は引き続き#15の課題とする
 - 理由：完了のissueを片付けるたびに、PRを開いてdraftを解除し、マージする操作がスマホでは手間だった。エージェントのトークンでマージすると、botがマージした記録になり、「マージは人間が行う」と食い違う。3本目のトークンは、設定が増えるわりに得るものが少ない。画面で見た `sha` に限れば、見ていないコミットをマージしない保証が、追加のAPIの呼び出しなしで手に入る。CIの必須化はブランチの保護で済み、受信箱のサービスはCIを見ないという今の分担も保てる。issueを受信箱から直接閉じるボタンは、マージせずに閉じる操作をLANの中の誰にでも許すわりに、使う場面が少ない（issue `gh:uskanda/switchboard` #69のQ1〜Q7）
+
+## ADR-044 doneのPR/MRとbaseの衝突への自動の対処（採用、2026-11-02）
+- 決定：ADR-041の直す実行のきっかけに、エージェントが作ったPR/MRとbaseとの衝突を加える。衝突とみなすのは、GitHubの `mergeable=false` かつ `mergeable_state=dirty` と、GitLabの `has_conflicts=true` だけとする。計算中は次の問い合わせに回し、`behind` と `blocked` は扱わない
+- 決定：CIの段（pushから6時間まで、`poll_interval` ごと）が終わっても見張りは外さない。PR/MRがopenでissueが `agent:done` の間、`reconcile_interval` ごとにPR/MRを1回読んで衝突を見る。PR/MRのheadがエージェントの最新のdoneのマーカーの `sha` と違えば見張りをやめ、人がpushした後の衝突は直さない
+- 決定：衝突を直す実行は `git merge origin/<base>` で解消させる。回数は、CIの失敗とnon-fast-forwardと同じ `agent.max_fix_attempts` で数える。上限を超える衝突では、issueを `waiting(reason=conflict)` で待たせる。CIの失敗と衝突が同時にあれば衝突を先に直す
+- 決定：トークンの権限は増やさない。衝突の有無はPR/MRの読み取りで分かり、GitHubの `Pull requests: Read`、GitLabの `api` スコープで足りる
+- 理由：GitHubは衝突のあるPRで `pull_request` のCIを走らせないので、ADR-041の見張りは「CIが現れない」として黙って終わり、人が気付くまで止まっていた（PR #71）。直す実行に渡すのはPR/MRの番号とbaseの名前だけで、フォージから読んだ文は入れない。grillingの記録は `detect-change-request-conflicts` の第1ラウンドQ1〜Q5、第2ラウンドQ6〜Q8
