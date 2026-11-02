@@ -62,13 +62,16 @@ func Credentials(cfg *config.Config) []Credential {
 }
 
 // InboxCredentials lists the inbox tokens of the forges the configuration uses: the inbox service reads and
-// replies as the user, and needs no agent token.
+// replies as the user, and needs no agent token. With inbox.relay, its bearer token for the relay is added.
 func InboxCredentials(cfg *config.Config) []Credential {
 	var refs []string
 	for _, kind := range []string{"gh", "gl"} {
 		if cfg.Uses(kind) {
 			refs = append(refs, cfg.InboxTokenRef(kind))
 		}
+	}
+	if r := cfg.Inbox.Relay; r != nil {
+		refs = append(refs, r.TokenRef)
 	}
 	return credentials(refs)
 }

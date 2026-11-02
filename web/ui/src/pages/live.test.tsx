@@ -87,6 +87,27 @@ describe("the header", () => {
     expect(screen.getByRole("link", { name: "設定" })).toHaveAttribute("href", "/settings");
   });
 
+  it("says whether changes show at once or at the interval, as the relay goes", async () => {
+    serve({}, listing());
+    at("/");
+    const es = FakeEventSource.last!;
+    es.emit("inbox", { ...listing(), relay: "connected", refresh_interval_seconds: 30 });
+    expect(await screen.findByText("自動更新中（即時）")).toBeInTheDocument();
+    es.emit("inbox", { ...listing(), relay: "disconnected", refresh_interval_seconds: 30 });
+    expect(await screen.findByText("自動更新中（30秒ごと）")).toBeInTheDocument();
+    es.emit("inbox", { ...listing(), relay: "", refresh_interval_seconds: 30 });
+    expect(await screen.findByText("自動更新中")).toBeInTheDocument();
+  });
+
+  it("keeps the words of a cut stream whatever the relay's state", async () => {
+    serve({}, listing());
+    at("/");
+    const es = FakeEventSource.last!;
+    es.emit("inbox", { ...listing(), relay: "connected", refresh_interval_seconds: 30 });
+    es.fail();
+    expect(await screen.findByText("自動更新が切れています。再接続しています")).toBeInTheDocument();
+  });
+
   it("says the updates are cut while the stream is down", async () => {
     serve({}, listing());
     at("/");

@@ -36,7 +36,17 @@ export const isDone = (it: Item) => it.state === "done";
 export const queueText = (reason: string) =>
   reason === "project-max-parallel" ? "プロジェクトの上限に達しています" : "端末の上限に達しています";
 
-export type Inbox = { items: Item[]; errors: { forge: string; message: string }[]; fetched_at: string };
+/**
+ * Inbox is a listing. relay is whether the inbox service follows the relay's events ("" when it is not set up), and
+ * refresh_interval_seconds how often it reads the forges while a page listens; older services send neither.
+ */
+export type Inbox = {
+  items: Item[];
+  errors: { forge: string; message: string }[];
+  fetched_at: string;
+  relay?: "connected" | "disconnected" | "";
+  refresh_interval_seconds?: number;
+};
 
 export type Detail = {
   ref: string;

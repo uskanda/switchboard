@@ -158,13 +158,19 @@ func RemoveHook(ctx context.Context, cfg *config.Config, ref string, hooks forge
 var hostName = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 // AddToken makes the bearer token of host, stores it under switchboard/relay-<host>, and prints the entries to add
-// to relay.hosts (its hash) and to the host's agent.relay (its token_ref). The token itself is never shown.
-func AddToken(cfg *config.Config, host string, store SecretWriter, out io.Writer) error {
+// to relay.hosts (its hash) and to the host's agent.relay (its token_ref). With inbox, the token is the inbox
+// service's on host: it subscribes as <host>-inbox, under switchboard/relay-<host>-inbox, and the entry to add goes
+// to inbox.relay. The token itself is never shown.
+func AddToken(cfg *config.Config, host string, inbox bool, store SecretWriter, out io.Writer) error {
 	if !hostName.MatchString(host) {
 		return fmt.Errorf("%q is not a host name", host)
 	}
+	name, section, install := host, "agent", "the agent again (switchboard service install)"
+	if inbox {
+		name, section, install = host+"-inbox", "inbox", "the inbox service again (switchboard service install --inbox)"
+	}
 	tok := random(32)
-	ref := "switchboard/relay-" + host
+	ref := "switchboard/relay-" + name
 	if err := store.Set(ref, tok); err != nil {
 		return fmt.Errorf("store the token in the Secret Service: %w", err)
 	}
@@ -172,7 +178,8 @@ func AddToken(cfg *config.Config, host string, store SecretWriter, out io.Writer
 	fmt.Fprintf(out, "Stored the token of %s as %s. A token stored there before is replaced.\n\n"+
 		"Add this to relay.hosts in the relay's configuration, then install the relay again:\n\n"+
 		"    - name: %s\n      token_hash: sha256:%s\n\n"+
-		"Add this to agent in the configuration of %s, then install the agent again (switchboard service install):\n\n"+
-		"  relay:\n    url: http://%s/events\n    token_ref: %s\n", host, ref, host, hex.EncodeToString(sum[:]), host, cfg.Relay.SSEListen, ref)
+		"Add this to %s in the configuration of %s, then install %s:\n\n"+
+		"  relay:\n    url: http://%s/events\n    token_ref: %s\n",
+		name, ref, name, hex.EncodeToString(sum[:]), section, host, install, cfg.Relay.SSEListen, ref)
 	return nil
 }

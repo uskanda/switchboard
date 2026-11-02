@@ -2,8 +2,19 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
+
+	"github.com/uskanda/switchboard/internal/forge"
+	"github.com/uskanda/switchboard/internal/instructions"
+	"github.com/uskanda/switchboard/internal/relayclient"
 )
 
 const bothForges = `version: 1
@@ -29,6 +40,59 @@ func TestInboxServeReadsTheInboxTokensOnly(t *testing.T) {
 	}
 	if got := strings.Join(asked, " "); got != "gh-inbox gl-inbox" {
 		t.Fatalf("asked for %q", got)
+	}
+}
+
+// syncBuffer is a bytes.Buffer safe to write from one goroutine while the test reads it.
+type syncBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
+// With inbox.relay, the inbox service follows the relay with its own token and logs when it connects.
+func TestInboxServeFollowsTheRelay(t *testing.T) {
+	cfg := load(t, bothForges+"inbox:\n  relay: {url: \"http://127.0.0.1:8782/events\", token_ref: relay-inbox}\n")
+	api, _ := inboxAPI(cfg, map[string]forge.Forge{}, instructions.Store{})
+	if !api.Relay {
+		t.Fatal("the server does not know it follows a relay")
+	}
+	var auth atomic.Value
+	relaySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth.Store(r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "id: 1\ndata: {\"forge\":\"gl\",\"project\":\"nas/b\",\"issue\":3,\"kind\":\"issue\"}\n\n")
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}))
+	defer relaySrv.Close()
+	stderr := &syncBuffer{}
+	rc := &relayclient.Client{URL: relaySrv.URL, Token: "tok", Logf: func(string, ...any) {}}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { followRelay(ctx, rc, api, stderr); close(done) }()
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(stderr.String(), "relay: connected") && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	cancel()
+	<-done
+	if !strings.Contains(stderr.String(), "switchboard: inbox: relay: connected") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+	if got, _ := auth.Load().(string); got != "Bearer tok" {
+		t.Fatalf("authorization = %q", got)
 	}
 }
 

@@ -59,6 +59,9 @@ type Server struct {
 	Projects *Projects
 	// NewIssues, when set, serves /v1/issue-targets and /v1/issues.
 	NewIssues *NewIssues
+	// Relay reports that the service follows the relay's events (inbox.relay is set): the listings then say
+	// whether it is connected, and RelayState and RelayEvent are called as the stream goes.
+	Relay bool
 
 	// vmu guards Inbox, Instructions.Projects, Projects.Config and NewIssues.Config, which Reload replaces while
 	// requests read them.
@@ -73,6 +76,11 @@ type Server struct {
 	stop    context.CancelFunc
 	refresh chan struct{}
 	last    *inboxapi.Inbox
+	// Under subMu too: whether the relay is connected, and the read a relay event has asked for and not yet made.
+	relayUp bool
+	pending *time.Timer
+	// The debounce and the gap of relay events; RelayDebounce and config.MinRefreshInterval when zero.
+	debounce, gap time.Duration
 }
 
 // inbox is the inbox in use.
@@ -156,7 +164,10 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.cached != nil && s.now().Sub(s.cached.FetchedAt) < TTL {
-		send(w, http.StatusOK, s.cached)
+		// The relay's state is the one now, not the one when the listing was read.
+		c := *s.cached
+		c.Relay = s.relayState()
+		send(w, http.StatusOK, &c)
 		return
 	}
 	// The forges are asked apart from the request: a caller that gives up (a browser reloading the page) must not
@@ -178,7 +189,8 @@ func (s *Server) fetchLocked(ctx context.Context) *inboxapi.Inbox {
 	ctx, cancel := context.WithTimeout(ctx, FetchTimeout)
 	defer cancel()
 	items, errs := s.inbox().Collect(ctx)
-	out := &inboxapi.Inbox{Items: []inboxapi.Item{}, Errors: []inboxapi.ForgeError{}, FetchedAt: s.now()}
+	out := &inboxapi.Inbox{Items: []inboxapi.Item{}, Errors: []inboxapi.ForgeError{}, FetchedAt: s.now(),
+		Relay: s.relayState(), RefreshIntervalSeconds: int(s.interval() / time.Second)}
 	for _, it := range items {
 		out.Items = append(out.Items, inboxapi.Item(it))
 	}
@@ -201,6 +213,8 @@ func (s *Server) fetchLocked(ctx context.Context) *inboxapi.Inbox {
 func (s *Server) publish(in *inboxapi.Inbox) {
 	s.subMu.Lock()
 	defer s.subMu.Unlock()
+	// The relay's state may have changed while the forges were read.
+	in.Relay = s.relayLocked()
 	if s.last != nil && same(s.last, in) {
 		s.last = in
 		return
@@ -222,8 +236,8 @@ func offer(ch chan *inboxapi.Inbox, in *inboxapi.Inbox) {
 }
 
 func same(a, b *inboxapi.Inbox) bool {
-	x, _ := json.Marshal(inboxapi.Inbox{Items: a.Items, Errors: a.Errors})
-	y, _ := json.Marshal(inboxapi.Inbox{Items: b.Items, Errors: b.Errors})
+	x, _ := json.Marshal(inboxapi.Inbox{Items: a.Items, Errors: a.Errors, Relay: a.Relay})
+	y, _ := json.Marshal(inboxapi.Inbox{Items: b.Items, Errors: b.Errors, Relay: b.Relay})
 	return string(x) == string(y)
 }
 
