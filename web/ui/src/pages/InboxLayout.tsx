@@ -4,6 +4,8 @@ import { Header } from "@/components/Header";
 import { InboxList } from "@/components/InboxList";
 import { IssuePane } from "@/components/IssuePane";
 import { LIST_WIDTH_DEFAULT, LIST_WIDTH_MAX, LIST_WIDTH_MIN, LIST_WIDTH_STEP, useListWidth } from "@/lib/paneWidth";
+import { useInbox } from "@/lib/inbox";
+import { usePageTitle } from "@/lib/title";
 import { cn } from "@/lib/utils";
 
 /**
@@ -62,6 +64,8 @@ function PaneBorder({ width, setWidth }: { width: number; setWidth: (w: number) 
 export function InboxLayout() {
   const ref = useParams().ref;
   const [width, setWidth] = useListWidth();
+  const { inbox } = useInbox();
+  usePageTitle(ref && (inbox?.items.find((it) => it.ref === ref)?.title ?? ref));
   return (
     <div className="flex min-h-dvh flex-col lg:h-dvh">
       <Header />

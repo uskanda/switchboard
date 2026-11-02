@@ -1,12 +1,13 @@
 import type { ReactNode } from "react";
 import { Markdown } from "@/components/Markdown";
 import { Textarea } from "@/components/ui/textarea";
-import { withoutAnswerHint, type Answer, type Group, type PlanQuestions as Parsed, type Question } from "@/lib/planQuestions";
+import { defaultAnswers, withoutAnswerHint, type Answer, type Group, type PlanQuestions as Parsed, type Question } from "@/lib/planQuestions";
 
 const NONE = "選ばない（補足で答える）";
 
-function Choices({ q, j, group, choice, disabled, onChoose }: {
-  q: Question; j: number; group: Group; choice: string | null; disabled: boolean; onChoose: (label: string | null) => void;
+/** Choices is one group of options as radio buttons; the option the recommendation names is marked in words. */
+function Choices({ q, j, group, choice, recommended, disabled, onChoose }: {
+  q: Question; j: number; group: Group; choice: string | null; recommended: string | null; disabled: boolean; onChoose: (label: string | null) => void;
 }) {
   const name = `q${q.n}-g${j}`;
   const row = "flex min-h-[44px] cursor-pointer items-start gap-sm py-xs";
@@ -19,6 +20,7 @@ function Choices({ q, j, group, choice, disabled, onChoose }: {
           <input type="radio" name={name} value={o.label} checked={choice === o.label} disabled={disabled} onChange={() => onChoose(o.label)} className={radio} />
           <span className="min-w-0">
             <span className="font-medium">{o.label}</span> <Markdown text={o.text} inline />
+            {o.label === recommended && <span className="text-label-md font-medium text-muted">（推奨）</span>}
           </span>
         </label>
       ))}
@@ -33,6 +35,7 @@ function Choices({ q, j, group, choice, disabled, onChoose }: {
 function OneQuestion({ q, answer, disabled, onChange }: { q: Question; answer: Answer; disabled: boolean; onChange: (a: Answer) => void }) {
   const id = `q${q.n}-note`;
   const lastGroup = q.parts.reduce((at, p, i) => (p.kind === "group" ? i : at), -1);
+  const recommended = defaultAnswers([q])[0].choices;
   const note = (
     <div key="note" className="flex flex-col gap-xs">
       <label htmlFor={id} className="text-label-md font-medium text-muted">
@@ -50,7 +53,7 @@ function OneQuestion({ q, answer, disabled, onChange }: { q: Question; answer: A
     }
     const g = k++;
     const choose = (label: string | null) => onChange({ ...answer, choices: answer.choices.map((c, m) => (m === g ? label : c)) });
-    body.push(<Choices key={i} q={q} j={g} group={p.group} choice={answer.choices[g] ?? null} disabled={disabled} onChoose={choose} />);
+    body.push(<Choices key={i} q={q} j={g} group={p.group} choice={answer.choices[g] ?? null} recommended={recommended[g] ?? null} disabled={disabled} onChoose={choose} />);
     // The free text goes right under the last group of options.
     if (i === lastGroup) body.push(note);
   });

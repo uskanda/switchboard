@@ -63,7 +63,8 @@ describe("reading an issue", () => {
   it("says it is loading until the first read arrives", async () => {
     const forge = serveSlowly(listing);
     at("/issue/gh%3Ao%2Fr%2312");
-    expect(await screen.findByRole("status", { name: "読み込んでいます" })).toBeInTheDocument();
+    // The list says it is loading too, until its first listing arrives.
+    expect(await screen.findAllByRole("status", { name: "読み込んでいます" })).not.toHaveLength(0);
     await forge.answer(detail());
     expect(await screen.findByRole("heading", { level: 2, name: "Add a flag" })).toBeInTheDocument();
     expect(screen.queryByRole("status", { name: "読み込んでいます" })).not.toBeInTheDocument();

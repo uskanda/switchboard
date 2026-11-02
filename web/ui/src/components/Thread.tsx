@@ -16,11 +16,14 @@ function AgentMark() {
   return <span className="rounded-sm border border-outline px-xs text-label-md font-medium">エージェント</span>;
 }
 
+/**
+ * Byline says who wrote a card and when. The agent's posts carry its mark alone: the account it posts with is often
+ * the person's own, and naming it beside the mark reads as if that person wrote it.
+ */
 function Byline({ author, at, agent }: { author: string; at: string | null | undefined; agent?: boolean }) {
   return (
     <p className="flex flex-wrap items-center gap-sm text-label-md text-muted">
-      {agent && <AgentMark />}
-      <span className="font-medium">{author || "?"}</span>
+      {agent ? <AgentMark /> : <span className="font-medium">{author || "?"}</span>}
       <time dateTime={at ?? undefined}>{when(at)}</time>
     </p>
   );

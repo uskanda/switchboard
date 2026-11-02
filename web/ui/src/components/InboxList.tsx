@@ -1,17 +1,18 @@
 import { Link } from "react-router";
-import { MergeButton } from "@/components/MergeButton";
+import { Loading } from "@/components/Loading";
+import { MergeButton, changeName } from "@/components/MergeButton";
 import { NewIssue } from "@/components/NewIssue";
 import { ReasonBadge } from "@/components/ReasonBadge";
 import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
 import { Table, TableCell, TableHead } from "@/components/ui/table";
-import { age, elapsed, isDone, isQueued, isRunning, issuePath, queueText, type Item } from "@/lib/api";
+import { age, elapsed, isDone, isQueued, isRunning, isWaiting, issuePath, plainText, progressText, queueText, type Item } from "@/lib/api";
 import { useInbox } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
 
 /**
- * ChangeLink is the pull or merge request of a done issue, a link of its own beside the issue's, with the button that
- * merges it when the done post names its number and commit. Both stay outside the row's link to the issue.
+ * ChangeLink is the pull or merge request of a done issue, a link of its own beside the issue's, named by its number
+ * when the done post gives one, with the button that merges it when the done post names its number and commit. Both stay outside the row's link to the issue.
  */
 function ChangeLink({ it }: { it: Item }) {
   if (!isDone(it)) return null;
@@ -21,7 +22,7 @@ function ChangeLink({ it }: { it: Item }) {
     <div className="flex flex-wrap items-center gap-sm">
       {it.change_url && (
         <a href={it.change_url} target="_blank" rel="noreferrer" className="inline-flex min-h-11 min-w-0 items-center break-all font-mono text-mono-sm text-muted underline">
-          {it.change_url}
+          {it.change_number ? changeName(it.ref, it.change_number) : it.change_url}
         </a>
       )}
       {mergeable && <MergeButton issueRef={it.ref} number={it.change_number!} sha={it.change_sha!} url={it.change_url} />}
@@ -51,11 +52,11 @@ function cells(it: Item) {
   if (isRunning(it)) {
     return {
       tag: <span className="text-label-md font-medium">実行中</span>,
-      line: it.progress ?? "?",
+      line: progressText(it.progress),
       time: elapsed(it.running_since),
     };
   }
-  return { tag: <ReasonBadge reason={it.reason} />, line: it.question, time: age(it.waiting_since) };
+  return { tag: <ReasonBadge reason={it.reason} />, line: plainText(it.question), time: age(it.waiting_since) };
 }
 
 /**
@@ -131,12 +132,12 @@ function Items({ items, timeHead, selected }: { items: Item[]; timeHead: string;
 }
 
 /**
- * InboxList is the button for a new issue, the list of waiting issues, then the running, the queued and the done ones
- * (open, waiting to be closed) under their own headings.
+ * InboxList is the button for a new issue, then the waiting, the running, the queued and the done issues (open,
+ * waiting to be closed), each under its own heading. Until the first listing arrives it says that it is loading.
  */
 export function InboxList({ selected }: { selected?: string }) {
   const { inbox, error } = useInbox();
-  const waiting = inbox?.items.filter((it) => !isRunning(it) && !isQueued(it) && !isDone(it)) ?? [];
+  const waiting = inbox?.items.filter(isWaiting) ?? [];
   const running = inbox?.items.filter(isRunning) ?? [];
   const queued = inbox?.items.filter(isQueued) ?? [];
   const done = inbox?.items.filter(isDone) ?? [];
@@ -150,8 +151,13 @@ export function InboxList({ selected }: { selected?: string }) {
           {e.forge}を読めませんでした：{e.message}
         </Alert>
       ))}
-      {inbox && waiting.length === 0 && <p className="text-muted">待ちのissueはありません</p>}
-      {waiting.length > 0 && <Items items={waiting} timeHead="待ち" selected={selected} />}
+      {!inbox && !error && <Loading />}
+      {inbox && (
+        <section className="flex flex-col gap-sm">
+          <h2 className="text-label-md font-semibold text-muted">返答待ち</h2>
+          {waiting.length > 0 ? <Items items={waiting} timeHead="待ち" selected={selected} /> : <p className="text-muted">待ちのissueはありません</p>}
+        </section>
+      )}
       {running.length > 0 && (
         <section className="flex flex-col gap-sm">
           <h2 className="text-label-md font-semibold text-muted">実行中</h2>

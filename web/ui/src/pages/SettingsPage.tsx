@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { Loading } from "@/components/Loading";
 import { ProjectsSection } from "@/components/ProjectsSection";
 import { Shell } from "@/components/Shell";
 import { Alert } from "@/components/ui/alert";
@@ -6,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiError, getInstructions, saveInstructions, type Instruction, type Instructions } from "@/lib/api";
+import { usePageTitle } from "@/lib/title";
 import { toast } from "@/lib/toast";
 
 function failure(err: unknown): string {
@@ -78,6 +80,7 @@ function Field({ item }: { item: Instruction }) {
 export function SettingsPage() {
   const [data, setData] = useState<Instructions | null>(null);
   const [error, setError] = useState<string | null>(null);
+  usePageTitle("設定");
 
   const load = () => getInstructions().then(setData, (err) => setError(failure(err)));
   useEffect(() => {
@@ -101,6 +104,7 @@ export function SettingsPage() {
         )}
       </div>
       {error && <Alert>{error}</Alert>}
+      {!data && !error && <Loading />}
       {data && (
         <div className="flex flex-col gap-sm">
           {data.items.map((it) => (
