@@ -45,11 +45,12 @@ cat > "$rec/stdin"
 sid=""
 prev=""
 for a in "$@"; do [ "$prev" = "--session-id" ] && sid="$a"; prev="$a"; done
-end=$(( $(date +%%s) + %d ))
-while [ %d -gt 0 ] && [ "$(date +%%s)" -lt "$end" ]; do sleep 0.05; done
+# The loop reads the clock from $SECONDS, not $(date): a signal to the process group kills a date child, and
+# the empty result would end the loop early, so the fake would exit by itself before the next signal.
+while [ %d -gt 0 ] && [ "$SECONDS" -lt %d ]; do sleep 0.05; done
 sed -e "s/__SESSION__/$sid/g" -e "s#__CWD__#$(pwd)#g" %q
 exit %d
-`, rec, intAction, termAction, int(sleep+0.999), int(sleep*1000), fixturePath, exit)
+`, rec, intAction, termAction, int(sleep*1000), int(sleep+0.999), fixturePath, exit)
 	bin = filepath.Join(dir, "claude")
 	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
@@ -216,7 +217,8 @@ func TestTimeoutSendsINTThenTERMThenKILL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !res.TimedOut || time.Since(start) > 10*time.Second {
+	// ExitCode is -1 only when a signal ended the process: the fake ignores INT and TERM, so that was the KILL.
+	if !res.TimedOut || res.ExitCode != -1 || time.Since(start) > 10*time.Second {
 		t.Fatalf("result = %+v after %v", res, time.Since(start))
 	}
 	if got := strings.Fields(read(t, filepath.Join(rec, "signals"))); strings.Join(got, ",") != "INT,TERM" {
