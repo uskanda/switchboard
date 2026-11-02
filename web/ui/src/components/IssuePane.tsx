@@ -20,6 +20,9 @@ import { composeReply, defaultAnswers, parsePlanQuestions, type Answer } from "@
 import { addedCards, cardsOf, targetOf, type Card as ThreadCard } from "@/lib/scrollTarget";
 import { cn } from "@/lib/utils";
 
+/** RETRY_TEXT is the reply that runs a failed run again: a trusted comment is all a wait on an error needs. */
+const RETRY_TEXT = "再実行してください。";
+
 function failure(err: unknown): string {
   if (err instanceof ApiError) {
     switch (err.code) {
@@ -36,7 +39,7 @@ function failure(err: unknown): string {
  * PlanHint says how to answer a wait of the plan stage: the approval word approves a plan, and questions are answered
  * by choosing (answerable) or in words. It never offers the approval word for questions: after a plan, it would
  * approve that plan. For a CI that failed past the fix limit and a refused push, it says what a reply does and what
- * to check first.
+ * to check first. For a failed run (error), it offers running again in one click, or a reply that says how to fix it.
  */
 function PlanHint({ reason, word, answerable }: { reason: string; word: string; answerable: boolean }) {
   const code = <code className="font-mono text-mono-sm">{word}</code>;
@@ -53,6 +56,13 @@ function PlanHint({ reason, word, answerable }: { reason: string; word: string; 
         {answerable
           ? "問いごとに選んで「この内容で返答」を押します。返答の欄に書いた文は、全体への補足として加わります。返答の欄の文だけを送るなら「返答を送る」を押します。"
           : "問いごとの答えを、返答の欄に書いて送ってください。"}
+      </p>
+    );
+  }
+  if (reason === "error") {
+    return (
+      <p className="text-label-md text-muted">
+        エージェントの実行が失敗しました。同じ作業をやり直すなら「再実行する」を押してください。直し方を伝えるなら、返答の欄に書いて「返答を送る」を押してください。
       </p>
     );
   }
@@ -113,7 +123,8 @@ const headerHeight = () => parseFloat(getComputedStyle(document.documentElement)
  * moves (watchKey), keeping what is typed in the reply. What is typed and chosen is kept per issue (lib/drafts.ts),
  * so opening another issue and coming back finds it again. Ctrl+Enter (⌘+Enter) in the reply field sends the field. An issue that left the list stays shown, marked as such.
  * While it waits on the questions of a plan, the questions are answered by choosing: the choices are kept while the
- * same question comment is shown, and start over with the next round's.
+ * same question comment is shown, and start over with the next round's. A wait on a plan is approved, and a wait on a
+ * failed run (error) is run again, in one click while the reply is empty.
  * An issue read before in this tab shows its last read at once, marked as being brought up to date until the read
  * arrives; one never read shows that it is loading.
  * Once a reply is sent, it says so while the issue comes back in the wait answered; once the issue runs, queues,
@@ -253,6 +264,9 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
   const word = detail?.approve_word || "/ok";
   // A wait on a plan is approved by its approval word alone, sent in one click while the reply is empty.
   const approving = detail?.reason === "plan" && !plan;
+  // A wait on a failed run is run again by a fixed reply alone, in the same way. Other failures are not: they need a
+  // check or a fix first.
+  const retrying = detail?.reason === "error" && !plan;
 
   // justSent is set by a send that worked, so the words saying so take the focus from the form that goes.
   const justSent = useRef(false);
@@ -433,6 +447,15 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
                   </Button>
                   <Button type="button" disabled={sending || !detail.waiting || text.trim() !== ""} onClick={() => void send(word)}>
                     {sending ? "送っています" : `承認する（${word} を送る）`}
+                  </Button>
+                </div>
+              ) : retrying ? (
+                <div className="flex flex-wrap justify-end gap-sm">
+                  <Button type="submit" variant="secondary" disabled={sending || !detail.waiting || text.trim() === ""}>
+                    返答を送る
+                  </Button>
+                  <Button type="button" disabled={sending || !detail.waiting || text.trim() !== ""} onClick={() => void send(RETRY_TEXT)}>
+                    {sending ? "送っています" : "再実行する"}
                   </Button>
                 </div>
               ) : (
