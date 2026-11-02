@@ -25,7 +25,9 @@ export function Header() {
       <div className="flex min-h-14 flex-wrap items-center gap-x-lg gap-y-xs px-lg py-sm">
         <h1 className="text-headline-md font-semibold">
           <Link to="/" className="inline-flex min-h-11 items-center">
-            受信箱
+            <span>
+              SwitchBoard<span className="hidden sm:inline"> Inbox</span>
+            </span>
           </Link>
         </h1>
         {inbox && (
