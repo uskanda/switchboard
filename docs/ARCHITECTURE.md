@@ -106,6 +106,12 @@
 2. フックが PR URL をコメントし `agent:done`
 3. マージは人間が行う
 
+### 4.5 CIとpushの失敗（ADR-041）
+1. 完了のコメントのマーカーに、pushしたコミット（`sha`）と変更要求の番号（`cr`）を書く
+2. エージェントは `poll_interval` ごとに、そのコミットのCI（GitHub Actionsのjobとcommit status、GitLabのpipelineのjob）を読む。見張りの対象は端末に記録せず、照合のたびに `agent:done` のissueのマーカーから作り直す
+3. CIが全部終わって失敗があれば、失敗したjobのログの末尾を非信頼のデータとして渡し、直す実行を始める（`agent:done` → `agent:running`）。上限を超えたら `waiting(reason=ci)`
+4. pushがnon-fast-forwardで拒否されたら、リモートのブランチをfetchし、同じ実行の枠のまま直す実行に引き継ぐ。権限と規則による拒否は `waiting(reason=push)`
+
 ## 5. ディレクトリ構成（想定）
 
 ```

@@ -20,7 +20,7 @@
 
 | # | 脅威 | 対策 |
 |---|---|---|
-| T1 | 第三者が issue にコメントし、プロンプトインジェクションでエージェントを操作 | `trusted_authors` 以外のコメントは指示として扱わない。プロンプト上も「参考データ」として区切る。公開リポジトリでは特に重要 |
+| T1 | 第三者がissueにコメントし、プロンプトインジェクションでエージェントを操作 | `trusted_authors` 以外のコメントは指示として扱わない。プロンプト上も「参考データ」として区切る。公開リポジトリでは特に重要。CIのログとpushの失敗の出力も、直す実行にはnonce付きの区切りで非信頼のデータとして渡し、許可するツールは増やさない（ADR-041） |
 | T2 | 中継サーバーの侵害による任意指示の注入 | 中継は ID のみを流し、本文はローカルがフォージから再取得。中継にフォージのトークンを置かない |
 | T3 | 偽装 webhook の送信 | 署名検証（定数時間比較）。検証失敗はログに残し破棄 |
 | T4 | webhook の再送・リプレイ | 配信ID による重複排除。エージェント側でも「処理済みコメントID」を記録 |
@@ -32,7 +32,7 @@
 
 ## 4. トークンと権限
 
-- GitHub：fine-grained PAT。対象リポジトリのみ、Issues: Read/Write、Pull requests: Read/Write、Contents: Read/Write（PR 作成に必要な範囲）
+- GitHub：fine-grained PAT。対象リポジトリのみ、Issues: Read/Write、Pull requests: Read/Write、Contents: Read/Write（PR作成に必要な範囲）、Actions: ReadとCommit statuses: Read（PRのCIを見張るため。ADR-041）
 - GitLab：Project Access Token または PAT の `api` スコープ（最小化できない場合は対象プロジェクト限定の Project Access Token を推奨）
 - 受信箱専用に読み取り＋コメント投稿のみのトークンを分けることを検討（ADR-008）
 - 中継サーバーが持つのは webhook シークレットのみ

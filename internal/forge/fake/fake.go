@@ -43,6 +43,9 @@ type Forge struct {
 	failThreadOf             *forge.IssueRef // FailNthThreadOf: only the calls for this issue count
 	// FailSearch, when set, is returned by the next SearchOpenIssuesWithLabel call and then cleared.
 	FailSearch error
+	// FailCI, when set, is returned by every CommitChecks and CheckLog call.
+	FailCI error
+	ci     *ci
 }
 
 type repo struct {

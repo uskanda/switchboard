@@ -58,6 +58,7 @@ ready ──▶ running ──▶ waiting ──(信頼済みコメント)──
 ```
 
 - ラベルは常に 1 つだけ付く（付け替えはエージェント側で原子的に行う）
+- `agent:done` のissueでも、エージェントがpushしたコミットのCIが失敗したら、エージェントが `agent:running` に戻して直す（ADR-041）。上限まで直しても失敗したら `agent:waiting`
 - 人間が `agent:ready` を外す・issue を close した場合は実行を止める
 
 ## 5. メタデータ埋め込み

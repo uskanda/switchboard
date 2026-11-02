@@ -113,7 +113,7 @@ components:
 - Outline（#E2E0DB）：カードと表の区切り線。影の代わりに使う
 - Muted（#5F636A）：端末の名前、経過時間、補足の文
 - Attention（`#8A3F06`、地は`#FBEBD6`）：理由が`question`、`verify`、`plan-questions`、`plan`の待ち。人の判断を待っているが、実行は失敗していない
-- Error（`#B3261E`、バッジは`#7A1A14`、地は`#FBE4E1`）：理由が`error`と`permission`の待ちと、受信箱のサービスに届かないなどの誤り
+- Error（`#B3261E`、バッジは`#7A1A14`、地は`#FBE4E1`）：理由が`error`、`permission`、`push`、`ci`の待ちと、受信箱のサービスに届かないなどの誤り
 - 暗いテーマ：`dark-`で始まる値を、OSの`prefers-color-scheme: dark`のときに使う。役割は明るいテーマと同じで、明るさだけを反転する
 
 ## Typography
@@ -149,7 +149,7 @@ components:
 - 一覧の行（カード）：1行目に参照（`mono-sm`）とタイトル、2行目に理由のバッジ、端末、経過時間（`muted`）、3行目に質問の冒頭。行全体を1件の画面へのリンクにする。左のペインで選んでいる行は、`primary`の2pxの枠で示す
 - スレッド：issueの本文とコメントを、1件ずつカードにして古い順に並べる。カードの上に、書いた人と時刻を`label-md`の`muted`で出す。エージェントの投稿には、`outline`の枠の「エージェント」の印を付ける。色は付けない。着手のコメントはカードにせず、印と時刻の1行にする。エージェントの最新の質問のカードは、`primary`の2pxの枠で目立たせる
 - 本文とコメントの書式：Markdownの見出しは`body-md`の太字にし、本文より大きくしない。コードは`mono-sm`、表と引用は`outline`の線で区切る
-- 理由のバッジ：`question`、`verify`、`plan-questions`、`plan`は`badge-attention`、`error`と`permission`は`badge-error`
+- 理由のバッジ：`question`、`verify`、`plan-questions`、`plan`は`badge-attention`、`error`、`permission`、`push`、`ci`は`badge-error`
 - 計画の待ちの案内：理由が`plan`のとき、返答の欄の上に、承認の語（`/ok`など）の使い方を`label-md`の`muted`で1行出す。理由が`plan-questions`のときは、選んで「この内容で返答」を押す答え方を出し、承認の語には触れない
 - 計画の質問のカード：最新の質問のコメントは、問いごとに、題（`body-md`の太字）、本文、選択肢の組、補足の欄、推奨の順に描く。組は見出し（`label-md`の`muted`）の下に、ラジオボタンを1行に1つ並べ、最後に「選ばない（補足で答える）」を`muted`で置く。行の高さは44px以上にする。ラジオボタンの色は`primary`にし、推奨の印に色は付けない。補足の欄は返答の欄と同じ見た目で、高さを抑える
 - 送る文の表示：返答の欄の下、ボタンの上に、`surface`の地と`outline`の枠で、送る文をそのまま出す。問いを読み取れたときは「この内容で返答」を`button-primary`、「返答を送る」を`button-secondary`にして、塗りのボタンを1つに保つ

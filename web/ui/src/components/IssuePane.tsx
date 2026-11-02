@@ -28,7 +28,8 @@ function failure(err: unknown): string {
 /**
  * PlanHint says how to answer a wait of the plan stage: the approval word approves a plan, and questions are answered
  * by choosing (answerable) or in words. It never offers the approval word for questions: after a plan, it would
- * approve that plan.
+ * approve that plan. For a CI that failed past the fix limit and a refused push, it says what a reply does and what
+ * to check first.
  */
 function PlanHint({ reason, word, answerable }: { reason: string; word: string; answerable: boolean }) {
   const code = <code className="font-mono text-mono-sm">{word}</code>;
@@ -45,6 +46,20 @@ function PlanHint({ reason, word, answerable }: { reason: string; word: string; 
         {answerable
           ? "問いごとに選んで「この内容で返答」を押します。返答の欄に書いた文は、全体への補足として加わります。返答の欄の文だけを送るなら「返答を送る」を押します。"
           : "問いごとの答えを、返答の欄に書いて送ってください。"}
+      </p>
+    );
+  }
+  if (reason === "ci") {
+    return (
+      <p className="text-label-md text-muted">
+        返信するとエージェントが実行を再開し、CIの失敗を自動で直す回数を数え直します。
+      </p>
+    );
+  }
+  if (reason === "push") {
+    return (
+      <p className="text-label-md text-muted">
+        pushが拒否されました。返信する前に、エージェントのトークンかリモートの設定（ブランチの保護など）を確かめてください。
       </p>
     );
   }
