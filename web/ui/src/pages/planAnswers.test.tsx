@@ -143,7 +143,7 @@ describe("the reply to the questions", () => {
     await userEvent.type(screen.getByRole("textbox", { name: "返答" }), "急がない");
     const shown = preview();
     await userEvent.click(send);
-    expect(await screen.findByRole("status")).toHaveTextContent("送りました");
+    expect(await within(screen.getByRole("article")).findByRole("status")).toHaveTextContent("送りました");
     expect(posts).toEqual([{ ref: "gh:o/r#80", text: shown }]);
     expect(shown).toMatch(/\nQ5 Androidアプリの扱い: 回答なし\n/);
     expect(shown).toMatch(/\n\n全体への補足：\n急がない$/);
@@ -154,7 +154,7 @@ describe("the reply to the questions", () => {
     await open();
     await userEvent.type(screen.getByRole("textbox", { name: "返答" }), "全部やり直して");
     await userEvent.click(screen.getByRole("button", { name: "返答を送る" }));
-    await screen.findByRole("status");
+    await within(screen.getByRole("article")).findByRole("status");
     expect(posts).toEqual([{ ref: "gh:o/r#80", text: "全部やり直して" }]);
   });
 
