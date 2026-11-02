@@ -122,6 +122,56 @@ describe("the header", () => {
   });
 });
 
+describe("the time of the list", () => {
+  // Local times, so the clock text holds in any time zone. The listing was fetched before the stream was cut.
+  const fetched = new Date(2026, 9, 31, 19, 0);
+  const cut = new Date(2026, 9, 31, 19, 45);
+  const timed = (...items: unknown[]) => ({ ...listing(...items), fetched_at: fetched.toISOString() });
+  const stamp = () => document.querySelector("header time");
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(cut);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("is not shown while the updates are live", async () => {
+    serve({}, timed());
+    at("/");
+    FakeEventSource.last!.emit("inbox", timed(item()));
+    expect(await screen.findByText("自動更新中")).toBeInTheDocument();
+    expect(stamp()).toBeNull();
+    expect(screen.queryByText(/時点の一覧/)).toBeNull();
+  });
+
+  it("is the time the stream was cut, later than the listing, and goes when the updates are live again", async () => {
+    serve({}, timed());
+    at("/");
+    const es = FakeEventSource.last!;
+    es.emit("inbox", timed(item()));
+    await screen.findByText("自動更新中");
+    es.fail();
+    await screen.findByText("自動更新が切れています。再接続しています");
+    const time = stamp()!;
+    expect(time).toHaveTextContent("19:45");
+    expect(time).toHaveAttribute("datetime", cut.toISOString());
+    expect(time.parentElement).toHaveTextContent("19:45時点の一覧");
+
+    es.emit("inbox", timed(item()));
+    expect(await screen.findByText("自動更新中")).toBeInTheDocument();
+    expect(stamp()).toBeNull();
+  });
+
+  it("is the time of the listing where the browser has no EventSource", async () => {
+    vi.stubGlobal("EventSource", undefined);
+    serve({}, timed(item()));
+    at("/");
+    expect(await screen.findByText("自動更新なし")).toBeInTheDocument();
+    await waitFor(() => expect(stamp()).toHaveTextContent("19:00"));
+    expect(stamp()).toHaveAttribute("datetime", fetched.toISOString());
+  });
+});
+
 describe("a tab in the background", () => {
   let visibility: DocumentVisibilityState = "visible";
   beforeEach(() => {
