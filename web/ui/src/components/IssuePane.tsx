@@ -17,7 +17,7 @@ import { useInbox } from "@/lib/inbox";
 import { useHeightVar } from "@/lib/height";
 import { cachedIssue, rememberIssue } from "@/lib/issueCache";
 import { composeReply, defaultAnswers, parsePlanQuestions, type Answer } from "@/lib/planQuestions";
-import { addedCards, cardsOf, targetOf, type Card as ThreadCard } from "@/lib/scrollTarget";
+import { addedCards, cardsOf, revealAndScroll, targetOf, type Card as ThreadCard } from "@/lib/scrollTarget";
 import { cn } from "@/lib/utils";
 
 /** RETRY_TEXT is the reply that runs a failed run again: a trusted comment is all a wait on an error needs. */
@@ -110,11 +110,6 @@ function markOf(detail: Detail): SentMark {
   return { since: detail.since, waitKey: JSON.stringify(last ? [last.created_at, last.body] : [detail.post]) };
 }
 
-/** scrollToCard scrolls the thread's card of the comment at index into view, below the pinned head. */
-function scrollToCard(root: HTMLElement | null, index: number) {
-  root?.querySelector(`[data-index="${index}"]`)?.scrollIntoView({ block: "start" });
-}
-
 /** headerHeight is the height of the page's pinned header, as Header measures it into --header-h. */
 const headerHeight = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--header-h")) || 0;
 
@@ -132,7 +127,8 @@ const headerHeight = () => parseFloat(getComputedStyle(document.documentElement)
  * A waiting or done issue opens scrolled to the card a reply is about (targetOf), once per opening: the cached read
  * drawn first counts, and the read after it moves nothing. A later read that adds cards leaves the place as it is and
  * shows a notice at the bottom instead; pressing it scrolls to the card, and it goes once that card is scrolled into
- * view or another issue opens. The way back, the reference, the title and the state stay pinned at the top; once
+ * view or another issue opens. Either scroll opens the folded round its card is in first, and another issue starts
+ * with its rounds folded again. The way back, the reference, the title and the state stay pinned at the top; once
  * scrolled, the title is cut to two lines, with the whole of it in its title.
  */
 export function IssuePane({ issueRef }: { issueRef: string }) {
@@ -220,7 +216,7 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
     seen.current = { ref: issueRef, settled: fresh, cards };
     if (was?.ref !== issueRef) {
       const target = targetOf(detail);
-      if (target !== null) scrollToCard(article.current, target);
+      if (target !== null) revealAndScroll(article.current, target);
       return;
     }
     // The first read after the cache was shown brings the issue up to date: it is part of the opening.
@@ -383,6 +379,7 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
           {gone && <p className="text-muted">このissueは、待ちでも実行中でもなくなりました。</p>}
           {detail.comments ? (
             <Thread
+              key={detail.ref}
               detail={detail}
               answering={
                 plan && !sent
@@ -476,7 +473,7 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
             type="button"
             className="pointer-events-auto min-h-11 rounded-md border border-outline bg-surface-raised px-lg text-label-md font-medium"
             onClick={() => {
-              scrollToCard(article.current, notice);
+              revealAndScroll(article.current, notice);
               setNotice(null);
             }}
           >
