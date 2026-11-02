@@ -33,19 +33,25 @@ GitLabのプロジェクトでは、エージェントは、ポーリングの�
 - **THEN** 次のポーリングで `agent:plan` が外れてissueは `agent:running` になり、計画の実行が始まる
 
 ### Requirement: 返答による再開
-`agent:waiting` のissueに新しい信頼済みコメントがあるとき、エージェントは、状態を `agent:running` に変えてから実行を始めなければならない（MUST）。
-新しいコメントとは、最新のマーカーの `ack` が指すコメントより後のコメントをいう。
+openのissueが `agent:waiting` か `agent:done` で、新しい信頼済みコメントがあるとき、エージェントは実行を始めなければならない（MUST）。始める前に、状態を `agent:running` に変える。
+新しいコメントとは、エージェントの最新の投稿のマーカーの `ack` が指すコメントより後のコメントをいう。その投稿は、待ちかdoneの投稿でなければならない。着手、進捗、順番待ちのコメントは数えない。
+GitLabでは、コメントでissueの更新時刻が変わらないので、エージェントは `agent:waiting` と `agent:done` のissueのコメント数の変化も見なければならない（MUST）。
 
 #### Scenario: 返答で再開する
 - **WHEN** 待ちのissueに、マスターが返答のコメントを書く
 - **THEN** 次のポーリングでissueは `agent:running` になり、返答を含むプロンプトで `claude -p` が起動する
 
-### Requirement: 完了後のコメント
-`agent:done` のissueに信頼済みのコメントが付いたとき、エージェントは実行を始めてはならない（MUST NOT）。
+#### Scenario: 完了のissueへのコメントで再開する
+- **WHEN** エージェントがdoneにしたopenのissueで、マスターが「レビューの指摘を直してください」とコメントする
+- **THEN** 次のポーリングでissueは `agent:running` になり、そのコメントを含むプロンプトで `claude -p` が起動する
 
-#### Scenario: 完了したissueへのコメント
-- **WHEN** `agent:done` のissueに、マスターがコメントする
-- **THEN** 実行は始まらず、issueの状態は `agent:done` のままである
+#### Scenario: GitLabの完了のissueへのコメント
+- **WHEN** エージェントがdoneにしたGitLabのissueで、マスターがノートを書く
+- **THEN** issueの更新時刻が変わらなくても、次のポーリングで実行が始まる
+
+#### Scenario: 計画を承認したissueの再開
+- **WHEN** 計画を先に立てるモードで、承認された計画を実装してdoneになったissueがある。そのissueでマスターがコメントする
+- **THEN** 再開した実行は、承認された計画の実装として、計画と承認のコメントを名指すシステムプロンプトで動く
 
 ### Requirement: 同時実行の制限
 エージェントは、同じissueについて同時に2つ以上の実行をしてはならない（MUST NOT）。
@@ -329,3 +335,23 @@ non-fast-forwardを直す実行では、エージェントは、`git merge` を�
 #### Scenario: 上限に達しているときにCIが失敗する
 - **WHEN** `<agent.max_parallel>` が1の端末で別の実行が動いている間に、見張っているissueのCIが失敗する
 - **THEN** 直す実行は、動いている実行が終わってから始まる
+
+### Requirement: 開いたPR/MRの使い続け
+doneで終える実行は、pushの後に、issueのブランチを元とする開いたPR/MRを探さなければならない（MUST）。あれば、新しく作らずにそのURLでdoneにし、doneの投稿には「PRを更新しました」（GitLabでは「MRを更新しました」）とそのURLを書く。無ければ、今までどおりdraftのPR/MRを作る。
+closeやmergeの済んだPR/MRは、使ってはならない（MUST NOT）。
+
+#### Scenario: 再開した実行が再びdoneになる
+- **WHEN** doneのissueへのコメントで再開した実行が、commitしてdoneを宣言する
+- **THEN** PRは1つのままで、doneの投稿に「PRを更新しました」とそのPRのURLが出る
+
+#### Scenario: PRがcloseされていた
+- **WHEN** 前のPRがcloseされた後に、再開した実行がdoneを宣言する
+- **THEN** 新しいdraftのPRが作られる
+
+### Requirement: baseとの衝突の解消
+実装する実行のシステムプロンプトは、baseのブランチとの衝突を `git merge origin/<base>` で解消するよう指示しなければならない（MUST）。rebase、amend、履歴の書き換えはしないよう、あわせて指示する。実装する実行の許可ツールは、`git merge` を含まなければならない（MUST）。
+エージェントのpushは、forceを使ってはならない（MUST NOT）。
+
+#### Scenario: システムプロンプトの規則
+- **WHEN** baseのブランチが `develop` のプロジェクトで、実装する実行が始まる
+- **THEN** システムプロンプトに `git merge origin/develop` で解消する規則と、rebaseをしない規則が入る
