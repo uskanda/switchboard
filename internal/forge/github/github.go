@@ -71,10 +71,15 @@ type apiError struct {
 	method, path string
 	status       int
 	message      string
+	details      string
 }
 
 func (e *apiError) Error() string {
-	return fmt.Sprintf("github: %s %s: %d %s", e.method, e.path, e.status, e.message)
+	s := fmt.Sprintf("github: %s %s: %d %s", e.method, e.path, e.status, e.message)
+	if e.details != "" {
+		s += ": " + e.details
+	}
+	return s
 }
 
 func (e *apiError) Unwrap() error {
@@ -87,7 +92,8 @@ func (e *apiError) Unwrap() error {
 	return nil
 }
 
-// do sends one request. in, when non-nil, is sent as JSON; out, when non-nil, receives the JSON response.
+// do sends one request. in, when non-nil, is sent as JSON; out, when non-nil, receives the JSON response, or the
+// raw body when it is a *[]byte.
 func (c *Client) do(ctx context.Context, method, rawURL string, in, out any, header http.Header) (*http.Response, error) {
 	var body io.Reader
 	if in != nil {
@@ -126,9 +132,27 @@ func (c *Client) do(ctx context.Context, method, rawURL string, in, out any, hea
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		var m struct {
 			Message string `json:"message"`
+			Errors  []struct {
+				Code    string `json:"code"`
+				Field   string `json:"field"`
+				Message string `json:"message"`
+			} `json:"errors"`
 		}
 		_ = json.Unmarshal(data, &m)
-		return nil, &apiError{method: method, path: req.URL.Path, status: resp.StatusCode, message: m.Message}
+		// The reason of a 422 is in errors, not in message ("Validation Failed").
+		var details []string
+		for _, e := range m.Errors {
+			if e.Message != "" {
+				details = append(details, e.Message)
+			} else {
+				details = append(details, strings.TrimSpace(e.Code+" "+e.Field))
+			}
+		}
+		return nil, &apiError{method: method, path: req.URL.Path, status: resp.StatusCode, message: m.Message, details: strings.Join(details, "; ")}
+	}
+	if raw, ok := out.(*[]byte); ok {
+		*raw = data
+		return resp, nil
 	}
 	if out != nil && len(data) > 0 {
 		if err := json.Unmarshal(data, out); err != nil {
@@ -459,6 +483,22 @@ func (c *Client) CreateChangeRequest(ctx context.Context, cr forge.ChangeRequest
 	_, err := c.do(ctx, http.MethodPost, c.url(fmt.Sprintf("/repos/%s/%s/pulls", cr.Owner, cr.Repo), nil),
 		map[string]any{"title": cr.Title, "body": cr.Body, "head": cr.Head, "base": cr.Base, "draft": cr.Draft}, &out, nil)
 	return out.HTMLURL, err
+}
+
+// OpenChangeRequest implements forge.Forge. switchboard pushes to the repository itself, so the head's owner is
+// the repository's.
+func (c *Client) OpenChangeRequest(ctx context.Context, owner, repo, head, base string) (string, error) {
+	var out []struct {
+		HTMLURL string `json:"html_url"`
+	}
+	q := url.Values{"state": {"open"}, "head": {owner + ":" + head}, "base": {base}}
+	if _, err := c.do(ctx, http.MethodGet, c.url(fmt.Sprintf("/repos/%s/%s/pulls", owner, repo), q), nil, &out, nil); err != nil {
+		return "", err
+	}
+	if len(out) == 0 {
+		return "", forge.ErrNotFound
+	}
+	return out[0].HTMLURL, nil
 }
 
 // RepoPrivate implements forge.Forge.

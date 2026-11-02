@@ -168,3 +168,18 @@ func TestProjectChecks(t *testing.T) {
 	}
 	w.expect(t, "fail", "include_untrusted")
 }
+
+func TestCIReadableWithTheAgentToken(t *testing.T) {
+	w := newWorld(t)
+	if n := w.run(t); n != 0 {
+		t.Fatalf("%d failures:\n%s", n, w.out.String())
+	}
+	w.expect(t, "ok", "gh:o/r: the agent token can read the CI")
+
+	w = newWorld(t)
+	w.f.FailCI = forge.ErrForbidden
+	if n := w.run(t); n != 0 {
+		t.Fatalf("a token that cannot read the CI must only warn; %d failures:\n%s", n, w.out.String())
+	}
+	w.expect(t, "warn", "Actions: Read")
+}

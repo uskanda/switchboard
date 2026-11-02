@@ -26,6 +26,8 @@ type Inbox interface {
 	SaveInstructions(ctx context.Context, target, content string) error
 	Projects(ctx context.Context) (*inboxapi.Projects, error)
 	AddProject(ctx context.Context, req inboxapi.AddProjectRequest) (*inboxapi.AddProjectResponse, error)
+	IssueTargets(ctx context.Context) (*inboxapi.IssueTargets, error)
+	CreateIssue(ctx context.Context, req inboxapi.CreateIssueRequest) (*inboxapi.CreateIssueResponse, error)
 	Events(ctx context.Context, fn func(*inboxapi.Inbox)) error
 }
 
@@ -68,6 +70,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.answer(w, out, err)
 	case r.URL.Path == "/api/projects" && r.Method == http.MethodPost:
 		s.addProject(w, r)
+	case r.URL.Path == "/api/issue-targets" && r.Method == http.MethodGet:
+		out, err := s.Inbox.IssueTargets(r.Context())
+		s.answer(w, out, err)
+	case r.URL.Path == "/api/issues" && r.Method == http.MethodPost:
+		s.createIssue(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/"):
 		send(w, http.StatusNotFound, inboxapi.Error{Code: inboxapi.CodeNotFound, Message: "no such endpoint"})
 	case r.Method == http.MethodGet || r.Method == http.MethodHead:
@@ -77,7 +84,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// sameOrigin tells whether a reply, a save or an addition comes from the web inbox's own page: a JSON body (a page elsewhere cannot send
+// sameOrigin tells whether a reply, a save, an addition or a new issue comes from the web inbox's own page: a JSON body (a page elsewhere cannot send
 // one without a preflight, which this server never answers), an Origin of exactly this address, and a Host of
 // exactly this address (a page that rebinds its own name to this address still sends its own name).
 func (s *Server) sameOrigin(r *http.Request) (int, string) {
@@ -138,6 +145,32 @@ func (s *Server) addProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out, err := s.Inbox.AddProject(r.Context(), req)
+	if err != nil {
+		s.answer(w, nil, err)
+		return
+	}
+	send(w, http.StatusCreated, out)
+}
+
+// createIssue passes the opening of an issue on, from the web inbox's own page only. The issue is the person's own
+// and starts a run (ADR-040), so it gets the same checks as a reply.
+func (s *Server) createIssue(w http.ResponseWriter, r *http.Request) {
+	if code, why := s.sameOrigin(r); code != 0 {
+		send(w, code, inboxapi.Error{Code: inboxapi.CodeInvalid, Message: why})
+		return
+	}
+	var req inboxapi.CreateIssueRequest
+	// JSON may escape every byte of the body six times over; the inbox service measures the body itself.
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 6*inboxapi.MaxIssueBody+1<<16)).Decode(&req); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			send(w, http.StatusRequestEntityTooLarge, inboxapi.Error{Code: inboxapi.CodeTooLarge, Message: "the issue is too large"})
+			return
+		}
+		send(w, http.StatusBadRequest, inboxapi.Error{Code: inboxapi.CodeInvalid, Message: "the body is not an issue to open"})
+		return
+	}
+	out, err := s.Inbox.CreateIssue(r.Context(), req)
 	if err != nil {
 		s.answer(w, nil, err)
 		return

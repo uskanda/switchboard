@@ -105,7 +105,21 @@ type Agent struct {
 	Timeout           time.Duration `yaml:"timeout"`
 	MaxParallel       int           `yaml:"max_parallel"`
 	MaxTurns          int           `yaml:"max_turns"`
-	Relay             *AgentRelay   `yaml:"relay"`
+	// MaxFixAttempts caps the fix runs an issue gets from CI failures and rejected pushes before it waits; nil
+	// means DefaultFixAttempts, 0 no automatic fixes.
+	MaxFixAttempts *int        `yaml:"max_fix_attempts"`
+	Relay          *AgentRelay `yaml:"relay"`
+}
+
+// DefaultFixAttempts is agent.max_fix_attempts when unset.
+const DefaultFixAttempts = 2
+
+// FixAttempts is how many fix runs an issue may get in a row.
+func (a Agent) FixAttempts() int {
+	if a.MaxFixAttempts == nil {
+		return DefaultFixAttempts
+	}
+	return *a.MaxFixAttempts
 }
 
 // AgentRelay is where the agent subscribes: the relay's SSE URL and the token_ref of this host's bearer token.
@@ -417,6 +431,9 @@ func (c *Config) validate() error {
 	}
 	if c.Agent.MaxParallel < 1 || c.Agent.MaxTurns < 1 || c.Agent.PollInterval < time.Second || c.Agent.Timeout < time.Minute {
 		errs = append(errs, errors.New("agent: max_parallel and max_turns must be at least 1, poll_interval at least 1s, timeout at least 1m"))
+	}
+	if n := c.Agent.MaxFixAttempts; n != nil && *n < 0 {
+		errs = append(errs, fmt.Errorf("agent.max_fix_attempts must be at least 0, got %d", *n))
 	}
 	if len(c.Projects) == 0 {
 		errs = append(errs, errors.New("projects needs at least one project"))
