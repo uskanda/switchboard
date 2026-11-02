@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { Loading } from "@/components/Loading";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -145,6 +146,7 @@ export function ProjectsSection({ onAdded }: { onAdded?: () => void }) {
         )}
       </div>
       {error && <Alert>{error}</Alert>}
+      {!data && !error && <Loading />}
       {data && (
         <ul className="flex flex-col gap-sm">
           {data.items.map((p) => (

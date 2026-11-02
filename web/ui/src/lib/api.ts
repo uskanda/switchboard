@@ -34,6 +34,20 @@ export type Item = {
 export const isRunning = (it: Item) => it.state === "running";
 export const isQueued = (it: Item) => it.state === "queued";
 export const isDone = (it: Item) => it.state === "done";
+/** isWaiting is an issue waiting on a reply: not running, queued or done. */
+export const isWaiting = (it: Item) => !isRunning(it) && !isQueued(it) && !isDone(it);
+
+/**
+ * progressText is the progress line of a run as shown, without the "?" that stands for a part not there yet: the
+ * whole line when there is no progress comment, the agent's last words after the separator when it has said none.
+ */
+export function progressText(progress: string | undefined): string {
+  const line = (progress ?? "").replace(/\s*｜\s*\?$/, "").trim();
+  return line && line !== "?" ? line : "進捗はまだありません";
+}
+
+/** plainText is the start of a question as one plain line: the bold and code marks of its Markdown left out. */
+export const plainText = (s: string) => s.replace(/\*\*|__|`/g, "").replace(/^#+\s+/, "");
 
 /** queueText says which limit a queued issue waits on. */
 export const queueText = (reason: string) =>

@@ -7,6 +7,7 @@
   --color-on-surface: #1c1d1f;
   --color-surface-raised: #ffffff;
   --color-outline: #e2e0db;
+  --color-field-outline: #85888e;
   --color-muted: #5f636a;
   --color-attention: #8a3f06;
   --color-attention-container: #fbebd6;
@@ -21,6 +22,7 @@
   --color-dark-on-surface: #e8e6e1;
   --color-dark-surface-raised: #1f2227;
   --color-dark-outline: #33373e;
+  --color-dark-field-outline: #6b7078;
   --color-dark-muted: #a3a7ae;
   --color-dark-primary: #e8e6e1;
   --color-dark-on-primary: #16181c;
