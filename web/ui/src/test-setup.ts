@@ -3,6 +3,7 @@ import { cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
 import { forgetDrafts } from "@/lib/drafts";
 import { forgetIssues } from "@/lib/issueCache";
+import { forgetSent } from "@/lib/sent";
 import { dismiss } from "@/lib/toast";
 import { installObservers, resetObservers } from "@/test-observers";
 
@@ -30,6 +31,7 @@ afterEach(() => {
   cleanup();
   forgetIssues();
   forgetDrafts();
+  forgetSent();
   resetObservers();
   dismiss();
 });

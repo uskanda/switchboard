@@ -81,7 +81,8 @@ describe("the reply", () => {
     await waitFor(() => expect(calls.some((c) => c.key === "POST /api/reply")).toBe(true));
   });
 
-  it("moves the focus to what says it was sent", async () => {
+  // With another wait on the list, the focus goes to the button to it instead (waitNav.test.tsx).
+  it("moves the focus to what says it was sent when no other wait is left", async () => {
     answer({
       "GET /api/inbox": listing(item()),
       "GET /api/issue?ref=gh%3Ao%2Fr%2312": detail(),
