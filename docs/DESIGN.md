@@ -133,7 +133,7 @@ GitHubには「XをYに置き換える」操作がない。書き込み系APIも
 
 1. detector：ポーリング（既定）または中継SSEで、更新の可能性があるissueを検出して次の段へ渡す。中継モードでも `reconcile_interval` ごとに全担当プロジェクトをポーリングして照合する。中継イベントはissue単位で3秒程度デバウンスする（ラベル変更とコメントは別イベントで届くため）
 2. evaluator：issueを **自分のトークンで** 取得し直し、6章の信頼判定と5.1の遷移表から「やること」を決める。担当外プロジェクト・非信頼入力は理由付きで監査ログに記録して捨てる
-3. scheduler：端末内の同時実行数（`agent.max_parallel`、既定1）とissue単位のファイルロックを管理する。プロジェクトごとの同時実行数（`projects[].max_parallel`）も、設定にあれば守る。サブスクリプションの利用上限に達した場合は、その端末の新規実行を解除時刻まで止める〔検証V12〕
+3. scheduler：端末内の同時実行数（`agent.max_parallel`、既定1）とissue単位のファイルロックを管理する。プロジェクトごとの同時実行数（`projects[].max_parallel`）も、設定にあれば守る。空いたスロットは、順番待ちに入った順に渡す。`agent.prefer_plan` がオンなら、計画の実行を先に渡す（ADR-044）。サブスクリプションの利用上限に達した場合は、その端末の新規実行を解除時刻まで止める〔検証V12〕
 4. runner：worktreeを用意し `claude -p` を起動・監視する（4.4）
 5. finalizer：終了プロトコルを解釈し（5章）、出力検査 → push・PR → コメント → ラベルの順で書き戻す。書き戻しは冪等（同じrunの結果を二重投稿しない：コメント本文のマーカーに `run=` を入れ、投稿前に同じrunのマーカーがないか確認する）
 
@@ -431,6 +431,7 @@ claude:
   auth: subscription                 # subscription | api_key（ADR-027）
 agent:
   max_parallel: 1
+  prefer_plan: false                   # 順番待ちから計画の実行を先に取り出す（ADR-044）
   max_turns: 80
   run_user: ""                         # Phase 3：専用 OS ユーザー名
   retention: 720h
