@@ -32,6 +32,16 @@ func (c *Client) ghBinary() string {
 
 var commentURL = regexp.MustCompile(`#issuecomment-(\d+)`)
 
+// ghEnv is the whole environment gh runs with: PATH, and home, configuration and state directories in dir, an empty
+// directory removed afterwards, so that gh neither reads the host user's account nor writes anywhere else.
+func ghEnv(dir string) []string {
+	return []string{
+		"PATH=" + os.Getenv("PATH"), "HOME=" + dir, "GH_CONFIG_DIR=" + dir,
+		"XDG_CONFIG_HOME=" + dir, "XDG_STATE_HOME=" + dir, "XDG_DATA_HOME=" + dir, "XDG_CACHE_HOME=" + dir,
+		"GH_PROMPT_DISABLED=1", "GH_NO_UPDATE_NOTIFIER=1", "NO_COLOR=1",
+	}
+}
+
 // AttachComment implements forge.Attacher with gh issue comment --attach. gh gets the client's token in GH_TOKEN, an
 // empty configuration directory, and no other variable of the environment but PATH, so that it reads no account of
 // the host's user. The body goes in on standard input. When gh puts the attachments after the body, the comment is
@@ -47,10 +57,7 @@ func (c *Client) AttachComment(ctx context.Context, ref forge.IssueRef, body str
 		args = append(args, "--attach", f)
 	}
 	cmd := exec.CommandContext(ctx, c.ghBinary(), args...)
-	cmd.Env = []string{
-		"PATH=" + os.Getenv("PATH"), "HOME=" + cfg, "GH_CONFIG_DIR=" + cfg, "GH_TOKEN=" + c.token,
-		"GH_PROMPT_DISABLED=1", "GH_NO_UPDATE_NOTIFIER=1", "NO_COLOR=1",
-	}
+	cmd.Env = append(ghEnv(cfg), "GH_TOKEN="+c.token)
 	cmd.Stdin = strings.NewReader(body)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
@@ -90,8 +97,13 @@ func GHVersion(ctx context.Context, binary string) (string, error) {
 	if binary == "" {
 		binary = "gh"
 	}
+	dir, err := os.MkdirTemp("", "switchboard-gh-*")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(dir)
 	cmd := exec.CommandContext(ctx, binary, "--version")
-	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "GH_NO_UPDATE_NOTIFIER=1"}
+	cmd.Env = ghEnv(dir)
 	out, err := cmd.Output()
 	if err != nil {
 		return "", err
