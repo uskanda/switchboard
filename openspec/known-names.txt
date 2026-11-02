@@ -20,3 +20,11 @@ outcome.PR
 inbox.Excerpt
 index.html
 http.ResponseController
+implement.md
+projects[].allow_tools_extra
+agent.allow_tools_extra
+.switchboard/screenshots/
+.git/info/exclude
+GH_TOKEN
+GH_CONFIG_DIR
+user-attachments
