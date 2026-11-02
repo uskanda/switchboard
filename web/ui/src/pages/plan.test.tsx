@@ -159,7 +159,7 @@ describe("plan waits", () => {
     const approve = await screen.findByRole("button", { name: "承認する（/ok を送る）" });
     expect(screen.getByRole("button", { name: "返答を送る" })).toBeDisabled();
     await userEvent.click(approve);
-    expect(await screen.findByRole("status")).toHaveTextContent("送りました");
+    expect(await within(screen.getByRole("article")).findByRole("status")).toHaveTextContent("送りました");
     const post = calls.find((c) => c.key === "POST /api/reply");
     expect(JSON.parse(String(post?.init?.body))).toEqual({ ref: "gh:o/r#12", text: "/ok" });
   });
@@ -172,7 +172,7 @@ describe("plan waits", () => {
     });
     at("/issue/gh%3Ao%2Fr%2312");
     await userEvent.click(await screen.findByRole("button", { name: "承認する（/lgtm を送る）" }));
-    await screen.findByRole("status");
+    await within(screen.getByRole("article")).findByRole("status");
     const post = calls.find((c) => c.key === "POST /api/reply");
     expect(JSON.parse(String(post?.init?.body))).toEqual({ ref: "gh:o/r#12", text: "/lgtm" });
   });

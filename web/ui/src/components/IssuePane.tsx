@@ -136,7 +136,7 @@ const headerHeight = () => parseFloat(getComputedStyle(document.documentElement)
  * scrolled, the title is cut to two lines, with the whole of it in its title.
  */
 export function IssuePane({ issueRef }: { issueRef: string }) {
-  const { inbox } = useInbox();
+  const { inbox, markPending } = useInbox();
   const item = inbox?.items.find((it) => it.ref === issueRef);
   const key = item ? watchKey(item) : inbox ? "gone" : "first";
   const gone = inbox !== null && !item;
@@ -277,6 +277,8 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
     setError(null);
     try {
       await postReply(issueRef, reply);
+      // The list shows the issue as being processed until the agent takes the reply up (lib/pending.ts).
+      markPending(issueRef, "reply");
       justSent.current = true;
       if (detail) setSentAt(markOf(detail));
       setText("");
