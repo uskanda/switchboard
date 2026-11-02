@@ -27,6 +27,7 @@ type Client struct {
 	baseURL    string
 	graphqlURL string
 	http       *http.Client
+	gh         string // the gh binary AttachComment runs; "gh" when empty
 
 	mu   sync.Mutex
 	etag map[string]cached // conditional-request cache for UpdatedIssues, keyed by URL
