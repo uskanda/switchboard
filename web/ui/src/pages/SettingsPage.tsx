@@ -1,11 +1,13 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { Loading } from "@/components/Loading";
 import { ProjectsSection } from "@/components/ProjectsSection";
 import { Shell } from "@/components/Shell";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { ApiError, getInstructions, saveInstructions, type Instruction, type Instructions } from "@/lib/api";
+import { ApiError, getInstructions, saveInstructions, type Instruction, type InstructionKind, type Instructions } from "@/lib/api";
+import { usePageTitle } from "@/lib/title";
 import { toast } from "@/lib/toast";
 
 function failure(err: unknown): string {
@@ -28,11 +30,11 @@ function failure(err: unknown): string {
  * Field is one instruction file: its own text, its own save and its own refusal, so one refusal touches no other. A
  * save that worked is told in a toast that names the field.
  */
-function Field({ item }: { item: Instruction }) {
+function Field({ item, kind }: { item: Instruction; kind: InstructionKind }) {
   const [text, setText] = useState(item.content);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const id = `instructions-${item.target || "global"}`;
+  const id = `instructions-${kind}-${item.target || "global"}`;
   const name = item.target || "すべてのプロジェクト";
 
   async function submit(e: FormEvent) {
@@ -40,8 +42,8 @@ function Field({ item }: { item: Instruction }) {
     setSaving(true);
     setError(null);
     try {
-      await saveInstructions(item.target, text);
-      toast.success(`${name}の指示を保存しました`);
+      await saveInstructions(item.target, kind, text);
+      toast.success(`${name}の${kinds[kind].noun}を保存しました`);
     } catch (err) {
       setError(failure(err));
     } finally {
@@ -74,10 +76,53 @@ function Field({ item }: { item: Instruction }) {
   );
 }
 
-/** SettingsPage lists and adds the projects, and edits the additional instructions that the plan runs get, global and per project. */
+const kinds: Record<InstructionKind, { heading: string; noun: string; about: string; command: string }> = {
+  plan: {
+    heading: "計画の実行への追加の指示",
+    noun: "計画の指示",
+    about: "計画から始めたissueの、計画を立てる実行にだけ渡します。",
+    command: "switchboard instructions edit",
+  },
+  run: {
+    heading: "実装の実行への追加の指示",
+    noun: "実装の指示",
+    about: "ファイルを書く実行（実装、承認のあとの実装、CIやpushの失敗とbaseとの衝突を直す実行）に渡します。",
+    command: "switchboard instructions edit --run",
+  },
+};
+
+/** KindSection is the fields of one kind of instructions, global first, under its own heading. */
+function KindSection({ kind, data }: { kind: InstructionKind; data: Instructions }) {
+  const k = kinds[kind];
+  const items = data.items.filter((it) => (it.kind ?? "plan") === kind);
+  return (
+    <section data-kind={kind} aria-labelledby={`instructions-${kind}`} className="flex flex-col gap-sm">
+      <div className="flex flex-col gap-xs">
+        <h2 id={`instructions-${kind}`} className="text-headline-md font-semibold">
+          {k.heading}
+        </h2>
+        <p className="text-muted">{k.about}すべてのプロジェクトの指示のあとに、そのプロジェクトの指示をつなげます。</p>
+        <p className="text-label-md text-muted">
+          端末 <span className="font-mono text-mono-sm">{data.host}</span>{" "}
+          のファイルです。エージェントが別の端末で動くときは、その端末で{" "}
+          <code className="font-mono text-mono-sm">{k.command}</code> を使ってください。
+        </p>
+      </div>
+      {items.map((it) => (
+        <Field key={it.target} item={it} kind={kind} />
+      ))}
+    </section>
+  );
+}
+
+/**
+ * SettingsPage lists and adds the projects, and edits the additional instructions, global and per project: those the
+ * plan runs get, then those the runs that write files get.
+ */
 export function SettingsPage() {
   const [data, setData] = useState<Instructions | null>(null);
   const [error, setError] = useState<string | null>(null);
+  usePageTitle("設定");
 
   const load = () => getInstructions().then(setData, (err) => setError(failure(err)));
   useEffect(() => {
@@ -87,26 +132,13 @@ export function SettingsPage() {
   return (
     <Shell>
       <ProjectsSection onAdded={load} />
-      <div className="flex flex-col gap-xs">
-        <h2 className="text-headline-md font-semibold">計画の実行への追加の指示</h2>
-        <p className="text-muted">
-          計画から始めたissueの、計画を立てる実行にだけ渡します。すべてのプロジェクトの指示のあとに、そのプロジェクトの指示をつなげます。
-        </p>
-        {data && (
-          <p className="text-label-md text-muted">
-            端末 <span className="font-mono text-mono-sm">{data.host}</span>{" "}
-            のファイルです。エージェントが別の端末で動くときは、その端末で{" "}
-            <code className="font-mono text-mono-sm">switchboard instructions edit</code> を使ってください。
-          </p>
-        )}
-      </div>
       {error && <Alert>{error}</Alert>}
+      {!data && !error && <Loading />}
       {data && (
-        <div className="flex flex-col gap-sm">
-          {data.items.map((it) => (
-            <Field key={it.target} item={it} />
-          ))}
-        </div>
+        <>
+          <KindSection kind="plan" data={data} />
+          <KindSection kind="run" data={data} />
+        </>
       )}
     </Shell>
   );

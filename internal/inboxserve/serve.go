@@ -403,7 +403,8 @@ func (s *Server) reply(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// instructions serves GET (the global and every project's instructions) and PUT (save one) of /v1/instructions.
+// instructions serves GET (the global and every project's instructions, of both kinds) and PUT (save one) of
+// /v1/instructions.
 func (s *Server) instructions(w http.ResponseWriter, r *http.Request) {
 	in := s.Instructions
 	s.vmu.RLock()
@@ -413,12 +414,14 @@ func (s *Server) instructions(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		out := inboxapi.Instructions{Host: in.Host, Items: []inboxapi.Instruction{}}
 		for _, t := range append([]string{instructions.Global}, projects...) {
-			text, err := in.Store.Read(t)
-			if err != nil {
-				fail(w, http.StatusInternalServerError, inboxapi.CodeForge, err.Error())
-				return
+			for _, k := range []instructions.Kind{instructions.Plan, instructions.Run} {
+				text, err := in.Store.Of(k).Read(t)
+				if err != nil {
+					fail(w, http.StatusInternalServerError, inboxapi.CodeForge, err.Error())
+					return
+				}
+				out.Items = append(out.Items, inboxapi.Instruction{Target: t, Kind: string(k), Content: text})
 			}
-			out.Items = append(out.Items, inboxapi.Instruction{Target: t, Content: text})
 		}
 		send(w, http.StatusOK, out)
 	case http.MethodPut:
@@ -431,7 +434,12 @@ func (s *Server) instructions(w http.ResponseWriter, r *http.Request) {
 			fail(w, http.StatusUnprocessableEntity, inboxapi.CodeUnknownProject, req.Target+" is not a project in the configuration")
 			return
 		}
-		switch err := in.Store.Save(req.Target, req.Content); {
+		kind, err := instructions.ParseKind(req.Kind)
+		if err != nil {
+			fail(w, http.StatusBadRequest, inboxapi.CodeInvalid, err.Error())
+			return
+		}
+		switch err := in.Store.Of(kind).Save(req.Target, req.Content); {
 		case errors.Is(err, instructions.ErrTooLarge):
 			fail(w, http.StatusRequestEntityTooLarge, inboxapi.CodeTooLarge, err.Error())
 		case errors.Is(err, instructions.ErrSecret):

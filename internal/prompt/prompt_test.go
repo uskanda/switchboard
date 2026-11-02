@@ -181,3 +181,23 @@ func TestFixSystem(t *testing.T) {
 		t.Errorf("FixSystem(conflict) = %s", conflict)
 	}
 }
+
+func TestUserInstructionsGoLastInEveryWritingRun(t *testing.T) {
+	for name, sys := range map[string]string{
+		"System":         System("en", "main"),
+		"ApprovedSystem": ApprovedSystem("en", "main", 41, 57),
+		"FixSystem":      FixSystem("en", "main", FixCI),
+	} {
+		s := WithUserInstructions(sys, "Record an OpenSpec change first.\n")
+		head := strings.Index(s, "## Additional instructions from the user")
+		if head < 0 || !strings.HasPrefix(s, sys) || !strings.HasSuffix(s, "Record an OpenSpec change first.\n") {
+			t.Fatalf("%s: the user's instructions are not the last section:\n%s", name, s)
+		}
+		if !strings.Contains(s[head:], "the rules above win") {
+			t.Errorf("%s: the section does not put the built-in rules first", name)
+		}
+		if WithUserInstructions(sys, " \n") != sys {
+			t.Errorf("%s: blank instructions add a section", name)
+		}
+	}
+}

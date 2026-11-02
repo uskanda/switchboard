@@ -221,7 +221,7 @@ projects:
     plan_first: true
 ```
 
-計画の段階の実行には、利用者の追加の指示を渡せる。全プロジェクトに1つと、プロジェクトごとに1つで、両方あれば全体、プロジェクトの順につなげる。実装の実行には渡らない。指示は、設定ファイルと同じディレクトリの `instructions/` の下にある、ただのファイルである。全体は `instructions/plan.md` である。GitHubのプロジェクトの指示は `instructions/gh/<owner>/<repo>/plan.md` に置く。GitLabなら `instructions/gl/<group>/<project>/plan.md` である。
+計画の段階の実行には、利用者の追加の指示を渡せる。全プロジェクトに1つと、プロジェクトごとに1つで、両方あれば全体、プロジェクトの順につなげる。実装の実行には渡らない（実装の実行には、別の `run.md` を渡せる）。指示は、設定ファイルと同じディレクトリの `instructions/` の下にある、ただのファイルである。全体は `instructions/plan.md` である。GitHubのプロジェクトの指示は `instructions/gh/<owner>/<repo>/plan.md` に置く。GitLabなら `instructions/gl/<group>/<project>/plan.md` である。
 
 ```bash
 switchboard instructions edit                 # 全プロジェクトの指示
@@ -229,6 +229,33 @@ switchboard instructions edit gh:o/switchboard  # 1つのプロジェクトの�
 ```
 
 受信箱のWeb表示の「設定」の画面からも編集できる。保存は32 KiBまでで、秘密を含むように見えるものは拒まれる。保存のたびに、監査ログに内容のSHA-256が残る。ファイルは端末ごとにある。Web表示が変えるのは、Web表示の端末のファイルだけである。エージェントが別の端末で動くときは、その端末で編集するか、設定ファイルと一緒に同期する。
+
+### 実装の実行に足す許可と指示
+
+ファイルを書く実行（直接の実装、承認のあとの実装、CIとpushの失敗を直す実行、baseとの衝突を直す実行）には、許可するツールと利用者の追加の指示を足せる。手作業で使っているスキルやCLIを、自動の実行でも使わせるためのものである。計画の実行には、どちらも足さない。
+
+許可は、設定ファイルにClaude Codeの権限の規則の形で書く。`allowed-tools` を持つスキル（多くのハーネスのスキル）は、`Skill` を許可しないと呼べない。全体の `agent.allow_tools_extra` と、プロジェクトごとの `allow_tools_extra` をつなげて使う。
+
+```yaml
+agent:
+  allow_tools_extra: [Skill]
+projects:
+  - ref: gh:YOUR_GITHUB_USER/switchboard
+    allow_tools_extra: ["Bash(openspec *)"]
+```
+
+設定を読むときに、空の項目、制限の無い `Bash` と `Bash(*)`、どの実行でも拒否する操作（`git push`、`git rebase`、`gh`、`WebFetch`）を名指しする項目は誤りになる。`Bash(git *)` のような広い項目は通るが、拒否する操作は拒否されたままである。プロジェクトの `allow_tools_extra` は再起動せずに反映され、`agent.allow_tools_extra` は再起動で反映される。許可は設定ファイルにだけ書け、受信箱のWeb表示からは変えられない。
+
+指示は、計画の指示と同じディレクトリに `run.md` の名前で置く。全体は `instructions/run.md` である。GitHubのプロジェクトは `instructions/gh/<owner>/<repo>/run.md` に置く。GitLabなら `instructions/gl/<group>/<project>/run.md` である。保存の検査と監査ログは計画の指示と同じで、Web表示の「設定」の画面からも編集できる。
+
+実行を始めるたびに、監査ログに `run.started` が残る。中身は、実行のID、実行の種類、足した許可の一覧、使った指示のファイルごとのSHA-256である。計画の実行では、足した許可は空で、ハッシュは `plan.md` のものになる。同じ値を持つ `instructions.saved` の行から、どの保存の版で動いたかが分かる。指示の内容そのものは残らない。
+
+```bash
+switchboard instructions edit --run                   # 全プロジェクトの実装の指示
+switchboard instructions edit --run gh:o/switchboard  # 1つのプロジェクトの実装の指示
+```
+
+OpenSpecを使うプロジェクトでの書き方の例は、[docs/examples/openspec.md](docs/examples/openspec.md) にある。
 
 ### 常駐させる
 

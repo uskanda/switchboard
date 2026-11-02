@@ -17,6 +17,7 @@
     --color-on-surface: var(--color-dark-on-surface);
     --color-surface-raised: var(--color-dark-surface-raised);
     --color-outline: var(--color-dark-outline);
+    --color-field-outline: var(--color-dark-field-outline);
     --color-muted: var(--color-dark-muted);
     --color-attention: var(--color-dark-attention);
     --color-attention-container: var(--color-dark-attention-container);
@@ -32,7 +33,10 @@
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }
 
-html { background: var(--color-surface); color: var(--color-on-surface); font-family: var(--font-sans); font-size: var(--text-body-md); line-height: 1.6; }
+/* The root stays at 16px, so the rem sizes of Tailwind's spacing (h-11, min-h-11) are the 44px DESIGN.md asks for;
+   the text is set in body-md on the body. */
+html { background: var(--color-surface); color: var(--color-on-surface); font-family: var(--font-sans); font-size: 16px; line-height: 1.6; }
+body { font-size: var(--text-body-md); }
 
 /* Markdown from issues (components/Markdown.tsx): the type scale of DESIGN.md, no other colors. */
 .md > * + * { margin-top: var(--spacing-sm); }

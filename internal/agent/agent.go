@@ -801,7 +801,7 @@ type queuedRun struct {
 	since   time.Time
 }
 
-// queueOrder is the order in which drain offers the slots (ADR-045): the plan runs first when preferPlan is on, then
+// queueOrder is the order in which drain offers the slots (ADR-046): the plan runs first when preferPlan is on, then
 // the earliest in the queue, then by ref. Call it with mu held.
 func (a *Agent) queueOrder() []forge.IssueRef {
 	refs := make([]forge.IssueRef, 0, len(a.pending))

@@ -37,11 +37,20 @@ function at(path: string) {
 const instructions = {
   host: "ubuntu-a",
   items: [
-    { target: "", content: "" },
-    { target: "gh:o/r", content: "Mind the API names." },
-    { target: "gl:nas/sb", content: "" },
+    { target: "", kind: "plan", content: "" },
+    { target: "", kind: "run", content: "" },
+    { target: "gh:o/r", kind: "plan", content: "Mind the API names." },
+    { target: "gh:o/r", kind: "run", content: "Record an OpenSpec change." },
+    { target: "gl:nas/sb", kind: "plan", content: "" },
+    { target: "gl:nas/sb", kind: "run", content: "" },
   ],
 };
+
+/** section finds the section of the instructions of one kind by its heading. */
+const section = async (heading: string) =>
+  (await screen.findByRole("heading", { name: heading })).closest("section[data-kind]") as HTMLElement;
+const planSection = () => section("計画の実行への追加の指示");
+const runSection = () => section("実装の実行への追加の指示");
 
 describe("the settings", () => {
   it("are linked from the header of the inbox", async () => {
@@ -53,16 +62,20 @@ describe("the settings", () => {
   it("show every instruction and the host whose files they are", async () => {
     answer({ "GET /api/instructions": { status: 200, body: instructions } });
     at("/settings");
-    expect(await screen.findByRole("textbox", { name: "すべてのプロジェクト" })).toHaveValue("");
-    expect(screen.getByRole("textbox", { name: "gh:o/r" })).toHaveValue("Mind the API names.");
-    expect(screen.getByRole("textbox", { name: "gl:nas/sb" })).toBeInTheDocument();
-    expect(screen.getByText(/のファイルです/)).toHaveTextContent("ubuntu-a");
+    const plan = within(await planSection());
+    expect(await plan.findByRole("textbox", { name: "すべてのプロジェクト" })).toHaveValue("");
+    expect(plan.getByRole("textbox", { name: "gh:o/r" })).toHaveValue("Mind the API names.");
+    expect(plan.getByRole("textbox", { name: "gl:nas/sb" })).toBeInTheDocument();
+    const run = within(await runSection());
+    expect(run.getByRole("textbox", { name: "gh:o/r" })).toHaveValue("Record an OpenSpec change.");
+    expect(run.getByRole("textbox", { name: "すべてのプロジェクト" })).toHaveValue("");
+    expect(screen.getAllByText(/のファイルです/)[0]).toHaveTextContent("ubuntu-a");
   });
 
   it("save one field and say so in a toast", async () => {
     const calls = answer({ "GET /api/instructions": { status: 200, body: instructions }, "POST /api/instructions": { status: 204 } });
     at("/settings");
-    const field = await screen.findByRole("textbox", { name: "gl:nas/sb" });
+    const field = await within(await planSection()).findByRole("textbox", { name: "gl:nas/sb" });
     await userEvent.type(field, "Ask in Japanese.");
     const card = field.closest("section")!;
     await userEvent.click(within(card as HTMLElement).getByRole("button", { name: "保存する" }));
@@ -71,7 +84,7 @@ describe("the settings", () => {
     expect(status.closest("[data-sonner-toast]")).toHaveClass("toast-success");
     expect(within(card as HTMLElement).queryByText("保存しました")).toBeNull();
     const post = calls.find((c) => c.key === "POST /api/instructions");
-    expect(JSON.parse(String(post?.init?.body))).toEqual({ target: "gl:nas/sb", content: "Ask in Japanese." });
+    expect(JSON.parse(String(post?.init?.body))).toEqual({ target: "gl:nas/sb", kind: "plan", content: "Ask in Japanese." });
     expect(new Headers(post?.init?.headers).get("Content-Type")).toBe("application/json");
   });
 
@@ -81,9 +94,10 @@ describe("the settings", () => {
       "POST /api/instructions": { status: 422, body: { code: "secret", message: "secret" } },
     });
     at("/settings");
-    const global = await screen.findByRole("textbox", { name: "すべてのプロジェクト" });
+    const plan = within(await planSection());
+    const global = await plan.findByRole("textbox", { name: "すべてのプロジェクト" });
     await userEvent.type(global, "keep me");
-    const field = screen.getByRole("textbox", { name: "gh:o/r" });
+    const field = plan.getByRole("textbox", { name: "gh:o/r" });
     await userEvent.type(field, " ghp_x");
     const card = field.closest("section") as HTMLElement;
     await userEvent.click(within(card).getByRole("button", { name: "保存する" }));
@@ -91,6 +105,25 @@ describe("the settings", () => {
     expect(global).toHaveValue("keep me");
     expect(field).toHaveValue("Mind the API names. ghp_x");
     expect(screen.getAllByRole("alert")).toHaveLength(1);
+  });
+
+  it("save a run field as the run kind and leave the plan field alone", async () => {
+    const calls = answer({ "GET /api/instructions": { status: 200, body: instructions }, "POST /api/instructions": { status: 204 } });
+    at("/settings");
+    const field = await within(await runSection()).findByRole("textbox", { name: "gh:o/r" });
+    await userEvent.type(field, " Tick the tasks.");
+    await userEvent.click(within(field.closest("section") as HTMLElement).getByRole("button", { name: "保存する" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("gh:o/rの実装の指示を保存しました");
+    const post = calls.find((c) => c.key === "POST /api/instructions");
+    expect(JSON.parse(String(post?.init?.body))).toEqual({ target: "gh:o/r", kind: "run", content: "Record an OpenSpec change. Tick the tasks." });
+    expect(within(await planSection()).getByRole("textbox", { name: "gh:o/r" })).toHaveValue("Mind the API names.");
+  });
+
+  it("treat items without a kind as plan instructions", async () => {
+    answer({ "GET /api/instructions": { status: 200, body: { host: "ubuntu-a", items: [{ target: "gh:o/r", content: "Old." }] } } });
+    at("/settings");
+    expect(await within(await planSection()).findByRole("textbox", { name: "gh:o/r" })).toHaveValue("Old.");
+    expect(within(await runSection()).queryByRole("textbox")).toBeNull();
   });
 
   it("say when the inbox service is not reachable", async () => {

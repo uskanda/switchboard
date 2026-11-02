@@ -95,3 +95,27 @@ func TestInstructionsEditRefusesASecret(t *testing.T) {
 		t.Fatalf("exit %d: %s", code, errb.String())
 	}
 }
+
+func TestInstructionsEditRunSavesTheRunFile(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	cfg := writeConfig(t)
+	fakeEditor(t, "Record an OpenSpec change.")
+	var out, errb bytes.Buffer
+	if code := cli.Run([]string{"instructions", "edit", "--run", "gh:o/r", "--config", cfg}, &out, &errb); code != 0 {
+		t.Fatalf("exit %d: %s", code, errb.String())
+	}
+	dir := filepath.Join(filepath.Dir(cfg), "instructions", "gh", "o", "r")
+	if b, err := os.ReadFile(filepath.Join(dir, "run.md")); err != nil || string(b) != "Record an OpenSpec change." {
+		t.Fatalf("run.md = %q, %v", b, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "plan.md")); !os.IsNotExist(err) {
+		t.Fatalf("plan.md was touched: %v", err)
+	}
+	fakeEditor(t, "Run the checks.")
+	if code := cli.Run([]string{"instructions", "edit", "--config", cfg, "--run"}, &out, &errb); code != 0 {
+		t.Fatalf("exit %d: %s", code, errb.String())
+	}
+	if b, _ := os.ReadFile(filepath.Join(filepath.Dir(cfg), "instructions", "run.md")); string(b) != "Run the checks." {
+		t.Fatalf("global run.md = %q", b)
+	}
+}

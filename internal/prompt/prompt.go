@@ -234,8 +234,14 @@ You may read and search files and run git status, git diff and git log. Other co
 
 Write "questions", "plan" and "summary" in %[1]s.
 `, name, word)
-	if strings.TrimSpace(extra) != "" {
-		s += "\n## Additional instructions from the user\n\nThe user of switchboard added the instructions below. Where they conflict with the rules above, the rules above win.\n\n" + strings.TrimSpace(extra) + "\n"
+	return WithUserInstructions(s, extra)
+}
+
+// WithUserInstructions returns system with the user's additional instructions added as its last section, or system
+// itself when extra is blank. The built-in rules win where the two conflict.
+func WithUserInstructions(system, extra string) string {
+	if strings.TrimSpace(extra) == "" {
+		return system
 	}
-	return s
+	return system + "\n## Additional instructions from the user\n\nThe user of switchboard added the instructions below. Where they conflict with the rules above, the rules above win.\n\n" + strings.TrimSpace(extra) + "\n"
 }
