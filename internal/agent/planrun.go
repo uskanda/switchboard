@@ -72,7 +72,7 @@ func planSettings() claudecode.Settings {
 		allow = append(allow, "Bash("+c+")", "Bash("+c+" *)")
 	}
 	deny := []string{"Edit", "Write", "NotebookEdit", "WebFetch"}
-	for _, c := range []string{"git add", "git commit", "git push", "make", "gh"} {
+	for _, c := range []string{"git add", "git commit", "git push", "git rebase", "make", "gh"} {
 		deny = append(deny, "Bash("+c+")", "Bash("+c+" *)")
 	}
 	return claudecode.Settings{Allow: allow, Deny: deny}

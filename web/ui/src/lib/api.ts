@@ -192,4 +192,4 @@ export function elapsed(since: string | null | undefined, now: Date = new Date()
 }
 
 /** attention tells the reasons that wait on a decision from the ones that report a failure. */
-export const isFailure = (reason: string) => reason === "error" || reason === "permission";
+export const isFailure = (reason: string) => ["error", "permission", "push", "ci"].includes(reason);

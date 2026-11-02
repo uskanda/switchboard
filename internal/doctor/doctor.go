@@ -3,7 +3,9 @@
 package doctor
 
 import (
+	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os/exec"
@@ -201,11 +203,30 @@ func (d *Doctor) project(ctx context.Context, f forge.Forge, p config.Project) {
 		d.fail("%s: %v", p.Ref, err)
 		return
 	}
+	d.ci(ctx, f, p)
 	if !private {
 		d.warn("%s is not private (public, or internal on GitLab): anyone who can see it can comment on its issues, and claude runs with your account (docs/SECURITY.md)", p.Ref)
 		return
 	}
 	d.ok("%s is private", p.Ref)
+}
+
+// ci checks that the agent token can read the CI of p, which the agent watches after it opens a change request.
+// The base branch stands in for a commit: GitHub and GitLab both take a branch name there.
+func (d *Doctor) ci(ctx context.Context, f forge.Forge, p config.Project) {
+	c, ok := f.(forge.CI)
+	if !ok {
+		return
+	}
+	_, err := c.CommitChecks(ctx, p.Owner, p.Repo, cmp.Or(p.BaseBranch, "main"))
+	switch {
+	case errors.Is(err, forge.ErrForbidden):
+		d.warn("%s: the agent token cannot read the CI, so the agent will not watch it: give the token Actions: Read and Commit statuses: Read (GitHub) (%v)", p.Ref, err)
+	case err != nil:
+		d.warn("%s: the CI could not be read with the agent token: %v", p.Ref, err)
+	default:
+		d.ok("%s: the agent token can read the CI", p.Ref)
+	}
 }
 
 func (d *Doctor) claude(ctx context.Context) {
