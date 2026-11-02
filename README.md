@@ -257,6 +257,20 @@ switchboard instructions edit --run gh:o/switchboard  # 1つのプロジェク�
 
 OpenSpecを使うプロジェクトでの書き方の例は、[docs/examples/openspec.md](docs/examples/openspec.md) にある。
 
+### 実装の実行だけへの追加の指示とスクリーンショット
+
+`run.md` は直す実行にも渡る。直接の実装（`agent:ready`・`agent:go`）と承認のあとの実装にだけ渡したい指示は、`implement.md` に書く。置き場所は `run.md` と同じディレクトリで、全体は `instructions/implement.md` である。両方あるときは、`run.md` のあとにつなげる。計画の実行と、CI・push・baseとの衝突を直す実行には渡らない。保存の検査と監査ログは、ほかの指示と同じである。`run.started` には、`implement` の鍵でこのファイルのハッシュが残る。
+
+```bash
+switchboard instructions edit --implement gh:o/switchboard
+```
+
+同じ2種類の実行には、画像の置き場所の取り決めもいつも渡す。取り決めでは、issueへ付けたい画像を、worktreeの `.switchboard/screenshots/` の直下に置く。switchboardは、この場所を `.git/info/exclude` へ足す。実行を始める前には、中を消す。doneで終わったら、doneの投稿に続けて、画像だけのコメントを1件issueへ付ける。付けるのは `.png`・`.jpg`・`.jpeg`・`.webp` だけで、1枚5MB、10枚までである。外れたファイルは、名前と理由をそのコメントに書く。画像をコミットするとpushを止め、検査の失敗として待つ。
+
+GitHubでは、端末の `gh`（v2.99.0以上）の `gh issue comment --attach` で付ける。`gh` にはエージェントのトークンだけを渡し、利用者の `gh` のログインは使わない。GitLabでは、uploads APIで上げてノートに並べる。付けられなかったときは、理由だけを書いたコメントを付け、doneはそのままにする。たとえば `gh` が無いときや古いとき、権限が無いときである。`switchboard doctor` は、GitHubのプロジェクトがあるときに `gh` の版を確かめる。
+
+撮影の手順と、それに要るコマンドの許可（`allow_tools_extra`）は、利用者が書く。例は [docs/examples/screenshots.md](docs/examples/screenshots.md) にある。
+
 ### 常駐させる
 
 ログインしていなくてもエージェントが動き続けるように、systemdのサービスとして常駐させられる。サービスは自分のOSユーザーで動き、異常に終わると自動で再起動する。トークンは、ホストの鍵で暗号化したsystemdのクレデンシャルとして置く。置くのは、この端末の担当プロジェクトのエージェント用トークンだけで、受信箱のトークンは置かない。
