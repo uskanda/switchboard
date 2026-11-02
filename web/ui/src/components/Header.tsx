@@ -1,5 +1,7 @@
+import { useRef } from "react";
 import { Link } from "react-router";
 import { isDone, isQueued, isRunning, type Inbox } from "@/lib/api";
+import { useHeightVar } from "@/lib/height";
 import { useInbox, type Live } from "@/lib/inbox";
 
 const liveText: Record<Live, string> = {
@@ -27,13 +29,15 @@ function statusText(live: Live, inbox: Inbox | null): string {
  */
 export function Header() {
   const { inbox, live } = useInbox();
+  const bar = useRef<HTMLElement>(null);
+  useHeightVar(bar, "--header-h", document.documentElement);
   const running = inbox?.items.filter(isRunning).length ?? 0;
   const queued = inbox?.items.filter(isQueued).length ?? 0;
   const done = inbox?.items.filter(isDone).length ?? 0;
   const waiting = (inbox?.items.length ?? 0) - running - queued - done;
   const label = `待ち${waiting}件、実行中${running}件${queued > 0 ? `、順番待ち${queued}件` : ""}${done > 0 ? `、完了${done}件` : ""}`;
   return (
-    <header className="sticky top-0 z-10 border-b border-outline bg-surface">
+    <header ref={bar} className="sticky top-0 z-10 border-b border-outline bg-surface">
       <div className="flex min-h-14 flex-wrap items-center gap-x-lg gap-y-xs px-lg py-sm">
         <h1 className="text-headline-md font-semibold">
           <Link to="/" className="inline-flex min-h-11 items-center">

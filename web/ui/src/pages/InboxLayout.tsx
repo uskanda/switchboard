@@ -73,9 +73,11 @@ export function InboxLayout() {
           <InboxList selected={ref} />
         </nav>
         <PaneBorder width={width} setWidth={setWidth} />
-        <main className={cn("px-lg py-xl lg:overflow-y-auto", !ref && "hidden lg:block")}>
+        {/* No padding on top: the issue's pinned head brings its own, so nothing shows above it once scrolled. */}
+        <main className={cn("px-lg pb-xl lg:overflow-y-auto", !ref && "hidden lg:block")}>
+
           <div className="mx-auto max-w-[720px]">
-            {ref ? <IssuePane issueRef={ref} /> : <p className="text-muted">左の一覧からissueを選んでください</p>}
+            {ref ? <IssuePane issueRef={ref} /> : <p className="pt-xl text-muted">左の一覧からissueを選んでください</p>}
           </div>
         </main>
       </div>
