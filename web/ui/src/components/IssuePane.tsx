@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { Link } from "react-router";
-import { MergeButton } from "@/components/MergeButton";
+import { Loading } from "@/components/Loading";
+import { MergeButton, changeName } from "@/components/MergeButton";
 import { PlanQuestions } from "@/components/PlanQuestions";
 import { ReasonBadge } from "@/components/ReasonBadge";
 import { Thread } from "@/components/Thread";
@@ -10,9 +11,13 @@ import { Card } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiError, age, elapsed, getIssue, postReply, queueText, watchKey, type Detail } from "@/lib/api";
+import { draftOf, keepDraft } from "@/lib/drafts";
 import { useInbox } from "@/lib/inbox";
+import { useHeightVar } from "@/lib/height";
 import { cachedIssue, rememberIssue } from "@/lib/issueCache";
 import { composeReply, defaultAnswers, parsePlanQuestions, type Answer } from "@/lib/planQuestions";
+import { addedCards, cardsOf, targetOf, type Card as ThreadCard } from "@/lib/scrollTarget";
+import { cn } from "@/lib/utils";
 
 /** RETRY_TEXT is the reply that runs a failed run again: a trusted comment is all a wait on an error needs. */
 const RETRY_TEXT = "再実行してください。";
@@ -104,9 +109,18 @@ function markOf(detail: Detail): SentMark {
   return { since: detail.since, waitKey: JSON.stringify(last ? [last.created_at, last.body] : [detail.post]) };
 }
 
+/** scrollToCard scrolls the thread's card of the comment at index into view, below the pinned head. */
+function scrollToCard(root: HTMLElement | null, index: number) {
+  root?.querySelector(`[data-index="${index}"]`)?.scrollIntoView({ block: "start" });
+}
+
+/** headerHeight is the height of the page's pinned header, as Header measures it into --header-h. */
+const headerHeight = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--header-h")) || 0;
+
 /**
  * IssuePane shows one issue and its reply form. It reads the issue again whenever the issue's row on the list
- * moves (watchKey), keeping what is typed in the reply. An issue that left the list stays shown, marked as such.
+ * moves (watchKey), keeping what is typed in the reply. What is typed and chosen is kept per issue (lib/drafts.ts),
+ * so opening another issue and coming back finds it again. Ctrl+Enter (⌘+Enter) in the reply field sends the field. An issue that left the list stays shown, marked as such.
  * While it waits on the questions of a plan, the questions are answered by choosing: the choices are kept while the
  * same question comment is shown, and start over with the next round's. A wait on a plan is approved, and a wait on a
  * failed run (error) is run again, in one click while the reply is empty.
@@ -114,6 +128,11 @@ function markOf(detail: Detail): SentMark {
  * arrives; one never read shows that it is loading.
  * Once a reply is sent, it says so while the issue comes back in the wait answered; once the issue runs, queues,
  * waits anew or leaves the list, it shows that state instead, with the reply form again for a new wait.
+ * A waiting or done issue opens scrolled to the card a reply is about (targetOf), once per opening: the cached read
+ * drawn first counts, and the read after it moves nothing. A later read that adds cards leaves the place as it is and
+ * shows a notice at the bottom instead; pressing it scrolls to the card, and it goes once that card is scrolled into
+ * view or another issue opens. The way back, the reference, the title and the state stay pinned at the top; once
+ * scrolled, the title is cut to two lines, with the whole of it in its title.
  */
 export function IssuePane({ issueRef }: { issueRef: string }) {
   const { inbox } = useInbox();
@@ -125,20 +144,33 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
   // reading is set while a read of the issue is on its way; the first one starts as the pane opens.
   const [reading, setReading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [text, setText] = useState("");
+  const [text, setText] = useState(() => draftOf(issueRef).text);
   const [sending, setSending] = useState(false);
   // sentAt is the wait a reply was sent to, or null when none was.
   const [sentAt, setSentAt] = useState<SentMark | null>(null);
-  const [choices, setChoices] = useState<{ key: string; answers: Answer[] } | null>(null);
+  const [choices, setChoices] = useState<{ key: string; answers: Answer[] } | null>(() => draftOf(issueRef).choices);
+  // fresh is whether detail came from a read of this issue, not from the cache.
+  const [fresh, setFresh] = useState(false);
+  // notice is the comment index the notice of an update leads to, or null when there is no notice.
+  const [notice, setNotice] = useState<number | null>(null);
+  // atTop is whether the pane is scrolled to its top, where the title is shown whole.
+  const [atTop, setAtTop] = useState(true);
 
-  // A new issue starts with an empty reply.
-  useEffect(() => {
+  // A new issue starts with its own draft, empty when there is none. This is done while rendering, so that no frame
+  // draws the new issue with the last one's read: the scroll of the opening would go by it.
+  const [shownFor, setShownFor] = useState(issueRef);
+  if (shownFor !== issueRef) {
+    const draft = draftOf(issueRef);
+    setShownFor(issueRef);
     setDetail(cachedIssue(issueRef));
-    setText("");
+    setFresh(false);
+    setText(draft.text);
     setSentAt(null);
     setError(null);
-    setChoices(null);
-  }, [issueRef]);
+    setChoices(draft.choices);
+    setNotice(null);
+  }
+  useEffect(() => keepDraft(shownFor, { text, choices }), [shownFor, text, choices]);
 
   const lastKey = useRef(key);
   // readFor is the issue the last read that arrived was of; a read shown from the cache does not count.
@@ -160,6 +192,7 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
         readFor.current = issueRef;
         rememberIssue(issueRef, d);
         setDetail(d);
+        setFresh(true);
         setError(null);
         setReading(false);
       },
@@ -171,6 +204,55 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
     );
     return () => void (stale = true);
   }, [issueRef, key]);
+
+  const article = useRef<HTMLElement>(null);
+  const head = useRef<HTMLDivElement>(null);
+  const top = useRef<HTMLDivElement>(null);
+  useHeightVar(head, "--pane-head-h", document.documentElement);
+
+  // seen is the issue whose opening scroll is done, whether a read of it has arrived since, and the cards last drawn.
+  const seen = useRef<{ ref: string; settled: boolean; cards: ThreadCard[] } | null>(null);
+  useLayoutEffect(() => {
+    if (!detail) return;
+    const was = seen.current;
+    const cards = cardsOf(detail.comments ?? []);
+    seen.current = { ref: issueRef, settled: fresh, cards };
+    if (was?.ref !== issueRef) {
+      const target = targetOf(detail);
+      if (target !== null) scrollToCard(article.current, target);
+      return;
+    }
+    // The first read after the cache was shown brings the issue up to date: it is part of the opening.
+    if (!was.settled) return;
+    const added = addedCards(was.cards, cards);
+    if (added.length > 0) setNotice(targetOf(detail) ?? added[0]);
+  }, [issueRef, detail, fresh]);
+
+  // The notice goes once its card is scrolled into view; a card already in view when the notice came does not count.
+  useEffect(() => {
+    const el = notice === null ? null : article.current?.querySelector(`[data-index="${notice}"]`);
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    let out = false;
+    const watch = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (!e.isIntersecting) out = true;
+        else if (out) setNotice(null);
+      }
+    });
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, [notice]);
+
+  // The pane is at its top while the mark at its top is below the page's header.
+  useEffect(() => {
+    const el = top.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const watch = new IntersectionObserver((entries) => entries.forEach((e) => setAtTop(e.isIntersecting)), {
+      rootMargin: `-${Math.round(headerHeight())}px 0px 0px 0px`,
+    });
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, []);
 
   const found = useMemo(() => questionsOf(detail), [detail]);
   // Choices made on these questions; once made, they stay drawn even if the issue stops waiting, like a draft.
@@ -185,11 +267,16 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
   // check or a fix first.
   const retrying = detail?.reason === "error" && !plan;
 
+  // justSent is set by a send that worked, so the words saying so take the focus from the form that goes.
+  const justSent = useRef(false);
+  const sentLine = useRef<HTMLParagraphElement>(null);
+
   async function send(reply: string) {
     setSending(true);
     setError(null);
     try {
       await postReply(issueRef, reply);
+      justSent.current = true;
       if (detail) setSentAt(markOf(detail));
       setText("");
       setChoices(null);
@@ -202,7 +289,14 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
 
   function submit(e: FormEvent) {
     e.preventDefault();
+    if (sending || !replyable || text.trim() === "") return;
     void send(text);
+  }
+
+  function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key !== "Enter" || !(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault();
+    e.currentTarget.form?.requestSubmit();
   }
 
   const running = detail?.state === "running";
@@ -217,26 +311,34 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
   useEffect(() => {
     if (sentAt && !sent) setSentAt(null);
   }, [sentAt, sent]);
+  useEffect(() => {
+    if (!sent || !justSent.current) return;
+    justSent.current = false;
+    sentLine.current?.focus();
+  }, [sent]);
   // The form stays while something is typed or chosen, so a draft survives the issue leaving its wait.
   const showForm = detail && !sent && (replyable || text !== "" || touched);
 
   return (
-    <article className="flex flex-col gap-lg">
-      <Link to="/" className="inline-flex min-h-11 items-center text-label-md text-muted underline lg:hidden">
-        ← 一覧へ
-      </Link>
-      {error && <Alert>{error}</Alert>}
-      {!detail && reading && (
-        <p role="status" aria-label="読み込んでいます" className="flex items-center gap-sm text-muted">
-          <Spinner />
-          読み込んでいます
-        </p>
-      )}
-      {detail && (
-        <>
-          <div className="flex flex-col gap-xs">
+    <article ref={article} className={cn("relative flex flex-col gap-lg", !detail && "lg:pt-lg")}>
+      <div ref={top} data-pane-top aria-hidden className="pointer-events-none absolute top-0 h-px w-px" />
+      <div
+        ref={head}
+        data-pane-head
+        className={cn(
+          "sticky top-[var(--header-h,0px)] z-[1] -mx-lg flex flex-col gap-xs border-b border-outline bg-surface px-lg pt-lg pb-md lg:top-0",
+          !detail && "lg:hidden",
+        )}
+      >
+        <Link to="/" className="inline-flex min-h-11 items-center self-start text-label-md text-muted underline lg:hidden">
+          ← 一覧へ
+        </Link>
+        {detail && (
+          <>
             <span className="font-mono text-mono-sm break-all">{detail.ref}</span>
-            <h2 className="text-headline-md font-semibold break-words">{detail.title}</h2>
+            <h2 className={cn("text-headline-md font-semibold break-words", !atTop && "line-clamp-2")} title={atTop ? undefined : detail.title}>
+              {detail.title}
+            </h2>
             <span className="flex flex-wrap items-center gap-sm text-label-md text-muted">
               {running ? (
                 <span className="font-medium">実行中</span>
@@ -260,12 +362,18 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
                 </span>
               )}
             </span>
-          </div>
+          </>
+        )}
+      </div>
+      {error && <Alert>{error}</Alert>}
+      {!detail && reading && <Loading />}
+      {detail && (
+        <>
           {finished && !gone && detail.change_number && detail.change_sha ? (
             <div className="flex flex-wrap items-center gap-sm">
               {detail.change_url && (
                 <a href={detail.change_url} target="_blank" rel="noreferrer" className="inline-flex min-h-11 min-w-0 items-center break-all font-mono text-mono-sm text-muted underline">
-                  {detail.change_url}
+                  {changeName(detail.ref, detail.change_number)}
                 </a>
               )}
               <MergeButton issueRef={detail.ref} number={detail.change_number} sha={detail.change_sha} url={detail.change_url} />
@@ -291,7 +399,7 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
             </Card>
           )}
           {sent && (
-            <p role="status" className="text-muted">
+            <p ref={sentLine} role="status" tabIndex={-1} className="text-muted outline-none">
               送りました。エージェントが作業を再開します。
             </p>
           )}
@@ -300,8 +408,18 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
               <label htmlFor="reply" className="text-label-md font-medium">
                 返答
               </label>
-              <PlanHint reason={detail.reason} word={word} answerable={!!plan} />
-              <Textarea id="reply" value={text} onChange={(e) => setText(e.target.value)} disabled={sending} />
+              <div id="reply-hint">
+                <PlanHint reason={detail.reason} word={word} answerable={!!plan} />
+              </div>
+              <Textarea
+                id="reply"
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={onKeyDown}
+                aria-describedby="reply-hint"
+                aria-keyshortcuts="Control+Enter Meta+Enter"
+                disabled={sending}
+              />
               {finished && <p className="text-label-md text-muted">作業は終わっています。返答すると、エージェントが同じPR/MRで作業を再開します。</p>}
               {!replyable && <p className="text-muted">このissueは待ちではなくなりました。返答は送れません。</p>}
               {plan ? (
@@ -350,6 +468,20 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
           {queued && !replyable && !sent && !showForm && <p className="text-muted">順番待ちのため、まだ返答は要りません</p>}
           {!replyable && !running && !queued && !sent && !showForm && <p className="text-muted">このissueは待ちではありません。返答は送れません。</p>}
         </>
+      )}
+      {notice !== null && (
+        <div role="status" aria-label="自動更新の知らせ" className="pointer-events-none sticky bottom-lg z-[1] self-center">
+          <button
+            type="button"
+            className="pointer-events-auto min-h-11 rounded-md border border-outline bg-surface-raised px-lg text-label-md font-medium"
+            onClick={() => {
+              scrollToCard(article.current, notice);
+              setNotice(null);
+            }}
+          >
+            自動更新がありました
+          </button>
+        </div>
       )}
     </article>
   );

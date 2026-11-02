@@ -44,13 +44,13 @@ describe("done issues", () => {
     expect(row.closest("a")).toHaveAttribute("href", "/issue/gh%3Ao%2Fr%2350");
     expect(screen.getAllByRole("link", { name: "https://github.test/o/r/pull/9" })[0]).toHaveAttribute("href", "https://github.test/o/r/pull/9");
     expect(screen.getAllByText("2時間前")[0]).toBeInTheDocument();
-    expect(screen.getByLabelText("待ち1件、実行中1件、順番待ち1件、完了1件")).toBeInTheDocument();
+    expect(screen.getByText("待ち1件、実行中1件、順番待ち1件、完了1件")).toBeInTheDocument();
   });
 
   it("leave the header count out while there is none", async () => {
     answer({ "GET /api/inbox": { items: [waiting, running], errors: [], fetched_at: "" } });
     at("/");
-    expect(await screen.findByLabelText("待ち1件、実行中1件")).toBeInTheDocument();
+    expect(await screen.findByText("待ち1件、実行中1件")).toBeInTheDocument();
   });
 
   it("take a reply until the issue is closed", async () => {

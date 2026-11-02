@@ -1,5 +1,8 @@
 import type { FocusEvent } from "react";
 import { Toaster as Sonner } from "sonner";
+// sonner inserts these rules as a <style> at run time, which the page's CSP (default-src 'self') blocks; the build
+// carries them in the stylesheet instead, or the toasts are left unpositioned below the page.
+import "sonner/dist/styles.css";
 import { setFocused, setHovered } from "@/lib/toast";
 
 // The marks before the text, drawn in the color of the text so they follow each kind and the dark theme.
