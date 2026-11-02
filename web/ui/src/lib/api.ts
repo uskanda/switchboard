@@ -23,6 +23,9 @@ export type Item = {
   /** When the agent finished an issue still open (it waits to be closed), and the pull or merge request it names. */
   done_since?: string | null;
   change_url?: string;
+  /** The pull or merge request and the commit the done post's marker names; the merge is offered only with both. */
+  change_number?: number;
+  change_sha?: string;
   /** The forge's update time and count of people's comments (GitLab's; 0 on GitHub): a move in either means the issue changed. */
   updated_at?: string | null;
   notes?: number;
@@ -62,6 +65,10 @@ export type Detail = {
   post: string;
   /** The word whose reply approves a plan, such as /ok. */
   approve_word?: string;
+  /** Set on an open done issue, as on its Item. */
+  change_url?: string;
+  change_number?: number;
+  change_sha?: string;
   /** The issue's own author, time and body, and all its comments, oldest first. A back end older than the thread leaves them out. */
   author?: string;
   created_at?: string | null;
@@ -184,6 +191,17 @@ export const createIssue = (issue: NewIssue) =>
     body: JSON.stringify(issue),
   });
 
+/**
+ * merge marks the pull or merge request of a done issue ready and merges it with the inbox token, only at sha, the
+ * commit the page showed. It is refused with stale, not_mergeable or forbidden.
+ */
+export const merge = (ref: string, sha: string) =>
+  call<void>("/api/merge", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ref, sha }),
+  });
+
 /** issuePath is the page of one issue; the ref is one path segment. */
 export const issuePath = (ref: string) => `/issue/${encodeURIComponent(ref)}`;
 
@@ -208,4 +226,4 @@ export function elapsed(since: string | null | undefined, now: Date = new Date()
 }
 
 /** attention tells the reasons that wait on a decision from the ones that report a failure. */
-export const isFailure = (reason: string) => ["error", "permission", "push", "ci"].includes(reason);
+export const isFailure = (reason: string) => ["error", "permission", "push", "ci", "conflict"].includes(reason);

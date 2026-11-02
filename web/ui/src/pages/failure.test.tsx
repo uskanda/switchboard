@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "@/App";
+import { isFailure } from "@/lib/api";
 
 function answer(routes: Record<string, unknown>) {
   vi.stubGlobal(
@@ -40,6 +41,14 @@ describe("waits on a failure after the work", () => {
     expect(screen.getByText("ci")).toBeInTheDocument();
     expect(screen.getByText(/自動で直す回数/)).toHaveTextContent("返信すると");
     expect(screen.queryByRole("button", { name: /承認する/ })).toBeNull();
+  });
+
+  it("say that a reply runs the agent again and counts the fixes over (conflict)", async () => {
+    answer({ "GET /api/issue?ref=gh%3Ao%2Fr%2312": detail("conflict") });
+    at("/issue/gh%3Ao%2Fr%2312");
+    expect(await screen.findByText(/baseとの衝突を自動で直す回数/)).toHaveTextContent("返信すると");
+    expect(screen.getByText("conflict")).toBeInTheDocument();
+    expect(isFailure("conflict")).toBe(true);
   });
 
   it("say what to check before replying (push)", async () => {

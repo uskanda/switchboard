@@ -22,6 +22,7 @@ type fakeInbox struct {
 	saved   []inboxapi.SaveInstructionsRequest
 	added   []inboxapi.AddProjectRequest
 	created []inboxapi.CreateIssueRequest
+	merged  []inboxapi.MergeRequest
 	err     error
 }
 

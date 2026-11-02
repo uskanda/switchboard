@@ -17,7 +17,7 @@ import (
 
 // fixInfo is what a fix run fixes: why it runs, the report claude reads, and what its claim names.
 type fixInfo struct {
-	cause   string // prompt.FixCI or prompt.FixPush
+	cause   string // prompt.FixCI, prompt.FixPush or prompt.FixConflict
 	report  string // the failure report, fenced in the prompt; redacted
 	checks  string // for a CI fix: the failed checks, as the claim names them
 	attempt int    // the run's number among the fix runs since the last reset, from 1
@@ -77,9 +77,12 @@ func (a *Agent) claimText(pl *plan) string {
 	s := fmt.Sprintf(a.msg.claim, a.Config.Host.Name)
 	if f := pl.fix; f != nil {
 		limit := a.Config.Agent.FixAttempts()
-		if f.cause == prompt.FixPush {
+		switch f.cause {
+		case prompt.FixPush:
 			s += "\n\n" + fmt.Sprintf(a.msg.fixPush, f.attempt, limit)
-		} else {
+		case prompt.FixConflict:
+			s += "\n\n" + fmt.Sprintf(a.msg.fixConflict, f.attempt, limit)
+		default:
 			s += "\n\n" + fmt.Sprintf(a.msg.fixCI, f.attempt, limit, f.checks)
 		}
 	}

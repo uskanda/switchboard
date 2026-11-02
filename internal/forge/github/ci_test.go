@@ -2,6 +2,7 @@ package github
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -86,7 +87,33 @@ func TestChangeRequestHead(t *testing.T) {
 		t.Fatalf("ChangeRequestHead(48) = %+v, %v", st, err)
 	}
 	st, err = c.ChangeRequestHead(ctx, "o", "r", 49)
-	if err != nil || st.State != forge.CROpen || st.Head != "abc" {
+	if err != nil || st.State != forge.CROpen || st.Head != "abc" || st.Conflict {
 		t.Fatalf("ChangeRequestHead(49) = %+v, %v", st, err)
+	}
+}
+
+func TestChangeRequestConflict(t *testing.T) {
+	s, c := newServer(t)
+	cases := map[int]struct {
+		mergeable any
+		state     string
+		want      bool
+	}{
+		50: {false, "dirty", true},
+		51: {nil, "unknown", false},
+		52: {true, "behind", false},
+		53: {false, "blocked", false},
+		54: {true, "clean", false},
+	}
+	for n, tc := range cases {
+		s.on(fmt.Sprintf("GET /repos/o/r/pulls/%d", n), jsonReply(map[string]any{
+			"state": "open", "head": map[string]any{"sha": "abc"}, "mergeable": tc.mergeable, "mergeable_state": tc.state,
+		}))
+	}
+	for n, tc := range cases {
+		st, err := c.ChangeRequestHead(ctx, "o", "r", n)
+		if err != nil || st.Conflict != tc.want {
+			t.Errorf("ChangeRequestHead(%d) with mergeable %v, %s = %+v, %v, want Conflict %v", n, tc.mergeable, tc.state, st, err, tc.want)
+		}
 	}
 }

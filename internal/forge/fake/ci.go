@@ -11,16 +11,18 @@ var _ forge.CI = (*Forge)(nil)
 
 // ci is the CI state of the fake: the checks of each commit, the logs of jobs, and where each change request stands.
 type ci struct {
-	checks map[string][]forge.Check // "owner/repo@sha" -> checks
-	logs   map[int64]string
-	heads  map[int]string // index into PRs -> head commit
-	merged map[int]bool
-	calls  int
+	checks    map[string][]forge.Check // "owner/repo@sha" -> checks
+	logs      map[int64]string
+	heads     map[int]string // index into PRs -> head commit
+	merged    map[int]bool
+	conflicts map[int]bool // index into PRs -> conflicts with its base
+	calls     int          // calls of CommitChecks
+	prCalls   int          // calls of ChangeRequestHead
 }
 
 func (f *Forge) ciState() *ci {
 	if f.ci == nil {
-		f.ci = &ci{checks: map[string][]forge.Check{}, logs: map[int64]string{}, heads: map[int]string{}, merged: map[int]bool{}}
+		f.ci = &ci{checks: map[string][]forge.Check{}, logs: map[int64]string{}, heads: map[int]string{}, merged: map[int]bool{}, conflicts: map[int]bool{}}
 	}
 	return f.ci
 }
@@ -51,6 +53,20 @@ func (f *Forge) MergePR(i int) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.ciState().merged[i] = true
+}
+
+// SetConflict sets whether the i-th change request in PRs, counted from 0, conflicts with its base.
+func (f *Forge) SetConflict(i int, conflict bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ciState().conflicts[i] = conflict
+}
+
+// PRCalls is how many times ChangeRequestHead was called.
+func (f *Forge) PRCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.ciState().prCalls
 }
 
 // CICalls is how many times CommitChecks was called.
@@ -91,7 +107,8 @@ func (f *Forge) ChangeRequestHead(_ context.Context, owner, repo string, number 
 		return nil, fmt.Errorf("fake: change request %s/%s#%d: %w", owner, repo, number, forge.ErrNotFound)
 	}
 	s := f.ciState()
-	st := &forge.ChangeRequestState{State: forge.CROpen, Head: s.heads[i]}
+	s.prCalls++
+	st := &forge.ChangeRequestState{State: forge.CROpen, Head: s.heads[i], Conflict: s.conflicts[i]}
 	switch {
 	case s.merged[i]:
 		st.State = forge.CRMerged

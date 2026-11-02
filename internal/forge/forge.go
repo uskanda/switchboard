@@ -49,6 +49,35 @@ type Issues interface {
 	CreateIssue(ctx context.Context, owner, repo, title, body string, labels []string) (*IssueSummary, error)
 }
 
+// ErrHeadMoved reports that the head of a change request is no longer the commit the caller saw.
+var ErrHeadMoved = errors.New("head moved")
+
+// ErrNotMergeable reports that the forge refused to merge a change request. A *NotMergeableError carries the reason.
+var ErrNotMergeable = errors.New("not mergeable")
+
+// NotMergeableError is the forge's refusal to merge, with the reason it gave. It matches ErrNotMergeable.
+type NotMergeableError struct{ Reason string }
+
+func (e *NotMergeableError) Error() string {
+	if e.Reason == "" {
+		return ErrNotMergeable.Error()
+	}
+	return ErrNotMergeable.Error() + ": " + e.Reason
+}
+
+// Is makes errors.Is(err, ErrNotMergeable) true.
+func (e *NotMergeableError) Is(target error) bool { return target == ErrNotMergeable }
+
+// Merges merges change requests. It is kept apart from Forge: the agent never merges, and the inbox service calls it
+// with the inbox token when the person presses the merge button, so the merge is the person's own (ADR-043).
+type Merges interface {
+	// MergeChangeRequest marks the pull request (merge request) number of owner/repo ready when it is a draft and
+	// merges it, only while its head is sha. It returns ErrHeadMoved when the head is another commit, a
+	// *NotMergeableError when the forge refuses, ErrForbidden when the token may not, and ErrNotFound when there is
+	// no such change request.
+	MergeChangeRequest(ctx context.Context, owner, repo string, number int, sha string) error
+}
+
 // The forge kinds, as written before the colon of a project reference.
 const (
 	GitHub = "gh"

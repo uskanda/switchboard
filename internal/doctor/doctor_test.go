@@ -114,6 +114,16 @@ func TestMissingInboxTokenRefWarns(t *testing.T) {
 		t.Fatalf("%d failures:\n%s", n, w.out.String())
 	}
 	w.expect(t, "warn", "inbox_token_ref")
+	w.expect(t, "warn", "merging from the web inbox")
+}
+
+func TestInboxTokenNamesThePermissionsOfAMerge(t *testing.T) {
+	w := newWorld(t)
+	if n := w.run(t); n != 0 {
+		t.Fatalf("%d failures:\n%s", n, w.out.String())
+	}
+	w.expect(t, "ok", "inbox token (inbox_token_ref")
+	w.expect(t, "ok", "Pull requests and Contents write")
 }
 
 func TestOldClaudeWarns(t *testing.T) {

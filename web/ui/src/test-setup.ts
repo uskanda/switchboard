@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
 import { forgetIssues } from "@/lib/issueCache";
+import { dismiss } from "@/lib/toast";
 import { installObservers, resetObservers } from "@/test-observers";
 
 // jsdom has no modal dialogs: showModal and close only open and close the dialog, as far as the tests look.
@@ -17,8 +18,16 @@ if (typeof HTMLDialogElement.prototype.showModal !== "function") {
 
 installObservers();
 
+// jsdom has no pointer capture, which sonner takes when a toast is pressed (to swipe it away).
+if (typeof Element.prototype.setPointerCapture !== "function") {
+  Element.prototype.setPointerCapture = () => {};
+  Element.prototype.releasePointerCapture = () => {};
+  Element.prototype.hasPointerCapture = () => false;
+}
+
 afterEach(() => {
   cleanup();
   forgetIssues();
   resetObservers();
+  dismiss();
 });
