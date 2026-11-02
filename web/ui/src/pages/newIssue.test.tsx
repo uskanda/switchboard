@@ -89,7 +89,9 @@ describe("a new issue", () => {
 
     const status = await screen.findByRole("status");
     expect(status).toHaveTextContent("gl:nas/sb#7 を作りました");
-    const link = within(status).getByRole("link", { name: /フォージで開く/ });
+    const toast = status.closest<HTMLElement>("[data-sonner-toast]")!;
+    expect(toast).toHaveClass("toast-success");
+    const link = within(toast).getByRole("link", { name: /フォージで開く/ });
     expect(link).toHaveAttribute("href", "https://gitlab.test/nas/sb/-/issues/7");
     expect(link).toHaveAttribute("target", "_blank");
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -98,8 +100,12 @@ describe("a new issue", () => {
     expect((post?.init?.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
     expect(JSON.parse(String(post?.init?.body))).toEqual({ ref: "gl:nas/sb", title: "Add a flag", body: "Use --x.", start: "plan" });
 
-    await userEvent.click(within(status).getByRole("button", { name: "知らせを閉じる" }));
-    expect(screen.queryByRole("status")).toBeNull();
+    // The notice is a toast, not a line above the list: the pane has nothing left of it.
+    const pane = screen.getByRole("button", { name: "新規issue" }).parentElement!.parentElement!;
+    expect(within(pane).queryByText(/を作りました/)).toBeNull();
+
+    await userEvent.click(within(toast).getByRole("button", { name: "閉じる" }));
+    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
   });
 
   it("keeps what was written and shows why it was refused", async () => {

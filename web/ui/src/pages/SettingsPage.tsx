@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiError, getInstructions, saveInstructions, type Instruction, type Instructions } from "@/lib/api";
+import { toast } from "@/lib/toast";
 
 function failure(err: unknown): string {
   if (err instanceof ApiError) {
@@ -23,11 +24,13 @@ function failure(err: unknown): string {
   return `失敗しました：${err instanceof Error ? err.message : String(err)}`;
 }
 
-/** Field is one instruction file: its own text, its own save and its own result, so one refusal touches no other. */
+/**
+ * Field is one instruction file: its own text, its own save and its own refusal, so one refusal touches no other. A
+ * save that worked is told in a toast that names the field.
+ */
 function Field({ item }: { item: Instruction }) {
   const [text, setText] = useState(item.content);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const id = `instructions-${item.target || "global"}`;
   const name = item.target || "すべてのプロジェクト";
@@ -35,11 +38,10 @@ function Field({ item }: { item: Instruction }) {
   async function submit(e: FormEvent) {
     e.preventDefault();
     setSaving(true);
-    setSaved(false);
     setError(null);
     try {
       await saveInstructions(item.target, text);
-      setSaved(true);
+      toast.success(`${name}の指示を保存しました`);
     } catch (err) {
       setError(failure(err));
     } finally {
@@ -57,19 +59,11 @@ function Field({ item }: { item: Instruction }) {
           <Textarea
             id={id}
             value={text}
-            onChange={(e) => {
-              setText(e.target.value);
-              setSaved(false);
-            }}
+            onChange={(e) => setText(e.target.value)}
             disabled={saving}
           />
           {error && <Alert>{error}</Alert>}
-          <div className="flex items-center justify-end gap-md">
-            {saved && (
-              <p role="status" className="text-label-md text-muted">
-                保存しました
-              </p>
-            )}
+          <div className="flex justify-end">
             <Button type="submit" variant="secondary" disabled={saving}>
               {saving ? "保存しています" : "保存する"}
             </Button>

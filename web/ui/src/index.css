@@ -22,6 +22,9 @@
     --color-attention-container: var(--color-dark-attention-container);
     --color-error-container: var(--color-dark-error-container);
     --color-on-error-container: var(--color-dark-error);
+    --color-success: var(--color-dark-success);
+    --color-success-container: var(--color-dark-success-container);
+    --color-on-success-container: var(--color-dark-success);
   }
 }
 

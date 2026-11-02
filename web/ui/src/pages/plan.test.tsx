@@ -59,14 +59,17 @@ describe("the settings", () => {
     expect(screen.getByText(/のファイルです/)).toHaveTextContent("ubuntu-a");
   });
 
-  it("save one field and say so in it", async () => {
+  it("save one field and say so in a toast", async () => {
     const calls = answer({ "GET /api/instructions": { status: 200, body: instructions }, "POST /api/instructions": { status: 204 } });
     at("/settings");
     const field = await screen.findByRole("textbox", { name: "gl:nas/sb" });
     await userEvent.type(field, "Ask in Japanese.");
     const card = field.closest("section")!;
     await userEvent.click(within(card as HTMLElement).getByRole("button", { name: "保存する" }));
-    expect(await within(card as HTMLElement).findByRole("status")).toHaveTextContent("保存しました");
+    const status = await screen.findByRole("status");
+    expect(status).toHaveTextContent("保存しました");
+    expect(status.closest("[data-sonner-toast]")).toHaveClass("toast-success");
+    expect(within(card as HTMLElement).queryByText("保存しました")).toBeNull();
     const post = calls.find((c) => c.key === "POST /api/instructions");
     expect(JSON.parse(String(post?.init?.body))).toEqual({ target: "gl:nas/sb", content: "Ask in Japanese." });
     expect(new Headers(post?.init?.headers).get("Content-Type")).toBe("application/json");
