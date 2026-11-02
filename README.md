@@ -261,7 +261,7 @@ switchboard service install
 make restart
 ```
 
-作り直した版で動かし直すときは、`make deploy` を使う。2つのバイナリを作って `~/.local/bin` に置いてから、`make restart` と同じことをする。置き場所は `PREFIX` で変えられる。
+作り直した版で動かし直すときは、`make deploy` を使う。2つのバイナリを作って `~/.local/bin` に置いてから、`make restart` と同じことをする。置き場所は `PREFIX` で変えられる。チェックアウトがmain以外のブランチにあるときは警告を出す。端末から実行していれば、続けるかを尋ね、`y` 以外の答えで止まる。
 
 次のときは、`switchboard service install` をもう一度実行する。
 
