@@ -309,3 +309,18 @@ webhookの一覧の各項目は、プロジェクトの `ref`、`hook-key`、シ
 #### Scenario: token_refが無い
 - **WHEN** `<inbox.relay>` に `url` だけを書いて設定を検証する
 - **THEN** 設定は拒まれ、誤りには `inbox.relay.token_ref` が示される
+
+### Requirement: 計画を先にする設定
+設定の `agent` は、真偽値の `<agent.prefer_plan>` を持てなければならない（MUST）。無いときはfalseとする。
+
+#### Scenario: 設定が無い
+- **WHEN** `agent` に `prefer_plan` の無い設定を読む
+- **THEN** `<agent.prefer_plan>` はfalseになる
+
+#### Scenario: 設定がある
+- **WHEN** `agent` に `prefer_plan: true` のある設定を読む
+- **THEN** 誤りにならず、`<agent.prefer_plan>` はtrueになる
+
+#### Scenario: 動作中に計画の優先をオンにした
+- **WHEN** `switchboard agent run` が動いている間に、`<agent.prefer_plan>` をfalseからtrueに変えて保存する
+- **THEN** 10秒ほどのうちに新しい値が反映され、再起動を求めるログは残らない
