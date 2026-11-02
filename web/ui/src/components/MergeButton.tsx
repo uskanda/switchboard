@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { ApiError, type CheckStatus, merge, type MergeStatus, mergeStatus } from "@/lib/api";
+import { useInbox } from "@/lib/inbox";
 import { toast } from "@/lib/toast";
 
 /** changeName is how the forge names the change request: "PR #9" on GitHub, "MR !9" on GitLab. */
@@ -126,6 +127,7 @@ function ChangeStatus({ name, read }: { name: string; read: Read }) {
  * MergeButton merges the pull or merge request of a done issue: the one its latest done post names, at the commit
  * the page showed. It asks first in a dialog, since a merge cannot be undone; the outcome is told in a toast. The
  * issue itself is closed by the change request's "Closes #N", and the list drops it on its next read (ADR-043).
+ * Until then the issue is marked as being merged (lib/pending.ts), and the button cannot be pressed.
  * Each time the dialog opens, it reads the change's conflict and CI anew; what it reads never holds the merge back.
  */
 export function MergeButton({ issueRef, number, sha, url }: { issueRef: string; number: number; sha: string; url?: string }) {
@@ -135,6 +137,8 @@ export function MergeButton({ issueRef, number, sha, url }: { issueRef: string; 
   const [read, setRead] = useState<Read | null>(null);
   // reads counts the openings: a reading that comes back after the dialog closed, or opened again, is dropped.
   const reads = useRef(0);
+  const { view, markPending } = useInbox();
+  const merging = view?.some((it) => it.ref === issueRef && it.pending === "merge") ?? false;
   const name = changeName(issueRef, number);
 
   function open() {
@@ -156,6 +160,7 @@ export function MergeButton({ issueRef, number, sha, url }: { issueRef: string; 
     setSending(true);
     try {
       await merge(issueRef, sha);
+      markPending(issueRef, "merge");
       toast.success(`${name}をマージしました`, { description: "issueは、PR/MRの Closes でcloseされると一覧から消えます。" });
     } catch (err) {
       const f = failure(name, err);
@@ -168,7 +173,7 @@ export function MergeButton({ issueRef, number, sha, url }: { issueRef: string; 
 
   return (
     <>
-      <Button type="button" variant="secondary" onClick={open} disabled={sending} aria-label={`${name}をマージ`}>
+      <Button type="button" variant="secondary" onClick={open} disabled={sending || merging} aria-label={`${name}をマージ`}>
         {sending && <Spinner />}
         マージ
       </Button>
