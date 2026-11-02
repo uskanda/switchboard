@@ -114,3 +114,23 @@ func TestFailNthAndDelete(t *testing.T) {
 		t.Fatalf("UpdatedIssues lists a deleted issue: %+v", list)
 	}
 }
+
+func TestOpenChangeRequestSkipsClosed(t *testing.T) {
+	ctx := context.Background()
+	f := New(nil)
+	cr := forge.ChangeRequest{Owner: "o", Repo: "r", Head: "switchboard/issue-3", Base: "main"}
+	if _, err := f.OpenChangeRequest(ctx, "o", "r", cr.Head, "main"); !errors.Is(err, forge.ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound", err)
+	}
+	url, _ := f.CreateChangeRequest(ctx, cr)
+	if got, err := f.OpenChangeRequest(ctx, "o", "r", cr.Head, "main"); err != nil || got != url {
+		t.Fatalf("OpenChangeRequest = %q, %v, want %q", got, err, url)
+	}
+	if _, err := f.OpenChangeRequest(ctx, "o", "r", cr.Head, "dev"); !errors.Is(err, forge.ErrNotFound) {
+		t.Fatalf("other base: err = %v, want ErrNotFound", err)
+	}
+	f.ClosePR(0)
+	if _, err := f.OpenChangeRequest(ctx, "o", "r", cr.Head, "main"); !errors.Is(err, forge.ErrNotFound) {
+		t.Fatalf("closed: err = %v, want ErrNotFound", err)
+	}
+}

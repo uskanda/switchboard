@@ -395,3 +395,25 @@ func TestSearchOpenIssuesWithAnyOfTheLabels(t *testing.T) {
 		t.Fatalf("Search = %+v, %v (%d requests)", got, err, len(s.log))
 	}
 }
+
+func TestOpenChangeRequest(t *testing.T) {
+	s, c := newServer(t)
+	s.on("GET "+proj+"/merge_requests", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		if q.Get("state") != "opened" || q.Get("target_branch") != "main" {
+			t.Errorf("query = %s", r.URL.RawQuery)
+		}
+		if q.Get("source_branch") == "switchboard/issue-3" {
+			jsonReply([]map[string]any{{"web_url": "https://gl.test/nas/tools/sb/-/merge_requests/4"}})(w, r)
+			return
+		}
+		jsonReply([]any{})(w, r)
+	})
+	u, err := c.OpenChangeRequest(ctx, "nas/tools", "sb", "switchboard/issue-3", "main")
+	if err != nil || u != "https://gl.test/nas/tools/sb/-/merge_requests/4" {
+		t.Fatalf("OpenChangeRequest = %q, %v", u, err)
+	}
+	if _, err := c.OpenChangeRequest(ctx, "nas/tools", "sb", "switchboard/issue-4", "main"); !errors.Is(err, forge.ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound", err)
+	}
+}
