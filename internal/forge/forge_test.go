@@ -27,3 +27,34 @@ func TestIssueRefKindAndProject(t *testing.T) {
 		t.Fatal("a ref without a forge is not GitHub")
 	}
 }
+
+func TestChangeRequestNumber(t *testing.T) {
+	for url, want := range map[string]int{
+		"https://github.com/o/r/pull/48":                    48,
+		"https://gl.example/nas/tools/x/-/merge_requests/7": 7,
+		"https://github.com/o/r/issues/3":                   0,
+		"":                                                  0,
+	} {
+		if got := ChangeRequestNumber(url); got != want {
+			t.Errorf("ChangeRequestNumber(%q) = %d, want %d", url, got, want)
+		}
+	}
+}
+
+func TestCheckFailed(t *testing.T) {
+	for _, c := range []struct {
+		check Check
+		want  bool
+	}{
+		{Check{Done: true, Conclusion: Failure}, true},
+		{Check{Done: true, Conclusion: TimedOut}, true},
+		{Check{Done: true, Conclusion: Cancelled}, false},
+		{Check{Done: true, Conclusion: Skipped}, false},
+		{Check{Done: true, Conclusion: Neutral}, false},
+		{Check{Done: false, Conclusion: Failure}, false},
+	} {
+		if got := c.check.Failed(); got != c.want {
+			t.Errorf("%+v.Failed() = %v, want %v", c.check, got, c.want)
+		}
+	}
+}

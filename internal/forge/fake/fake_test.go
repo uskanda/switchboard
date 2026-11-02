@@ -134,3 +134,32 @@ func TestOpenChangeRequestSkipsClosed(t *testing.T) {
 		t.Fatalf("closed: err = %v, want ErrNotFound", err)
 	}
 }
+
+func TestFakeCI(t *testing.T) {
+	ctx := context.Background()
+	f := New(nil)
+	f.AddRepo("o", "r", true)
+	f.SetChecks("o", "r", "abc", forge.Check{Name: "test", Done: true, Conclusion: forge.Failure, Job: 7}, forge.Check{Name: "build"})
+	f.SetLog(7, "FAIL")
+	checks, err := f.CommitChecks(ctx, "o", "r", "abc")
+	if err != nil || len(checks) != 2 || !checks[0].Failed() || checks[1].Done {
+		t.Fatalf("CommitChecks = %+v, %v", checks, err)
+	}
+	if log, _ := f.CheckLog(ctx, "o", "r", checks[0]); log != "FAIL" {
+		t.Errorf("CheckLog = %q", log)
+	}
+	url, _ := f.CreateChangeRequest(ctx, forge.ChangeRequest{Owner: "o", Repo: "r", Head: "switchboard/issue-1", Base: "main"})
+	n := forge.ChangeRequestNumber(url)
+	f.SetPRHead(n-1, "abc")
+	if st, err := f.ChangeRequestHead(ctx, "o", "r", n); err != nil || st.State != forge.CROpen || st.Head != "abc" {
+		t.Fatalf("ChangeRequestHead = %+v, %v", st, err)
+	}
+	f.MergePR(n - 1)
+	if st, _ := f.ChangeRequestHead(ctx, "o", "r", n); st.State != forge.CRMerged {
+		t.Errorf("state = %s, want merged", st.State)
+	}
+	f.FailCI = forge.ErrForbidden
+	if _, err := f.CommitChecks(ctx, "o", "r", "abc"); err != forge.ErrForbidden {
+		t.Errorf("err = %v, want ErrForbidden", err)
+	}
+}

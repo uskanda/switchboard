@@ -92,7 +92,8 @@ func (e *apiError) Unwrap() error {
 	return nil
 }
 
-// do sends one request. in, when non-nil, is sent as JSON; out, when non-nil, receives the JSON response.
+// do sends one request. in, when non-nil, is sent as JSON; out, when non-nil, receives the JSON response, or the
+// raw body when it is a *[]byte.
 func (c *Client) do(ctx context.Context, method, rawURL string, in, out any, header http.Header) (*http.Response, error) {
 	var body io.Reader
 	if in != nil {
@@ -148,6 +149,10 @@ func (c *Client) do(ctx context.Context, method, rawURL string, in, out any, hea
 			}
 		}
 		return nil, &apiError{method: method, path: req.URL.Path, status: resp.StatusCode, message: m.Message, details: strings.Join(details, "; ")}
+	}
+	if raw, ok := out.(*[]byte); ok {
+		*raw = data
+		return resp, nil
 	}
 	if out != nil && len(data) > 0 {
 		if err := json.Unmarshal(data, out); err != nil {
