@@ -69,21 +69,23 @@ type Agent struct {
 	msg    texts
 
 	// pmu guards the projects and routes, which a reload changes while runs and relay refreshes read them.
-	pmu        sync.RWMutex
-	projects   []config.Project
-	private    map[string]bool           // by project ref
-	desired    []config.Project          // this host's projects of the last reload, until applied
-	desiredMax int                       // agent.max_parallel of the last reload, until applied
-	reloaded   bool                      // desired holds a reload not applied yet
-	dropped    []forge.IssueRef          // queued issues of removed projects, whose queued comments are to go
-	accepting  map[string]config.Project // by ref: projects of a reload not yet cloned and labeled
-	failures   map[string]string         // by ref: the last acceptance failure logged
+	pmu           sync.RWMutex
+	projects      []config.Project
+	private       map[string]bool           // by project ref
+	desired       []config.Project          // this host's projects of the last reload, until applied
+	desiredMax    int                       // agent.max_parallel of the last reload, until applied
+	desiredPrefer bool                      // agent.prefer_plan of the last reload, until applied
+	reloaded      bool                      // desired holds a reload not applied yet
+	dropped       []forge.IssueRef          // queued issues of removed projects, whose queued comments are to go
+	accepting     map[string]config.Project // by ref: projects of a reload not yet cloned and labeled
+	failures      map[string]string         // by ref: the last acceptance failure logged
 
 	mu          sync.Mutex
-	maxParallel int // agent.max_parallel, which a reload changes
+	maxParallel int  // agent.max_parallel, which a reload changes
+	preferPlan  bool // agent.prefer_plan, which a reload changes
 	active      map[forge.IssueRef]*active
 	queued      map[forge.IssueRef]int64 // the queued comment of each queued issue; 0 while it is being posted
-	pending     map[forge.IssueRef]config.Project
+	pending     map[forge.IssueRef]queuedRun
 	seen        map[forge.IssueRef]time.Time
 	// unsettled holds the issues whose evaluation did not finish (an error, a queue, a lock), so that since stays
 	// at or before their update time and they are evaluated again (#27).
@@ -214,9 +216,10 @@ func (a *Agent) Start(ctx context.Context) error {
 	a.ctx = ctx
 	a.msg = textsFor(a.Config.Comments.Language)
 	a.maxParallel = a.Config.Agent.MaxParallel
+	a.preferPlan = a.Config.Agent.PreferPlan
 	a.active = map[forge.IssueRef]*active{}
 	a.queued = map[forge.IssueRef]int64{}
-	a.pending = map[forge.IssueRef]config.Project{}
+	a.pending = map[forge.IssueRef]queuedRun{}
 	a.seen = map[forge.IssueRef]time.Time{}
 	a.unsettled = map[forge.IssueRef]unsettledIssue{}
 	a.writebacks = map[forge.IssueRef]*pendingWriteBack{}
@@ -693,7 +696,13 @@ func (a *Agent) launch(ctx context.Context, pl *plan) error {
 			a.mu.Unlock()
 			return errQueued // the CI watch tries again at the next poll; a done issue is never queued
 		}
-		a.pending[ref] = pl.project
+		// An issue already queued keeps its place; its kind may have changed meanwhile (a plan approved).
+		q, ok := a.pending[ref]
+		if !ok {
+			q.since = time.Now()
+		}
+		q.project, q.plan = pl.project, pl.kind == planRun
+		a.pending[ref] = q
 		_, noted := a.queued[ref]
 		if !noted {
 			a.queued[ref] = 0
@@ -784,21 +793,46 @@ func (a *Agent) resume(p config.Project, ref forge.IssueRef) {
 	}
 }
 
-// drain starts queued issues while slots are free. An issue whose project is at its limit stays queued and does
-// not hold up the issues of other projects.
-func (a *Agent) drain(ctx context.Context) {
-	a.mu.Lock()
+// queuedRun is an issue waiting for a slot: its project, whether its run is a plan run, and when it entered the
+// queue.
+type queuedRun struct {
+	project config.Project
+	plan    bool
+	since   time.Time
+}
+
+// queueOrder is the order in which drain offers the slots (ADR-044): the plan runs first when preferPlan is on, then
+// the earliest in the queue, then by ref. Call it with mu held.
+func (a *Agent) queueOrder() []forge.IssueRef {
 	refs := make([]forge.IssueRef, 0, len(a.pending))
 	for ref := range a.pending {
 		refs = append(refs, ref)
 	}
+	sort.Slice(refs, func(i, j int) bool {
+		qi, qj := a.pending[refs[i]], a.pending[refs[j]]
+		if a.preferPlan && qi.plan != qj.plan {
+			return qi.plan
+		}
+		if !qi.since.Equal(qj.since) {
+			return qi.since.Before(qj.since)
+		}
+		return refs[i].String() < refs[j].String()
+	})
+	return refs
+}
+
+// drain starts queued issues while slots are free, in queueOrder. An issue whose project is at its limit stays
+// queued and does not hold up the issues of other projects.
+func (a *Agent) drain(ctx context.Context) {
+	a.mu.Lock()
+	refs := a.queueOrder()
 	a.mu.Unlock()
-	sort.Slice(refs, func(i, j int) bool { return refs[i].String() < refs[j].String() })
 	for _, ref := range refs {
 		limit := a.projectLimit(ref)
 		a.mu.Lock()
 		full := len(a.active) >= a.maxParallel
-		p, ok := a.pending[ref]
+		q, ok := a.pending[ref]
+		p := q.project
 		slot, _, _ := a.hasSlot(ref, limit)
 		free := ok && !full && slot
 		if free {
@@ -817,6 +851,7 @@ func (a *Agent) drain(ctx context.Context) {
 			delete(a.unsettled, ref)
 			a.mu.Unlock()
 		case errors.Is(err, errQueued):
+			a.keepPlace(ref, q.since)
 		default:
 			// The next poll lists the issue again, since it stays unsettled; it now shortens the interval.
 			a.mu.Lock()
@@ -827,6 +862,16 @@ func (a *Agent) drain(ctx context.Context) {
 			a.mu.Unlock()
 			a.logf("%s: %v", ref, err)
 		}
+	}
+}
+
+// keepPlace gives ref back the time it entered the queue, when drain took it out and launch queued it again.
+func (a *Agent) keepPlace(ref forge.IssueRef, since time.Time) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if q, ok := a.pending[ref]; ok {
+		q.since = since
+		a.pending[ref] = q
 	}
 }
 
