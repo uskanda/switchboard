@@ -45,8 +45,9 @@ cat > "$rec/stdin"
 sid=""
 prev=""
 for a in "$@"; do [ "$prev" = "--session-id" ] && sid="$a"; prev="$a"; done
-end=$(( $(date +%%s) + %d ))
-while [ %d -gt 0 ] && [ "$(date +%%s)" -lt "$end" ]; do sleep 0.05; done
+# SECONDS is a builtin: a $(date) subshell killed by the group's SIGINT would end the loop early.
+end=$(( SECONDS + %d ))
+while [ %d -gt 0 ] && [ "$SECONDS" -lt "$end" ]; do sleep 0.05; done
 sed -e "s/__SESSION__/$sid/g" -e "s#__CWD__#$(pwd)#g" %q
 exit %d
 `, rec, intAction, termAction, int(sleep+0.999), int(sleep*1000), fixturePath, exit)
