@@ -16,11 +16,14 @@ type texts struct {
 
 	// A push the agent does not fix: the title, why for each kind, and the heading of git's output.
 	pushTitle, pushAuth, pushRule, pushMoved, gitOutput string
-	// The claims of fix runs: of a CI failure (attempt, limit, checks) and of a branch that moved on (attempt, limit).
-	fixCI, fixPush string
+	// The claims of fix runs: of a CI failure (attempt, limit, checks), of a branch that moved on, and of a conflict
+	// with the base (attempt, limit).
+	fixCI, fixPush, fixConflict string
 	// The wait after the CI failed for good: the title, the lead (change request, fixes made, limit; or the change
 	// request alone when fixes are off), the headings, and the reply hint.
 	ciTitle, ciFailed, ciNoFixes, ciChecks, ciAttempts, ciAttempt, ciLog, ciReply string
+	// The wait after the change request kept conflicting with its base: the title and the lead, as for the CI.
+	conflictTitle, conflictFailed, conflictNoFixes string
 
 	// The queued comment: on the host's limit (host name, value) or on the project's (value).
 	queuedHost, queuedProject string
@@ -87,8 +90,9 @@ var english = texts{
 	pushMoved: "The issue branch on the remote has commits the worktree does not, and the agent already made %d fix run(s) for this issue (the limit is %d). Merge or reset the branch, then reply.",
 	gitOutput: "git's output",
 
-	fixCI:   "The CI failed, so the agent fixes it (%d/%d): %s",
-	fixPush: "The push was refused because the issue branch on the remote moved on, so the agent merges it (%d/%d).",
+	fixCI:       "The CI failed, so the agent fixes it (%d/%d): %s",
+	fixPush:     "The push was refused because the issue branch on the remote moved on, so the agent merges it (%d/%d).",
+	fixConflict: "The change request conflicts with the base branch, so the agent merges the base (%d/%d).",
 
 	ciTitle:    "The CI still fails",
 	ciFailed:   "The CI of %s failed again after %d automatic fix run(s); the limit is %d.",
@@ -98,6 +102,10 @@ var english = texts{
 	ciAttempt:  "Fix %d",
 	ciLog:      "End of the log of %s",
 	ciReply:    "Reply to this issue to run the agent again; the count of automatic fixes then starts over.",
+
+	conflictTitle:   "The change request still conflicts with the base branch",
+	conflictFailed:  "%s still conflicts with the base branch after %d automatic fix run(s); the limit is %d.",
+	conflictNoFixes: "%s conflicts with the base branch. Automatic fixes are off (agent.max_fix_attempts is 0).",
 
 	progressTitle:    "Progress of the run",
 	toolSep:          ", ",
@@ -162,8 +170,9 @@ var japanese = texts{
 	pushMoved: "リモートのissueのブランチに、worktreeに無いコミットがあります。このissueでは、エージェントは既に%d回直しました（上限は%d回）。ブランチを取り込むか戻してから返信してください。",
 	gitOutput: "gitの出力",
 
-	fixCI:   "CIが失敗したので直します（%d/%d）：%s",
-	fixPush: "リモートのissueのブランチが先に進んでいてpushが拒否されたので、取り込んで直します（%d/%d）。",
+	fixCI:       "CIが失敗したので直します（%d/%d）：%s",
+	fixPush:     "リモートのissueのブランチが先に進んでいてpushが拒否されたので、取り込んで直します（%d/%d）。",
+	fixConflict: "変更要求がbaseと衝突しているので、baseとの衝突を解消します（%d/%d）。",
 
 	ciTitle:    "CIが失敗したままです",
 	ciFailed:   "%sのCIが、%d回自動で直した後も失敗しました。上限は%d回です。",
@@ -173,6 +182,10 @@ var japanese = texts{
 	ciAttempt:  "%d回目",
 	ciLog:      "%sのログの末尾",
 	ciReply:    "このissueに返信すると、エージェントが再び実行します。自動で直す回数は数え直します。",
+
+	conflictTitle:   "baseとの衝突が残っています",
+	conflictFailed:  "%sは、%d回自動で直した後もbaseと衝突しています。上限は%d回です。",
+	conflictNoFixes: "%sがbaseと衝突しています。自動で直す設定は切ってあります（agent.max_fix_attemptsが0）。",
 
 	progressTitle:    "実行の進捗",
 	toolSep:          "・",

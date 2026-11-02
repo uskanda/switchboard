@@ -59,6 +59,9 @@ type Server struct {
 	Projects *Projects
 	// NewIssues, when set, serves /v1/issue-targets and /v1/issues.
 	NewIssues *NewIssues
+	// Merges, when set, serves /v1/merge: it merges change requests with each forge's inbox token, by forge kind
+	// (ADR-043). The Inbox must be a Merger.
+	Merges map[string]forge.Merges
 	// Relay reports that the service follows the relay's events (inbox.relay is set): the listings then say
 	// whether it is connected, and RelayState and RelayEvent are called as the stream goes.
 	Relay bool
@@ -147,6 +150,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.NewIssues != nil {
 		routes["/v1/issue-targets"] = route{http.MethodGet, s.issueTargets}
 		routes["/v1/issues"] = route{http.MethodPost, s.createIssue}
+	}
+	if s.Merges != nil {
+		routes["/v1/merge"] = route{http.MethodPost, s.merge}
 	}
 	rt := routes[r.URL.Path]
 	switch {
@@ -365,7 +371,8 @@ func (s *Server) issue(w http.ResponseWriter, r *http.Request) {
 func detailOf(d *inbox.Detail) inboxapi.Detail {
 	out := inboxapi.Detail{
 		Ref: d.Ref, Title: d.Title, URL: d.URL, Waiting: d.Waiting, Done: d.Done, Host: d.Host, State: d.State, Reason: d.Reason,
-		Since: d.Since, Post: d.Post, ApproveWord: d.ApproveWord, Author: d.Author, CreatedAt: d.CreatedAt, Body: d.Body,
+		Since: d.Since, Post: d.Post, ApproveWord: d.ApproveWord, ChangeURL: d.ChangeURL, ChangeNumber: d.ChangeNumber,
+		ChangeSHA: d.ChangeSHA, Author: d.Author, CreatedAt: d.CreatedAt, Body: d.Body,
 		Comments: []inboxapi.Comment{},
 	}
 	for _, c := range d.Comments {

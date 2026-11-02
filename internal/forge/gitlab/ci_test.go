@@ -85,3 +85,16 @@ func TestChangeRequestHead(t *testing.T) {
 		}
 	}
 }
+
+func TestChangeRequestConflict(t *testing.T) {
+	s, c := newServer(t)
+	s.on("GET /api/v4/projects/nas%2Fx/merge_requests/10", jsonReply(map[string]any{"state": "opened", "sha": "abc", "has_conflicts": true, "detailed_merge_status": "conflict"}))
+	s.on("GET /api/v4/projects/nas%2Fx/merge_requests/11", jsonReply(map[string]any{"state": "opened", "sha": "abc", "has_conflicts": true, "detailed_merge_status": "checking"}))
+	s.on("GET /api/v4/projects/nas%2Fx/merge_requests/12", jsonReply(map[string]any{"state": "opened", "sha": "abc", "has_conflicts": false, "detailed_merge_status": "mergeable"}))
+	for n, want := range map[int]bool{10: true, 11: false, 12: false} {
+		st, err := c.ChangeRequestHead(ctx, "nas", "x", n)
+		if err != nil || st.Conflict != want {
+			t.Errorf("ChangeRequestHead(%d) = %+v, %v, want Conflict %v", n, st, err, want)
+		}
+	}
+}

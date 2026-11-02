@@ -58,6 +58,12 @@ func (c *Client) Reply(ctx context.Context, ref, text string, force bool) error 
 	return c.do(ctx, http.MethodPost, "/v1/reply", ReplyRequest{Ref: ref, Text: text, Force: force}, nil)
 }
 
+// Merge marks the change request of a done issue ready and merges it with the inbox token, only at sha. It is
+// refused with ErrStale, ErrNotMergeable or ErrForbidden.
+func (c *Client) Merge(ctx context.Context, ref, sha string) error {
+	return c.do(ctx, http.MethodPost, "/v1/merge", MergeRequest{Ref: ref, SHA: sha}, nil)
+}
+
 // Instructions returns the additional instructions of the plan runs, as the inbox service's machine has them.
 func (c *Client) Instructions(ctx context.Context) (*Instructions, error) {
 	var out Instructions

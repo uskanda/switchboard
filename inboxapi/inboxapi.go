@@ -32,6 +32,10 @@ type Item struct {
 	QueuedSince  *time.Time `json:"queued_since,omitempty"`
 	DoneSince    *time.Time `json:"done_since,omitempty"`
 	ChangeURL    string     `json:"change_url,omitempty"`
+	// ChangeNumber and ChangeSHA are the change request and the commit the marker of the latest done post names; a
+	// page offers the merge (POST /v1/merge) only with both.
+	ChangeNumber int    `json:"change_number,omitempty"`
+	ChangeSHA    string `json:"change_sha,omitempty"`
 	// UpdatedAt and Notes are the forge's update time and count of people's comments (GitLab's user_notes_count, 0
 	// on GitHub): a page watching one issue reads it again when either moves.
 	UpdatedAt *time.Time `json:"updated_at"`
@@ -84,6 +88,10 @@ type Detail struct {
 	Post    string     `json:"post"`
 	// ApproveWord is the word whose reply approves a plan, such as /ok.
 	ApproveWord string `json:"approve_word,omitempty"`
+	// ChangeURL, ChangeNumber and ChangeSHA are set on an open done issue, as on its Item.
+	ChangeURL    string `json:"change_url,omitempty"`
+	ChangeNumber int    `json:"change_number,omitempty"`
+	ChangeSHA    string `json:"change_sha,omitempty"`
 	// Author, CreatedAt and Body are the issue's own; Comments are all its comments, oldest first.
 	Author    string     `json:"author"`
 	CreatedAt *time.Time `json:"created_at"`
@@ -210,11 +218,21 @@ type CreateIssueResponse struct {
 	URL string `json:"url"`
 }
 
+// MergeRequest is the body of POST /v1/merge: the issue, and the commit of its change request the page showed
+// (ChangeSHA). The inbox service merges the change request the agent's latest done post names, only at that commit.
+type MergeRequest struct {
+	Ref string `json:"ref"`
+	SHA string `json:"sha"`
+}
+
 // The codes of Error.
 const (
 	CodeInvalid        = "invalid"         // 400
 	CodeNotFound       = "not_found"       // 404
 	CodeNotWaiting     = "not_waiting"     // 409
+	CodeStale          = "stale"           // 409: the issue or its change request is not what the page showed
+	CodeNotMergeable   = "not_mergeable"   // 409: the forge refused the merge
+	CodeForbidden      = "forbidden"       // 403: the inbox token may not merge
 	CodeTooLarge       = "too_large"       // 413
 	CodeSecret         = "secret"          // 422
 	CodeUnknownProject = "unknown_project" // 422
@@ -247,6 +265,12 @@ func (e *Error) Is(target error) bool {
 		return e.Code == CodeNotFound
 	case ErrNotWaiting:
 		return e.Code == CodeNotWaiting
+	case ErrStale:
+		return e.Code == CodeStale
+	case ErrNotMergeable:
+		return e.Code == CodeNotMergeable
+	case ErrForbidden:
+		return e.Code == CodeForbidden
 	case ErrTooLarge:
 		return e.Code == CodeTooLarge
 	case ErrSecret:
@@ -275,6 +299,10 @@ var (
 	ErrInvalid    = errors.New("invalid request")
 	ErrNotFound   = errors.New("not found")
 	ErrNotWaiting = errors.New("the issue is not waiting")
+	// ErrStale, ErrNotMergeable and ErrForbidden are the refusals of a merge.
+	ErrStale        = errors.New("the issue changed since the page read it")
+	ErrNotMergeable = errors.New("the forge refused the merge")
+	ErrForbidden    = errors.New("the inbox token may not do this")
 	// ErrTooLarge, ErrSecret and ErrUnknownProject are the refusals of a save of instructions; ErrTooLarge and
 	// ErrUnknownProject also refuse a new issue.
 	ErrTooLarge       = errors.New("too large")

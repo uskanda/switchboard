@@ -175,4 +175,9 @@ func TestFixSystem(t *testing.T) {
 	if !strings.Contains(push, "git merge") || !strings.Contains(push, "Japanese") || !strings.Contains(push, "git rebase") {
 		t.Errorf("FixSystem(push) = %s", push)
 	}
+	conflict := FixSystem("en", "develop", FixConflict)
+	if !strings.Contains(conflict, "The change request conflicts with its base branch") || !strings.Contains(conflict, "Run git merge origin/develop") ||
+		!strings.Contains(conflict, `"waiting" with a question`) || strings.Contains(conflict, "The CI of the change request failed") {
+		t.Errorf("FixSystem(conflict) = %s", conflict)
+	}
 }

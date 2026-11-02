@@ -291,3 +291,39 @@ func TestCreateIssueRefusalsAreTyped(t *testing.T) {
 		t.Fatalf("err = %v, want ErrUnknownProject", err)
 	}
 }
+
+func TestMergePostsJSONAndTypesTheRefusals(t *testing.T) {
+	var got MergeRequest
+	status, code := http.StatusNoContent, ""
+	c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/merge" || r.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("%s %s %s", r.Method, r.URL, r.Header.Get("Content-Type"))
+		}
+		json.NewDecoder(r.Body).Decode(&got)
+		if code == "" {
+			w.WriteHeader(status)
+			return
+		}
+		reply(w, status, Error{Code: code, Message: "refused"})
+	})
+	if err := c.Merge(ctx, "gh:o/r#5", "abc"); err != nil {
+		t.Fatal(err)
+	}
+	if got != (MergeRequest{Ref: "gh:o/r#5", SHA: "abc"}) {
+		t.Errorf("sent %+v", got)
+	}
+	for _, tc := range []struct {
+		status int
+		code   string
+		want   error
+	}{
+		{http.StatusConflict, CodeStale, ErrStale},
+		{http.StatusConflict, CodeNotMergeable, ErrNotMergeable},
+		{http.StatusForbidden, CodeForbidden, ErrForbidden},
+	} {
+		status, code = tc.status, tc.code
+		if err := c.Merge(ctx, "gh:o/r#5", "abc"); !errors.Is(err, tc.want) {
+			t.Errorf("%s: err = %v, want %v", tc.code, err, tc.want)
+		}
+	}
+}

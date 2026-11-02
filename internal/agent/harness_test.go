@@ -80,6 +80,11 @@ for a in "$@"; do
   prev=$a
 done
 echo "$session" > "$ctl/session-$n"
+prev=""
+for a in "$@"; do
+  [ "$prev" = "--append-system-prompt-file" ] && cp "$a" "$ctl/system-$n.md"
+  prev=$a
+done
 cat > "$ctl/prompt-$n.md"
 env > "$ctl/env-$n"
 step="$ctl/step-$n.sh"

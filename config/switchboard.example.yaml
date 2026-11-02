@@ -13,13 +13,13 @@ secrets:
 forges:
   github:
     token_ref: switchboard/github     # agent token: issues, pull requests, contents
-    inbox_token_ref: switchboard/github-inbox   # your own identity: issues read/write only (inbox and reply)
+    inbox_token_ref: switchboard/github-inbox   # your own identity: issues, pull requests and contents read/write (inbox, reply, merging from the web inbox)
     agent_identity: YOUR_GITHUB_USER  # the account the agent posts as (Phase 1: the same as yours)
     search_scope: "user:YOUR_GITHUB_USER"       # inbox search scope (org:NAME also works)
   # gitlab:                            # needed once a project is gl:
   #   base_url: https://gitlab.com      # the default; a self-managed GitLab goes here
   #   token_ref: switchboard/gitlab     # agent token: a fine-grained personal access token (GitLab 19.2+), else the api scope
-  #   inbox_token_ref: switchboard/gitlab-inbox   # your own identity for the inbox and reply
+  #   inbox_token_ref: switchboard/gitlab-inbox   # your own identity for the inbox, reply and merging (the api scope)
   #   agent_identity: YOUR_GITLAB_USER
 
 trusted_authors:                      # accounts whose comments are taken as instructions
