@@ -3,7 +3,8 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { ApiError, createIssue, getIssueTargets, type CreatedIssue, type IssueTargets, type StartKind } from "@/lib/api";
+import { ApiError, createIssue, getIssueTargets, type IssueTargets, type StartKind } from "@/lib/api";
+import { toast } from "@/lib/toast";
 
 /** What each kind of start does, before the label it stands for. */
 const startText: Record<StartKind, string> = {
@@ -36,7 +37,7 @@ function failure(err: unknown): string {
 /**
  * NewIssue is the button above the list that opens a dialog for a new issue in any configured project, with a start
  * label. The issue is opened with the inbox token, so the agent takes it up (ADR-040). Once it is opened the dialog
- * closes and a notice above the list links to it on the forge.
+ * closes and a success toast links to it on the forge.
  */
 export function NewIssue() {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -48,7 +49,6 @@ export function NewIssue() {
   const [start, setStart] = useState<StartKind>("ready");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [created, setCreated] = useState<CreatedIssue | null>(null);
 
   function open() {
     setError(null);
@@ -70,7 +70,18 @@ export function NewIssue() {
     setError(null);
     try {
       const out = await createIssue({ ref: project, title: title.trim(), body, start });
-      setCreated(out);
+      toast.success(
+        <>
+          <span className="font-mono text-mono-sm break-all">{out.ref}</span> を作りました
+        </>,
+        {
+          action: (
+            <a href={out.url} target="_blank" rel="noreferrer" className="self-start underline focus-visible:outline-2 focus-visible:outline-primary">
+              フォージで開く
+            </a>
+          ),
+        },
+      );
       setTitle("");
       setBody("");
       dialog.current?.close();
@@ -90,26 +101,6 @@ export function NewIssue() {
         <Button type="button" variant="secondary" onClick={open}>
           新規issue
         </Button>
-      </div>
-      <div aria-live="polite">
-        {created && (
-          <div role="status" className="flex items-start gap-sm rounded-md border border-outline bg-surface-raised p-sm text-label-md">
-            <p className="flex-1 break-words">
-              <span className="font-mono text-mono-sm break-all">{created.ref}</span> を作りました。
-              <a href={created.url} target="_blank" rel="noreferrer" className="underline focus-visible:outline-2 focus-visible:outline-primary">
-                フォージで開く
-              </a>
-            </p>
-            <button
-              type="button"
-              aria-label="知らせを閉じる"
-              onClick={() => setCreated(null)}
-              className="-m-xs inline-flex size-11 shrink-0 items-center justify-center rounded-md text-muted focus-visible:outline-2 focus-visible:outline-primary"
-            >
-              ×
-            </button>
-          </div>
-        )}
       </div>
       <dialog
         ref={dialog}

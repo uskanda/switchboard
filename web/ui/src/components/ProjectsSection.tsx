@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ApiError, addProject, getProjects, type AddedProject, type Project, type Projects } from "@/lib/api";
+import { toast } from "@/lib/toast";
 
 function failure(err: unknown): string {
   if (err instanceof ApiError) {
@@ -117,11 +118,14 @@ function AddForm({ onAdded }: { onAdded: (added: AddedProject) => void }) {
   );
 }
 
-/** ProjectsSection lists the projects of the inbox service's machine and, when enabled, adds one. */
+/**
+ * ProjectsSection lists the projects of the inbox service's machine and, when enabled, adds one. An addition is told in
+ * a toast; the webhook command, which is copied and run on the relay's machine, stays under the list.
+ */
 export function ProjectsSection({ onAdded }: { onAdded?: () => void }) {
   const [data, setData] = useState<Projects | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [added, setAdded] = useState<AddedProject | null>(null);
+  const [webhook, setWebhook] = useState<string | null>(null);
 
   const load = () => getProjects().then(setData, (err) => setError(failure(err)));
   useEffect(() => {
@@ -148,24 +152,23 @@ export function ProjectsSection({ onAdded }: { onAdded?: () => void }) {
           ))}
         </ul>
       )}
-      {added && (
-        <div role="status" className="flex flex-col gap-xs text-label-md text-muted">
-          <p>
-            <span className="font-mono text-mono-sm">{added.project.ref}</span> を追加しました。エージェントが10秒ほどでクローンし、状態ラベルを作ります。
-          </p>
-          {added.webhook && (
-            <p>
-              中継の端末で次を実行すると、webhook で早く着手します。登録するまでは、ポーリングで扱います：
-              <code className="block font-mono text-mono-sm break-all">{added.webhook}</code>
-            </p>
-          )}
-        </div>
+      {webhook && (
+        <p className="text-label-md text-muted">
+          中継の端末で次を実行すると、webhook で早く着手します。登録するまでは、ポーリングで扱います：
+          <code className="block font-mono text-mono-sm break-all">{webhook}</code>
+        </p>
       )}
       {data &&
         (data.enabled ? (
           <AddForm
-            onAdded={(a) => {
-              setAdded(a);
+            onAdded={(a: AddedProject) => {
+              toast.success(
+                <>
+                  <span className="font-mono text-mono-sm break-all">{a.project.ref}</span> を追加しました
+                </>,
+                { description: "エージェントが10秒ほどでクローンし、状態ラベルを作ります。" },
+              );
+              setWebhook(a.webhook ?? null);
               load();
               onAdded?.();
             }}

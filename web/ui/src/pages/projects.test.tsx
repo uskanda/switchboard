@@ -96,9 +96,13 @@ describe("the projects of the settings", () => {
     await userEvent.click(screen.getByRole("button", { name: "追加する" }));
     const section = screen.getByRole("region", { name: "プロジェクト" });
     await waitFor(() => expect(within(section).getAllByRole("listitem")).toHaveLength(2));
-    expect(within(section).getByRole("status")).toHaveTextContent("gh:o/notes を追加しました");
+    // The addition is told in a toast; the webhook command stays under the section to be copied.
+    const toast = (await screen.findByText(/を追加しました/)).closest<HTMLElement>("[data-sonner-toast]");
+    expect(toast).toHaveClass("toast-success");
+    expect(toast).toHaveTextContent("gh:o/notes を追加しました");
+    expect(within(section).queryByText(/を追加しました/)).toBeNull();
     expect(within(section).getByText("switchboard relay hook add gh:o/notes")).toBeInTheDocument();
-    expect(within(section).getByRole("status")).toHaveTextContent("登録するまでは、ポーリングで扱います");
+    expect(within(section).getByText(/登録するまでは、ポーリングで扱います/)).toBeInTheDocument();
     const post = calls.find((c) => c.key === "POST /api/projects");
     expect(JSON.parse(String(post?.init?.body))).toEqual({ ref: "gh:o/notes", plan_first: true });
     expect(new Headers(post?.init?.headers).get("Content-Type")).toBe("application/json");
@@ -131,6 +135,9 @@ describe("the projects of the settings", () => {
     await waitFor(() => expect(calls.some((c) => c.key === "POST /api/projects")).toBe(true));
     const post = calls.find((c) => c.key === "POST /api/projects");
     expect(JSON.parse(String(post?.init?.body))).toEqual({ ref: "gh:o/notes", plan_first: false });
+    // Without a relay there is no webhook command to leave under the list.
+    await screen.findByText(/を追加しました/);
+    expect(screen.queryByText(/webhook/)).toBeNull();
   });
 
   it("read the instructions again, so that the new project has its field", async () => {
