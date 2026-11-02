@@ -34,4 +34,6 @@ afterEach(() => {
   forgetSent();
   resetObservers();
   dismiss();
+  // The pending marks (lib/pending.ts) live in the tab's storage, which jsdom keeps across the tests of a file.
+  sessionStorage.clear();
 });

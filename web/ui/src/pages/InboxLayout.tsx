@@ -68,7 +68,7 @@ function PaneBorder({ width, setWidth }: { width: number; setWidth: (w: number) 
 export function InboxLayout() {
   const ref = useParams().ref;
   const [width, setWidth] = useListWidth();
-  const { inbox } = useInbox();
+  const { inbox, view } = useInbox();
   usePageTitle(ref && (inbox?.items.find((it) => it.ref === ref)?.title ?? ref));
   const navigate = useNavigate();
   useEffect(() => {
@@ -82,14 +82,15 @@ export function InboxLayout() {
         reply.focus();
         return;
       }
-      const to = stepWait(inbox?.items.filter(isWaiting) ?? [], ref, e.key === "j" ? 1 : -1);
+      // The waits as the list shows them: an issue being processed (lib/pending.ts) is shown under running.
+      const to = stepWait(view?.filter(isWaiting) ?? [], ref, e.key === "j" ? 1 : -1);
       if (!to) return;
       e.preventDefault();
       void navigate(issuePath(to.ref));
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [inbox, ref, navigate]);
+  }, [view, ref, navigate]);
   return (
     <div className="flex min-h-dvh flex-col lg:h-dvh">
       <Header />

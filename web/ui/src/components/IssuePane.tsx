@@ -140,7 +140,7 @@ const headerHeight = () => parseFloat(getComputedStyle(document.documentElement)
  * scrolled, the title is cut to two lines, with the whole of it in its title.
  */
 export function IssuePane({ issueRef }: { issueRef: string }) {
-  const { inbox } = useInbox();
+  const { inbox, view, markPending } = useInbox();
   const navigate = useNavigate();
   const item = inbox?.items.find((it) => it.ref === issueRef);
   const key = item ? watchKey(item) : inbox ? "gone" : "first";
@@ -285,6 +285,8 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
     try {
       await postReply(issueRef, reply);
       if (item && isWaiting(item)) markSent(item);
+      // The list shows the issue as being processed until the agent takes the reply up (lib/pending.ts).
+      markPending(issueRef, "reply");
       justSent.current = true;
       if (detail) setSentAt(markOf(detail));
       setText("");
@@ -325,8 +327,10 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
     justSent.current = false;
     (nextButton.current ?? sentLine.current)?.focus();
   }, [sent]);
-  // The wait to go to next is looked for while the reply stays said to be sent, on the list as it is now.
-  const next = sent ? nextWait(inbox?.items.filter(isWaiting) ?? [], issueRef) : null;
+  // The wait to go to next is looked for while the reply stays said to be sent, on the list as it is now. The listing
+  // keeps its order, with current in it; an issue the list shows as being processed (lib/pending.ts) is passed over.
+  const busy = new Set(view?.filter((it) => it.pending).map((it) => it.ref));
+  const next = sent ? nextWait(inbox?.items.filter((it) => isWaiting(it) && (it.ref === issueRef || !busy.has(it.ref))) ?? [], issueRef) : null;
   // The form stays while something is typed or chosen, so a draft survives the issue leaving its wait.
   const showForm = detail && !sent && (replyable || text !== "" || touched);
 
