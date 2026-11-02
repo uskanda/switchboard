@@ -54,20 +54,20 @@ describe("the settings", () => {
     answer({ "GET /api/instructions": { status: 200, body: instructions } });
     at("/settings");
     expect(await screen.findByRole("textbox", { name: "すべてのプロジェクト" })).toHaveValue("");
-    expect(screen.getByRole("textbox", { name: "gh:o/r" })).toHaveValue("Mind the API names.");
-    expect(screen.getByRole("textbox", { name: "gl:nas/sb" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "o/r GitHub" })).toHaveValue("Mind the API names.");
+    expect(screen.getByRole("textbox", { name: "nas/sb GitLab" })).toBeInTheDocument();
     expect(screen.getByText(/のファイルです/)).toHaveTextContent("ubuntu-a");
   });
 
   it("save one field and say so in a toast", async () => {
     const calls = answer({ "GET /api/instructions": { status: 200, body: instructions }, "POST /api/instructions": { status: 204 } });
     at("/settings");
-    const field = await screen.findByRole("textbox", { name: "gl:nas/sb" });
+    const field = await screen.findByRole("textbox", { name: "nas/sb GitLab" });
     await userEvent.type(field, "Ask in Japanese.");
     const card = field.closest("section")!;
     await userEvent.click(within(card as HTMLElement).getByRole("button", { name: "保存する" }));
     const status = await screen.findByRole("status");
-    expect(status).toHaveTextContent("保存しました");
+    expect(status).toHaveTextContent("nas/sb GitLabの指示を保存しました");
     expect(status.closest("[data-sonner-toast]")).toHaveClass("toast-success");
     expect(within(card as HTMLElement).queryByText("保存しました")).toBeNull();
     const post = calls.find((c) => c.key === "POST /api/instructions");
@@ -83,7 +83,7 @@ describe("the settings", () => {
     at("/settings");
     const global = await screen.findByRole("textbox", { name: "すべてのプロジェクト" });
     await userEvent.type(global, "keep me");
-    const field = screen.getByRole("textbox", { name: "gh:o/r" });
+    const field = screen.getByRole("textbox", { name: "o/r GitHub" });
     await userEvent.type(field, " ghp_x");
     const card = field.closest("section") as HTMLElement;
     await userEvent.click(within(card).getByRole("button", { name: "保存する" }));

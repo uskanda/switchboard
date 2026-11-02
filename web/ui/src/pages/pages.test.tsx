@@ -46,7 +46,11 @@ describe("the inbox", () => {
     expect(await screen.findAllByText("<script>alert(1)</script>")).not.toHaveLength(0);
     expect(screen.getByRole("heading", { level: 1, name: "SwitchBoard Inbox" })).toBeInTheDocument();
     expect(document.querySelector("script")).toBeNull();
-    expect(screen.getAllByText("gh:o/r#12")[0].closest("a")).toHaveAttribute("href", "/issue/gh%3Ao%2Fr%2312");
+    expect(screen.getAllByText("o/r#12")[0].closest("a")).toHaveAttribute("href", "/issue/gh%3Ao%2Fr%2312");
+    expect(screen.queryByText(/gh:o\/r#12/)).toBeNull();
+    // The forge is a badge after the reference, not a prefix.
+    expect(screen.getAllByText("o/r#12")[0].nextElementSibling).toHaveTextContent("GitHub");
+    expect(screen.getAllByText("nas/sb#6")[0].nextElementSibling).toHaveTextContent("GitLab");
     expect(screen.getAllByText("question")[0]).toBeInTheDocument();
     expect(screen.getAllByText("error")[0]).toBeInTheDocument();
     expect(screen.getAllByText("3時間前")[0]).toBeInTheDocument();
@@ -57,7 +61,7 @@ describe("the inbox", () => {
     answer({ "GET /api/inbox": { status: 200, body: { items: [item], errors: [{ forge: "gitlab", message: "connection refused" }], fetched_at: "" } } });
     at("/");
     expect(await screen.findByRole("alert")).toHaveTextContent("gitlab");
-    expect(screen.getAllByText("gh:o/r#12")[0]).toBeInTheDocument();
+    expect(screen.getAllByText("o/r#12")[0]).toBeInTheDocument();
   });
 
   it("says so when the inbox service is not reachable", async () => {
@@ -87,6 +91,8 @@ describe("one issue", () => {
     expect(screen.getByText(/Bash: `rm -rf \/`/)).toBeInTheDocument();
     expect(screen.getByText(/Which default\?/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /フォージで開く/ })).toHaveAttribute("href", detail.url);
+    expect(screen.getByText("o/r#12").nextElementSibling).toHaveTextContent("GitHub");
+    expect(screen.queryByText(/gh:o\/r#12/)).toBeNull();
   });
 
   it("posts the reply and says it was sent", async () => {

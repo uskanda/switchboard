@@ -1,9 +1,11 @@
 import { useId, useRef, useState, type FormEvent } from "react";
+import { IssueRef } from "@/components/IssueRef";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiError, createIssue, getIssueTargets, type IssueTargets, type StartKind } from "@/lib/api";
+import { refText } from "@/lib/ref";
 import { toast } from "@/lib/toast";
 
 /** What each kind of start does, before the label it stands for. */
@@ -72,7 +74,7 @@ export function NewIssue() {
       const out = await createIssue({ ref: project, title: title.trim(), body, start });
       toast.success(
         <>
-          <span className="font-mono text-mono-sm break-all">{out.ref}</span> を作りました
+          <IssueRef value={out.ref} /> を作りました
         </>,
         {
           action: (
@@ -124,7 +126,7 @@ export function NewIssue() {
             >
               {targets?.items.map((it) => (
                 <option key={it.ref} value={it.ref}>
-                  {it.ref}（担当：{it.host}）
+                  {refText(it.ref)}（担当：{it.host}）
                 </option>
               ))}
             </select>

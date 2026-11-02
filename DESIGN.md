@@ -24,6 +24,10 @@ colors:
   success: "#1E6B37"
   on-success-container: "#14532D"
   success-container: "#E2F2E5"
+  forge-github: "#24292F"
+  forge-github-container: "#E6EBF1"
+  forge-gitlab: "#5B3BB0"
+  forge-gitlab-container: "#EEE8FB"
   dark-surface: "#16181C"
   dark-on-surface: "#E8E6E1"
   dark-surface-raised: "#1F2227"
@@ -37,6 +41,10 @@ colors:
   dark-error-container: "#3D1D1A"
   dark-success: "#7FD39A"
   dark-success-container: "#16301F"
+  dark-forge-github: "#C9D1D9"
+  dark-forge-github-container: "#252C35"
+  dark-forge-gitlab: "#C4B5FD"
+  dark-forge-gitlab-container: "#2A2140"
 typography:
   headline-md:
     fontFamily: system-ui, "Hiragino Sans", "Noto Sans JP", sans-serif
@@ -98,6 +106,18 @@ components:
     typography: "{typography.label-md}"
     rounded: "{rounded.sm}"
     padding: "{spacing.xs}"
+  badge-github:
+    backgroundColor: "{colors.forge-github-container}"
+    textColor: "{colors.forge-github}"
+    typography: "{typography.label-md}"
+    rounded: "{rounded.sm}"
+    padding: "{spacing.xs}"
+  badge-gitlab:
+    backgroundColor: "{colors.forge-gitlab-container}"
+    textColor: "{colors.forge-gitlab}"
+    typography: "{typography.label-md}"
+    rounded: "{rounded.sm}"
+    padding: "{spacing.xs}"
   banner-error:
     backgroundColor: "{colors.error-container}"
     textColor: "{colors.on-error-container}"
@@ -144,6 +164,7 @@ components:
 - Attention（`#8A3F06`、地は`#FBEBD6`）：理由が`question`、`verify`、`plan-questions`、`plan`の待ち。人の判断を待っているが、実行は失敗していない
 - Error（`#B3261E`、バッジは`#7A1A14`、地は`#FBE4E1`）：理由が`error`、`permission`、`push`、`ci`の待ちと、受信箱のサービスに届かないなどの誤り
 - Success（`#1E6B37`、文字は`#14532D`、地は`#E2F2E5`）：成功のトーストだけに使う。作成や保存が済んだことを知らせる
+- Forge：フォージのバッジだけに使う。GitHubは青みの灰色（文字は`#24292F`、地は`#E6EBF1`）、GitLabは紫（文字は`#5B3BB0`、地は`#EEE8FB`）。待ちの理由のアンバー、赤、成功の緑と重ならない淡い色にし、理由のバッジより控えめに見せる
 - 暗いテーマ：`dark-`で始まる値を、OSの`prefers-color-scheme: dark`のときに使う。役割は明るいテーマと同じで、明るさだけを反転する
 
 ## Typography
@@ -153,7 +174,7 @@ components:
 - `headline-md`（20px）：画面の見出しと、1件の画面のissueのタイトル
 - `body-md`（15px）：質問の全文と、返答の欄。行の長さは、デスクトップでも全角40字程度に収める
 - `label-md`（13px）：バッジ、表の見出し、補足
-- `mono-sm`（13px）：`gh:o/r#12`のようなissueの参照。等幅にして、桁と区切りを揃える
+- `mono-sm`（13px）：`o/r#12`のようなissueの参照。等幅にして、桁と区切りを揃える
 
 ## Layout
 
@@ -176,8 +197,9 @@ components:
 ## Components
 
 - ヘッダ：左から、名前（「SwitchBoard Inbox」。一覧へのリンク。スマホなど幅の狭い画面では「SwitchBoard」に縮める）、待ちと実行中の件数、自動更新の状態、右端に設定へのリンク。件数と状態は`label-md`の`muted`にする。状態の前には点を置き、つながっている間は`primary`で塗り、それ以外は`muted`の輪郭だけにする。つながっている間の文言は、受信箱のサービスと中継の状態で分ける。中継につながっていれば「自動更新中（即時）」、切れていれば「自動更新中（N秒ごと）」（Nは`inbox.refresh_interval`の秒数）、`inbox.relay`が無ければ「自動更新中」とする。点の印は中継の状態では変えない
->>>>>>> origin/main
-- 一覧の行（カード）：1行目に参照（`mono-sm`）とタイトル、2行目に理由のバッジ、端末、経過時間（`muted`）、3行目に質問の冒頭。行全体を1件の画面へのリンクにする。左のペインで選んでいる行は、`primary`の2pxの枠で示す
+- 参照：issueとプロジェクトの参照は、フォージのプレフィックス（`gh:`、`gl:`）を外して`mono-sm`で出し、すぐ後ろにフォージのバッジを置く（例：`o/r#12`［GitHub］）。バッジを置けないネイティブの選択肢では、「o/r GitHub」のように、フォージの名前を参照の後ろに文字で書く。入力の欄、URL、コピーして使うコマンドは、プレフィックスの付いた形のままにする
+- フォージのバッジ：GitHubは`badge-github`、GitLabは`badge-gitlab`。文字は公式の綴りの「GitHub」「GitLab」にし、色は見分けの補助にとどめる
+- 一覧の行（カード）：1行目に参照（`mono-sm`）とフォージのバッジ、タイトル、2行目に理由のバッジ、端末、経過時間（`muted`）、3行目に質問の冒頭。行全体を1件の画面へのリンクにする。左のペインで選んでいる行は、`primary`の2pxの枠で示す
 - スレッド：issueの本文とコメントを、1件ずつカードにして古い順に並べる。カードの上に、書いた人と時刻を`label-md`の`muted`で出す。エージェントの投稿には、`outline`の枠の「エージェント」の印を付ける。色は付けない。着手のコメントはカードにせず、印と時刻の1行にする。エージェントの最新の質問のカードは、`primary`の2pxの枠で目立たせる
 - 本文とコメントの書式：Markdownの見出しは`body-md`の太字にし、本文より大きくしない。コードは`mono-sm`、表と引用は`outline`の線で区切る
 - 理由のバッジ：`question`、`verify`、`plan-questions`、`plan`は`badge-attention`、`error`、`permission`、`push`、`ci`は`badge-error`
@@ -185,9 +207,9 @@ components:
 - 計画の質問のカード：最新の質問のコメントは、問いごとに、題（`body-md`の太字）、本文、選択肢の組、補足の欄、推奨の順に描く。組は見出し（`label-md`の`muted`）の下に、ラジオボタンを1行に1つ並べ、最後に「選ばない（補足で答える）」を`muted`で置く。行の高さは44px以上にする。ラジオボタンの色は`primary`にし、推奨の印に色は付けない。補足の欄は返答の欄と同じ見た目で、高さを抑える
 - 送る文の表示：返答の欄の下、ボタンの上に、`surface`の地と`outline`の枠で、送る文をそのまま出す。問いを読み取れたときは「この内容で返答」を`button-primary`、「返答を送る」を`button-secondary`にして、塗りのボタンを1つに保つ
 - 設定の画面：ヘッダの右の「設定」のリンクから開く。上にプロジェクトの節、下に指示の節を置く。塗りのボタンは置かない
-- プロジェクトの節：この端末のプロジェクトを1つずつカードにし、参照（`mono-sm`）、クローンの場所と計画から始めるかどうか、クローンの有無、足りない状態ラベルを`label-md`の`muted`で出す。クローンが無いことは誤りの色にしない。追加の直後はエージェントがまだ作っていないだけだからである。追加の欄は1枚のカードにし、参照の1行の入力欄、計画から始めるかどうかのチェックボックス（初期値はオン）、`button-secondary`の追加のボタンを置く。追加できたことは`toast-success`のトーストで知らせる。webhookの登録コマンドは、コピーして使うので、一覧の下に`mono-sm`で残す。拒まれた理由は、その欄の中に`banner-error`で出す。追加が無効なときは、欄を出さずに、有効にする方法を1行で示す
-- 新規issue：一覧のペインの先頭の右に、`button-secondary`の「新規issue」を置く。押すとネイティブの`<dialog>`を開く。ダイアログは`surface`の地に`outline`の枠にする。幅は720pxまでとし、スマホの幅では画面の端から`lg`だけ空ける。項目は上から、プロジェクトの選択、タイトルの1行の入力欄（必須）、本文の欄（Markdown、任意）、開始ラベルのラジオボタンの順に並べる。プロジェクトの各選択肢は「参照（担当：端末）」の形で、`mono-sm`にする。開始ラベルは1行に1つ、高さ44px以上で並べ、初期値はreadyにする。各行の後ろに、ラベル名を`mono-sm`で出す。下の右に`button-secondary`の「やめる」と`button-primary`の「作成する」を置く。タイトルが空なら作成のボタンを押せなくする。誤りはダイアログの中に`banner-error`で出し、入力は残す。作れたらダイアログを閉じ、`toast-success`のトーストで、作ったissueの参照（`mono-sm`）とフォージへのリンク（新しいタブ）を出す。一覧の上には何も残さない
-- 指示の節：指示の欄を1つずつカードにし、欄ごとに`button-secondary`の保存のボタンを置く。保存できたことは、`toast-success`のトーストで知らせる。トーストの文には欄の名前を入れる。誤りは、その欄の中に`banner-error`で出す
+- プロジェクトの節：この端末のプロジェクトを1つずつカードにし、1行目に参照（`mono-sm`）とフォージのバッジを出す。その下に、クローンの場所と計画から始めるかどうか、クローンの有無、足りない状態ラベルを`label-md`の`muted`で出す。クローンが無いことは誤りの色にしない。追加の直後はエージェントがまだ作っていないだけだからである。追加の欄は1枚のカードにし、参照の1行の入力欄、計画から始めるかどうかのチェックボックス（初期値はオン）、`button-secondary`の追加のボタンを置く。追加できたことは`toast-success`のトーストで知らせる。webhookの登録コマンドは、コピーして使うので、一覧の下に`mono-sm`で残す。拒まれた理由は、その欄の中に`banner-error`で出す。追加が無効なときは、欄を出さずに、有効にする方法を1行で示す
+- 新規issue：一覧のペインの先頭の右に、`button-secondary`の「新規issue」を置く。押すとネイティブの`<dialog>`を開く。ダイアログは`surface`の地に`outline`の枠にする。幅は720pxまでとし、スマホの幅では画面の端から`lg`だけ空ける。項目は上から、プロジェクトの選択、タイトルの1行の入力欄（必須）、本文の欄（Markdown、任意）、開始ラベルのラジオボタンの順に並べる。プロジェクトの各選択肢は`mono-sm`にする。形は「o/r GitHub（担当：端末）」で、プレフィックスを外した参照とフォージの名前を文字で並べる。開始ラベルは1行に1つ、高さ44px以上で並べ、初期値はreadyにする。各行の後ろに、ラベル名を`mono-sm`で出す。下の右に`button-secondary`の「やめる」と`button-primary`の「作成する」を置く。タイトルが空なら作成のボタンを押せなくする。誤りはダイアログの中に`banner-error`で出し、入力は残す。作れたらダイアログを閉じ、`toast-success`のトーストを出す。トーストには、作ったissueの参照（`mono-sm`）とフォージのバッジ、フォージへのリンク（新しいタブ）を置く。一覧の上には何も残さない
+- 指示の節：指示の欄を1つずつカードにし、プロジェクトの欄の名前は参照とフォージのバッジにする。欄ごとに`button-secondary`の保存のボタンを置く。保存できたことは、`toast-success`のトーストで知らせる。トーストの文には欄の名前を入れる。誤りは、その欄の中に`banner-error`で出す
 - トースト：知らせを、画面の右下へ一時的に出す。種類は4つある。通常は`toast-info`（`surface-raised`の地と`outline`の枠）、成功は`toast-success`にする。警告は`toast-warning`（`attention`の色）、誤りは`toast-error`にする。影は付けない。種類の印（文字と同じ色の線のアイコン）を左端、✗のボタン（「閉じる」、44px四方）を右端に置く。既定は5秒で消え、呼び出す側が時間を変えられる。マウスを載せている間と、フォーカスがトーストの中にある間は、時間を止める。複数あるときは重ねずに縦へ並べ、新しいものを最も下にする。同時に出すのは5個までで、6個目を出すと古いものから消す。幅は360pxで、画面の端から`lg`だけ空ける。幅1024px未満では、左右`lg`の余白を空けて、下の端の全幅で出す。誤りのトーストは`role="alert"`、ほかは`role="status"`で読み上げる。欄ごとの誤り、ダイアログの中の誤り、画面の上の誤りのバナーは、トーストにしない。直すまで見えている必要があるからである
 - 1行の入力欄：返答の欄と同じ地、枠、フォーカスの輪郭で、高さは44pxにする
 - 返答の欄：`surface-raised`の地に`outline`の枠。フォーカスでは`primary`の2pxの輪郭を付ける。空のときは送るボタンを押せなくする
@@ -196,7 +218,7 @@ components:
 
 ## Do's and Don'ts
 
-- Do: 色の付いた要素は、待ちの理由、誤り、トーストの種類だけにする
+- Do: 色の付いた要素は、待ちの理由、誤り、トーストの種類、フォージのバッジだけにする
 - Do: issueから来た文字列は、生のHTMLとして解釈させない。Markdownとして描くときも、HTMLのタグは文字のまま出し、画像は読み込まずにリンクとして出す。issueのテンプレートに多いHTMLのコメントは出さない
 - Don't: 本文とラベルを、地に対して4.5:1未満のコントラストにしない
 - Don't: 塗りのボタンを、1画面に2つ置かない

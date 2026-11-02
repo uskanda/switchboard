@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router";
+import { IssueRef } from "@/components/IssueRef";
 import { PlanQuestions } from "@/components/PlanQuestions";
 import { ReasonBadge } from "@/components/ReasonBadge";
 import { Thread } from "@/components/Thread";
@@ -213,7 +214,7 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
       {detail && (
         <>
           <div className="flex flex-col gap-xs">
-            <span className="font-mono text-mono-sm break-all">{detail.ref}</span>
+            <IssueRef value={detail.ref} className="self-start" />
             <h2 className="text-headline-md font-semibold break-words">{detail.title}</h2>
             <span className="flex flex-wrap items-center gap-sm text-label-md text-muted">
               {running ? (

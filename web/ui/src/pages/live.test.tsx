@@ -169,7 +169,7 @@ describe("the list", () => {
   it("takes each listing the stream sends without a reload", async () => {
     serve({}, listing(item()));
     at("/");
-    expect((await screen.findAllByText("gh:o/r#12"))[0]).toBeInTheDocument();
+    expect((await screen.findAllByText("o/r#12"))[0]).toBeInTheDocument();
     FakeEventSource.last!.emit("inbox", listing(item(), item({ n: 2, ref: "gh:o/r#13", title: "Fix a typo" })));
     expect((await screen.findAllByText("Fix a typo"))[0]).toBeInTheDocument();
     expect(screen.getByText("待ち 2・実行中 0")).toBeInTheDocument();
@@ -182,7 +182,7 @@ describe("the list", () => {
     unmount();
     at("/issue/gh%3Ao%2Fr%2312");
     const nav = await screen.findByRole("navigation", { name: "一覧" });
-    expect((await within(nav).findAllByText("gh:o/r#12"))[0].closest("a")).toHaveAttribute("aria-current", "page");
+    expect((await within(nav).findAllByText("o/r#12"))[0].closest("a")).toHaveAttribute("aria-current", "page");
     expect(await screen.findByRole("heading", { level: 2, name: "Add a flag" })).toBeInTheDocument();
   });
 });
