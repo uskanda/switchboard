@@ -91,6 +91,8 @@ describe("one issue", () => {
 
   it("posts the reply and says it was sent", async () => {
     const calls = answer({
+      // The issue is on the list: one that left it is not said to have been sent to (it stopped waiting).
+      "GET /api/inbox": { status: 200, body: { items: [item], errors: [], fetched_at: "" } },
       "GET /api/issue?ref=gh%3Ao%2Fr%2312": { status: 200, body: detail },
       "POST /api/reply": { status: 204 },
     });

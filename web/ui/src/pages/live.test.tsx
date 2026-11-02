@@ -35,6 +35,7 @@ function serve(details: Record<string, unknown>, inbox: unknown) {
     vi.fn(async (input: string, init?: RequestInit) => {
       const key = `${init?.method ?? "GET"} ${input}`;
       if (key === "GET /api/inbox") return new Response(JSON.stringify(inbox), { status: 200 });
+      if (key === "POST /api/reply") return new Response(null, { status: 204 });
       const m = /^GET \/api\/issue\?ref=(.*)$/.exec(key);
       if (m) {
         const ref = decodeURIComponent(m[1]);
@@ -241,6 +242,73 @@ describe("the issue", () => {
     expect(await screen.findByText("このissueは、待ちでも実行中でもなくなりました。")).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 2, name: "Add a flag" })).toBeInTheDocument();
     expect(reads.length).toBe(before);
+  });
+});
+
+describe("after a reply", () => {
+  const sentText = "送りました。エージェントが作業を再開します。";
+  const question = { author: "bot", created_at: "2026-10-31T10:01:00Z", body: "### The agent has a question\n\nWhich default?", agent: true, kind: "waiting" };
+  const later = "2026-10-31T10:05:00Z";
+
+  /** replied opens the issue, sends a reply, and waits for the pane to say it was sent. */
+  async function replied() {
+    const details: Record<string, unknown> = { "gh:o/r#12": detail({ comments: [question] }) };
+    const reads = serve(details, listing(item()));
+    at("/issue/gh%3Ao%2Fr%2312");
+    const es = FakeEventSource.last!;
+    es.emit("inbox", listing(item()));
+    await userEvent.type(await screen.findByRole("textbox", { name: "返答" }), "Go with B.");
+    await userEvent.click(screen.getByRole("button", { name: "返答を送る" }));
+    expect(await screen.findByText(sentText)).toBeInTheDocument();
+    return { details, reads, es };
+  }
+
+  it("still says it was sent while the same wait comes back", async () => {
+    const { reads, es } = await replied();
+    const before = reads.length;
+    es.emit("inbox", listing(item({ updated_at: later, notes: 1 })));
+    await waitFor(() => expect(reads.length).toBe(before + 1));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.getByText(sentText)).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "返答" })).toBeNull();
+  });
+
+  it("shows the run once the issue is running", async () => {
+    const { details, es } = await replied();
+    details["gh:o/r#12"] = detail({ waiting: false, state: "running", comments: [question] });
+    es.emit("inbox", listing(item({ n: undefined, state: "running", progress: "p", updated_at: later })));
+    expect(await screen.findByText("実行中のため返答できません")).toBeInTheDocument();
+    expect(screen.queryByText(sentText)).toBeNull();
+  });
+
+  it("shows the reply form again when the agent waits anew", async () => {
+    const { details, es } = await replied();
+    const next = { ...question, created_at: "2026-10-31T10:06:00Z", body: "### The agent has a question\n\nWhich name?" };
+    const reply = { author: "me", created_at: "2026-10-31T10:02:00Z", body: "Go with B.", agent: false };
+    details["gh:o/r#12"] = detail({ since: "2026-10-31T10:06:00Z", post: "Which name?", comments: [question, reply, next] });
+    es.emit("inbox", listing(item({ waiting_since: "2026-10-31T10:06:00Z", updated_at: "2026-10-31T10:06:00Z", question: "Which name?" })));
+    expect(await screen.findByRole("textbox", { name: "返答" })).toBeInTheDocument();
+    expect(screen.queryByText(sentText)).toBeNull();
+  });
+
+  it("shows the choices again when the next wait asks the questions of a plan", async () => {
+    const { details, es } = await replied();
+    const next = {
+      ...question,
+      created_at: "2026-10-31T10:06:00Z",
+      body: "### 計画についての質問\n\n❓ **Q1** - **既定値**\n\nA: 偽\nB: 真\n\n➡️ A。理由。",
+    };
+    details["gh:o/r#12"] = detail({ since: "2026-10-31T10:06:00Z", reason: "plan-questions", comments: [question, next] });
+    es.emit("inbox", listing(item({ reason: "plan-questions", waiting_since: "2026-10-31T10:06:00Z", updated_at: "2026-10-31T10:06:00Z" })));
+    expect(await screen.findByRole("button", { name: "この内容で返答" })).toBeInTheDocument();
+    expect(screen.queryByText(sentText)).toBeNull();
+  });
+
+  it("says only that the issue left the list once it does", async () => {
+    const { es } = await replied();
+    es.emit("inbox", listing());
+    expect(await screen.findByText("このissueは、待ちでも実行中でもなくなりました。")).toBeInTheDocument();
+    expect(screen.queryByText(sentText)).toBeNull();
   });
 });
 

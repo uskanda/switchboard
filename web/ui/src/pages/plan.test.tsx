@@ -102,6 +102,11 @@ const planDetail = {
   host: "laptop", state: "waiting", reason: "plan", since: null, approve_word: "/ok",
   post: "### The plan is ready for approval\n\n1. Add --dry-run.",
 };
+// The issue on the list: one that left it is not said to have been sent to (it stopped waiting).
+const planInbox = {
+  status: 200,
+  body: { items: [{ n: 1, ref: "gh:o/r#12", project: "o/r", number: 12, title: "Add a flag", url: "u", host: "laptop", waiting_since: null, reason: "plan", question: "" }], errors: [], fetched_at: "" },
+};
 
 describe("plan waits", () => {
   it("show the plan and how to approve it", async () => {
@@ -113,7 +118,7 @@ describe("plan waits", () => {
   });
 
   it("approve with the approval word alone in one click", async () => {
-    const calls = answer({ "GET /api/issue?ref=gh%3Ao%2Fr%2312": { status: 200, body: planDetail }, "POST /api/reply": { status: 204 } });
+    const calls = answer({ "GET /api/inbox": planInbox, "GET /api/issue?ref=gh%3Ao%2Fr%2312": { status: 200, body: planDetail }, "POST /api/reply": { status: 204 } });
     at("/issue/gh%3Ao%2Fr%2312");
     const approve = await screen.findByRole("button", { name: "承認する（/ok を送る）" });
     expect(screen.getByRole("button", { name: "返答を送る" })).toBeDisabled();
@@ -125,6 +130,7 @@ describe("plan waits", () => {
 
   it("name and send the configured approval word", async () => {
     const calls = answer({
+      "GET /api/inbox": planInbox,
       "GET /api/issue?ref=gh%3Ao%2Fr%2312": { status: 200, body: { ...planDetail, approve_word: "/lgtm" } },
       "POST /api/reply": { status: 204 },
     });
