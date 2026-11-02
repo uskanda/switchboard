@@ -165,7 +165,7 @@ func TestAddedProjectIsServedAtOnce(t *testing.T) {
 	if last := in.Items[len(in.Items)-1]; last.Target != "gh:o/notes" || last.Content != "" {
 		t.Errorf("instructions = %+v, want gh:o/notes last and empty", in.Items)
 	}
-	if err := w.c.SaveInstructions(ctx, "gh:o/notes", "Short notes."); err != nil {
+	if err := w.c.SaveInstructions(ctx, inboxapi.SaveInstructionsRequest{Target: "gh:o/notes", Content: "Short notes."}); err != nil {
 		t.Errorf("saving the new project's instructions: %v", err)
 	}
 	ps, err := w.c.Projects(ctx)

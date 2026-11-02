@@ -202,3 +202,9 @@
 - 決定：衝突を直す実行は `git merge origin/<base>` で解消させる。回数は、CIの失敗とnon-fast-forwardと同じ `agent.max_fix_attempts` で数える。上限を超える衝突では、issueを `waiting(reason=conflict)` で待たせる。CIの失敗と衝突が同時にあれば衝突を先に直す
 - 決定：トークンの権限は増やさない。衝突の有無はPR/MRの読み取りで分かり、GitHubの `Pull requests: Read`、GitLabの `api` スコープで足りる
 - 理由：GitHubは衝突のあるPRで `pull_request` のCIを走らせないので、ADR-041の見張りは「CIが現れない」として黙って終わり、人が気付くまで止まっていた（PR #71）。直す実行に渡すのはPR/MRの番号とbaseの名前だけで、フォージから読んだ文は入れない。grillingの記録は `detect-change-request-conflicts` の第1ラウンドQ1〜Q5、第2ラウンドQ6〜Q8
+
+## ADR-045 実装の実行に足す許可と追加の指示（採用、2026-11-02）
+- 決定：ファイルを書く実行（直接の実装、承認のあとの実装、CIとpushの失敗を直す実行、baseとの衝突を直す実行）に、利用者が許可するツールと追加の指示を足せるようにする。許可は設定の `agent.allow_tools_extra` と `projects[].allow_tools_extra` に書き、全体、プロジェクトの順につなげる。指示は計画用の `plan.md` と別の `run.md` に置き、system promptの最後の節に入れる。計画の実行には、どちらも足さない
+- 決定：許可は設定ファイルにだけ書け、受信箱のAPIとWeb表示からは変えられない。読み込みのときに、空の項目、制限の無い `Bash`、拒否している操作（`git push`、`git rebase`、`gh`、`WebFetch`）を名指しする項目を誤りにする。`Bash(git *)` のような広い項目は通す。denyがallowより優先される（V42）からである
+- 決定：製品のコードと既定の設定では、OpenSpecとハーネスを扱わない。OpenSpecを使うプロジェクトでの書き方は、`docs/examples/openspec.md` に例として置く（ADR-021）。ADR-038の追加の指示は、計画用の `plan.md` のこととして残る
+- 理由：利用者の `~/.claude/CLAUDE.md` は実行に届いていたが、実装の実行の許可にSkillツールと `openspec` のCLIが無く、`dontAsk` で拒否されていた。`allowed-tools` を持つスキルは、allowに `Skill` が無いと呼べない（V41）。実装の実行68件のうち、OpenSpecの変更を記録したのは13件だけだった。grillingの記録は `add-run-allow-and-instructions` の第1ラウンドQ1〜Q3、第2ラウンドQ4〜Q7、第3ラウンドQ8〜Q9

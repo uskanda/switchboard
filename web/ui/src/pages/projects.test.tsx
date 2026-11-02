@@ -152,6 +152,6 @@ describe("the projects of the settings", () => {
     settings();
     await userEvent.type(await screen.findByRole("textbox", { name: "追加するプロジェクト" }), "gh:o/notes");
     await userEvent.click(screen.getByRole("button", { name: "追加する" }));
-    expect(await screen.findByRole("textbox", { name: "gh:o/notes" })).toHaveValue("");
+    expect((await screen.findAllByRole("textbox", { name: "gh:o/notes" }))[0]).toHaveValue("");
   });
 });

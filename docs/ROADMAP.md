@@ -98,6 +98,8 @@
 | V38 | GitHubのfine-grained PATで、GraphQLの `markPullRequestReadyForReview` と、`sha` を付けた `PUT /repos/<owner>/<repo>/pulls/<n>/merge` が通るか。Pull requestsとContentsの書き込みが無いトークンでは403になるか（GraphQLは200で `FORBIDDEN` の誤りを返すか）。`sha` が違えば409、マージできなければ405になるか | 未確認（issue #69の実装の時点。実装は、409をheadの移動、405と422をフォージの拒否として扱う） | |
 | V39 | GitLabで、タイトルから `Draft: ` を外す `PUT /projects/:id/merge_requests/:iid` と、`sha` を付けた `PUT /projects/:id/merge_requests/:iid/merge` が通るか。`sha` が違うとき、マージできないときの応答のコードは何か（405、406、409） | 未確認（issue #69の実装の時点。実装は、409をheadの移動、405と406と422をフォージの拒否として扱う） | |
 | V40 | usknasの常駐のサービスのWUIから、`gh:uskanda/switchboard-sandbox` のdraftのPRをマージすると、PRの `Closes` でissueが閉じ、受信箱から消えるか | 未確認（issue #69の実装の時点。受信箱のトークンにREADMEの手順で権限を足してから確かめる） | |
+| V41 | `--permission-mode dontAsk` の `claude -p` で、allowに `Skill` が無いときにSkillツールを呼べるか | スキルによる。`allowed-tools` の無いスキルは、allowに `Skill` が無くても呼べた。`allowed-tools` を持つスキルは拒否され、`permission_denials` に `Skill` が残った。allowに `Skill` を足すと呼べた。claude 2.1.316で確かめた。`go test -tags realclaude -run RealClaudeSkillAllow ./internal/agent/` で再現できる | 2026-11-02 |
+| V42 | allowの `Bash(git *)` とdenyの `Bash(git push *)` が重なるとき、`git push` が拒否されるか | 拒否される。denyがallowより優先され、`permission_denials` に記録された。リモートには何も届かなかった。ただし、denyは境界にならない（V5）。`go test -tags realclaude -run RealClaudeDenyWinsOverAllow ./internal/agent/` で再現できる | 2026-11-02 |
 
 ### 検証で分かった、設計に関わる点
 

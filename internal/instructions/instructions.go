@@ -1,5 +1,6 @@
-// Package instructions keeps the user's additional instructions for the runs in the plan stage: one file for every
-// project and one per project, in the instructions directory next to the configuration file.
+// Package instructions keeps the user's additional instructions for the runs: one file for every project and one per
+// project, in the instructions directory next to the configuration file. There are two kinds: plan.md for the runs in
+// the plan stage, run.md for the runs that write files.
 package instructions
 
 import (
@@ -29,11 +30,45 @@ var (
 	ErrSecret = errors.New("the instructions look like they hold a secret")
 )
 
-// Store reads and writes the instruction files under Dir. Audit records every save; it may be nil for a store that
-// only reads.
+// Kind tells the instructions of the plan runs from those of the runs that write files.
+type Kind string
+
+const (
+	Plan Kind = "plan"
+	Run  Kind = "run"
+)
+
+// ParseKind reads a kind as the inbox API sends it; "" is Plan, so that a client that does not know kinds saves the
+// plan instructions as before.
+func ParseKind(s string) (Kind, error) {
+	switch Kind(s) {
+	case "", Plan:
+		return Plan, nil
+	case Run:
+		return Run, nil
+	}
+	return "", fmt.Errorf("%q is not a kind of instructions (plan or run)", s)
+}
+
+// Store reads and writes the instruction files of one Kind under Dir; the zero Kind is Plan. Audit records every save;
+// it may be nil for a store that only reads.
 type Store struct {
 	Dir   string
 	Audit state.Auditor
+	Kind  Kind
+}
+
+// Of returns the store of the instructions of kind, in the same directory.
+func (s Store) Of(kind Kind) Store {
+	s.Kind = kind
+	return s
+}
+
+func (s Store) kind() Kind {
+	if s.Kind == "" {
+		return Plan
+	}
+	return s.Kind
 }
 
 // For returns the store next to the configuration file at configPath.
@@ -48,8 +83,9 @@ var (
 
 // Path returns the file of target: Global, or a project as "gh:owner/repo" or "gl:group/sub/project".
 func (s Store) Path(target string) (string, error) {
+	file := string(s.kind()) + ".md"
 	if target == Global {
-		return filepath.Join(s.Dir, "plan.md"), nil
+		return filepath.Join(s.Dir, file), nil
 	}
 	var parts []string
 	switch {
@@ -67,7 +103,7 @@ func (s Store) Path(target string) (string, error) {
 			return "", fmt.Errorf("%q is not a project of the form gh:owner/repo or gl:group/project", target)
 		}
 	}
-	return filepath.Join(append(append([]string{s.Dir}, parts...), "plan.md")...), nil
+	return filepath.Join(append(append([]string{s.Dir}, parts...), file)...), nil
 }
 
 // Read returns the instructions of target, or "" when there is no file.
@@ -83,9 +119,14 @@ func (s Store) Read(target string) (string, error) {
 	return string(b), err
 }
 
-// Plan returns what a plan run of project gets: the global instructions, then the project's, each left out when it
-// is blank or cannot be read.
-func (s Store) Plan(project string) string {
+// Plan returns what a plan run of project gets: the global plan instructions, then the project's, each left out when
+// it is blank or cannot be read.
+func (s Store) Plan(project string) string { return s.Of(Plan).joined(project) }
+
+// Run returns what a run that writes files in project gets, joined as Plan joins.
+func (s Store) Run(project string) string { return s.Of(Run).joined(project) }
+
+func (s Store) joined(project string) string {
 	var parts []string
 	for _, t := range []string{Global, project} {
 		if text, err := s.Read(t); err == nil && strings.TrimSpace(text) != "" {
@@ -111,7 +152,7 @@ func (s Store) Save(target, text string) error {
 	if err := s.mkdirs(filepath.Dir(p)); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(p), ".plan-*.md")
+	tmp, err := os.CreateTemp(filepath.Dir(p), "."+string(s.kind())+"-*.md")
 	if err != nil {
 		return err
 	}
@@ -136,7 +177,7 @@ func (s Store) Save(target, text string) error {
 		if name == Global {
 			name = "global"
 		}
-		s.Audit.Log("instructions.saved", map[string]any{"target": name, "sha256": hex.EncodeToString(sum[:])})
+		s.Audit.Log("instructions.saved", map[string]any{"target": name, "kind": string(s.kind()), "sha256": hex.EncodeToString(sum[:])})
 	}
 	return nil
 }

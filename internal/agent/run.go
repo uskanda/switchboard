@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -87,15 +88,23 @@ func declaration(res *claudecode.Result) (*Declaration, string) {
 }
 
 // settings are what a run may do without asking. A run may merge, to resolve a conflict with the base (ADR-042) or
-// take in origin's issue branch after a refused push; no run may rebase. The deny rules are not a boundary (Phase 0,
-// V5); keeping the forge token away from claude is.
-func settings(verifyCommand string) claudecode.Settings {
+// take in origin's issue branch after a refused push; no run may rebase. extra are the user's added allow rules
+// (agent.allow_tools_extra, then the project's), each taken once; the deny rules still win over them (V42). The deny
+// rules are not a boundary (Phase 0, V5); keeping the forge token away from claude is.
+func settings(verifyCommand string, extra ...[]string) claudecode.Settings {
 	allow := []string{"Read", "Edit", "Write", "Glob", "Grep"}
 	for _, c := range []string{"git status", "git diff", "git log", "git add", "git commit", "git merge"} {
 		allow = append(allow, "Bash("+c+")", "Bash("+c+" *)")
 	}
 	if f := strings.Fields(verifyCommand); len(f) > 0 {
 		allow = append(allow, "Bash("+f[0]+")", "Bash("+f[0]+" *)")
+	}
+	for _, rules := range extra {
+		for _, r := range rules {
+			if r = strings.TrimSpace(r); !slices.Contains(allow, r) {
+				allow = append(allow, r)
+			}
+		}
 	}
 	return claudecode.Settings{
 		Allow: allow,
@@ -216,7 +225,7 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) *outcome {
 	lang, word := a.Config.Comments.Language, a.Config.Plan.ApproveWord
 	req := claudecode.Request{
 		Binary: a.Config.Claude.Binary, Dir: dir, RunDir: a.runDir(rec.Run), SessionID: rec.Session,
-		SystemPrompt: prompt.System(lang, p.BaseBranch), Settings: settings(p.VerifyCommand), MaxTurns: a.Config.Agent.MaxTurns,
+		SystemPrompt: prompt.System(lang, p.BaseBranch), Settings: settings(p.VerifyCommand, a.Config.Agent.AllowToolsExtra, p.AllowToolsExtra), MaxTurns: a.Config.Agent.MaxTurns,
 		Schema: Schema, Auth: a.Config.Claude.Auth, Timeout: a.Config.Agent.Timeout,
 		IntGrace: a.IntGrace, TermGrace: a.TermGrace, Env: a.Env,
 	}
@@ -233,6 +242,9 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) *outcome {
 	case fixRun:
 		in.Task, in.Failure = prompt.FixTask, pl.fix.report
 		req.SystemPrompt = prompt.FixSystem(lang, p.BaseBranch, pl.fix.cause)
+	}
+	if pl.kind != planRun {
+		req.SystemPrompt = prompt.WithUserInstructions(req.SystemPrompt, a.runInstructions(p))
 	}
 	req.Prompt = prompt.Build(in)
 	stopProgress := a.followProgress(ctx, is.Ref, rec, filepath.Join(a.runDir(rec.Run), "stream.jsonl"))
@@ -413,4 +425,13 @@ func (a *Agent) planInstructions(p config.Project) string {
 		return ""
 	}
 	return instructions.For(a.Config.Path, nil).Plan(p.Ref)
+}
+
+// runInstructions returns the user's additional instructions for the runs of p that write files, read again for every
+// run. A configuration that was not loaded from a file has none.
+func (a *Agent) runInstructions(p config.Project) string {
+	if a.Config.Path == "" {
+		return ""
+	}
+	return instructions.For(a.Config.Path, nil).Run(p.Ref)
 }
