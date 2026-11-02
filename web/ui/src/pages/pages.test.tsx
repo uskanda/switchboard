@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -107,7 +107,7 @@ describe("one issue", () => {
     expect(send).toBeDisabled();
     await userEvent.type(screen.getByRole("textbox", { name: "返答" }), "Go with B.");
     await userEvent.click(send);
-    expect(await screen.findByRole("status")).toHaveTextContent("送りました");
+    expect(await within(screen.getByRole("article")).findByRole("status")).toHaveTextContent("送りました");
     const post = calls.find((c) => c.key === "POST /api/reply");
     expect(JSON.parse(String(post?.init?.body))).toEqual({ ref: "gh:o/r#12", text: "Go with B." });
     expect(new Headers(post?.init?.headers).get("Content-Type")).toBe("application/json");

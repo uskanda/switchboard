@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { Link } from "react-router";
 import { IssueRef } from "@/components/IssueRef";
 import { Loading } from "@/components/Loading";
@@ -6,9 +7,12 @@ import { NewIssue } from "@/components/NewIssue";
 import { ReasonBadge } from "@/components/ReasonBadge";
 import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
+import { Spinner } from "@/components/ui/spinner";
 import { Table, TableCell, TableHead } from "@/components/ui/table";
-import { age, elapsed, isDone, isQueued, isRunning, isWaiting, issuePath, plainText, progressText, queueText, type Item } from "@/lib/api";
+import { age, elapsed, isDone, isQueued, isRunning, isWaiting, issuePath, plainText, progressText, queueText } from "@/lib/api";
+import { useFlip } from "@/lib/flip";
 import { useInbox } from "@/lib/inbox";
+import type { ViewItem } from "@/lib/pending";
 import { cn } from "@/lib/utils";
 
 /**
@@ -16,7 +20,7 @@ import { cn } from "@/lib/utils";
  * when the done post gives one, with the button that merges it when the done post names its number and commit. Both
  * sit inside the row's cell or card, outside the row's link to the issue.
  */
-function ChangeLink({ it, className }: { it: Item; className?: string }) {
+function ChangeLink({ it, className }: { it: ViewItem; className?: string }) {
   if (!isDone(it)) return null;
   const mergeable = !!it.change_number && !!it.change_sha;
   if (!it.change_url && !mergeable) return null;
@@ -34,9 +38,24 @@ function ChangeLink({ it, className }: { it: Item; className?: string }) {
 
 /**
  * What a row shows: a waiting issue its reason, question and wait; a running one its progress and how long it ran; a
- * queued one the limit it waits on and since when; a done one since when it is done.
+ * queued one the limit it waits on and since when; a done one since when it is done. A row this tab asked something
+ * of (lib/pending.ts) shows a turning ring and slowly pulsing words that it is being processed, said to a screen
+ * reader as a status; index.css stops both under prefers-reduced-motion, and the words stay readable.
  */
-function cells(it: Item) {
+function cells(it: ViewItem) {
+  if (it.pending) {
+    const merging = it.pending === "merge";
+    return {
+      tag: (
+        <span role="status" className="inline-flex items-center gap-xs text-label-md font-medium">
+          <Spinner />
+          <span className="pending-pulse">{merging ? "マージ処理中" : "処理中"}</span>
+        </span>
+      ),
+      line: merging ? "closeされると一覧から消えます" : "実行の開始を待っています",
+      time: merging ? age(it.done_since ?? null) : elapsed(it.running_since),
+    };
+  }
   if (isDone(it)) {
     return {
       tag: <span className="text-label-md font-medium">完了</span>,
@@ -66,7 +85,7 @@ function cells(it: Item) {
  * 1024px) and a narrow screen get the same items as cards. The selected issue is marked. A card's frame holds its link
  * to the issue and, below a line, a done issue's change and its merge button, which stay outside that link.
  */
-function Items({ items, timeHead, selected }: { items: Item[]; timeHead: string; selected?: string }) {
+function Items({ items, timeHead, selected }: { items: ViewItem[]; timeHead: string; selected?: string }) {
   return (
     <>
       <Table className="hidden sm:table lg:hidden">
@@ -82,7 +101,7 @@ function Items({ items, timeHead, selected }: { items: Item[]; timeHead: string;
           {items.map((it) => {
             const c = cells(it);
             return (
-              <tr key={it.ref}>
+              <tr key={it.ref} data-flip-key={it.ref}>
                 <TableCell className="max-w-0 w-full">
                   <Link
                     to={issuePath(it.ref)}
@@ -108,7 +127,7 @@ function Items({ items, timeHead, selected }: { items: Item[]; timeHead: string;
           const c = cells(it);
           const current = it.ref === selected;
           return (
-            <li key={it.ref}>
+            <li key={it.ref} data-flip-key={it.ref}>
               <Card className={cn("flex flex-col p-0", current && "border-2 border-primary")}>
                 <Link
                   to={issuePath(it.ref)}
@@ -137,15 +156,19 @@ function Items({ items, timeHead, selected }: { items: Item[]; timeHead: string;
 /**
  * InboxList is the button for a new issue, then the waiting, the running, the queued and the done issues (open,
  * waiting to be closed), each under its own heading. Until the first listing arrives it says that it is loading.
+ * The rows are the listing with what this tab asked of the issues laid over it (lib/pending.ts). A row that changes
+ * places on an update moves there, and a new one fades in (lib/flip.ts).
  */
 export function InboxList({ selected }: { selected?: string }) {
-  const { inbox, error } = useInbox();
-  const waiting = inbox?.items.filter(isWaiting) ?? [];
-  const running = inbox?.items.filter(isRunning) ?? [];
-  const queued = inbox?.items.filter(isQueued) ?? [];
-  const done = inbox?.items.filter(isDone) ?? [];
+  const { inbox, view, error } = useInbox();
+  const root = useRef<HTMLDivElement>(null);
+  useFlip(root, view !== null);
+  const waiting = view?.filter(isWaiting) ?? [];
+  const running = view?.filter(isRunning) ?? [];
+  const queued = view?.filter(isQueued) ?? [];
+  const done = view?.filter(isDone) ?? [];
   return (
-    <div className="flex flex-col gap-lg">
+    <div ref={root} className="flex flex-col gap-lg">
       <h2 className="sr-only">一覧</h2>
       <NewIssue />
       {error && <Alert>{error}</Alert>}
