@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { Link } from "react-router";
+import { IssueRef } from "@/components/IssueRef";
 import { Loading } from "@/components/Loading";
 import { MergeButton, changeName } from "@/components/MergeButton";
 import { PlanQuestions } from "@/components/PlanQuestions";
@@ -321,7 +322,7 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
         </Link>
         {detail && (
           <>
-            <span className="font-mono text-mono-sm break-all">{detail.ref}</span>
+            <IssueRef value={detail.ref} className="self-start" />
             <h2 className={cn("text-headline-md font-semibold break-words", !atTop && "line-clamp-2")} title={atTop ? undefined : detail.title}>
               {detail.title}
             </h2>

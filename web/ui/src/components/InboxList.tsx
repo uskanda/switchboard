@@ -1,4 +1,5 @@
 import { Link } from "react-router";
+import { IssueRef } from "@/components/IssueRef";
 import { Loading } from "@/components/Loading";
 import { MergeButton, changeName } from "@/components/MergeButton";
 import { NewIssue } from "@/components/NewIssue";
@@ -86,7 +87,7 @@ function Items({ items, timeHead, selected }: { items: Item[]; timeHead: string;
                     aria-current={it.ref === selected ? "page" : undefined}
                     className="block focus-visible:outline-2 focus-visible:outline-primary"
                   >
-                    <span className="font-mono text-mono-sm">{it.ref}</span>
+                    <IssueRef value={it.ref} />
                     <span className="block truncate font-medium">{it.title}</span>
                     <span className="block truncate text-label-md text-muted">{c.line}</span>
                   </Link>
@@ -112,7 +113,7 @@ function Items({ items, timeHead, selected }: { items: Item[]; timeHead: string;
                 className="block rounded-md focus-visible:outline-2 focus-visible:outline-primary"
               >
                 <Card className={cn("flex flex-col gap-xs", current && "border-2 border-primary")}>
-                  <span className="font-mono text-mono-sm break-all">{it.ref}</span>
+                  <IssueRef value={it.ref} className="self-start" />
                   <span className="font-medium break-words">{it.title}</span>
                   <span className="flex flex-wrap items-center gap-sm text-label-md text-muted">
                     {c.tag}

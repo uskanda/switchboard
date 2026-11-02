@@ -18,6 +18,10 @@
   --color-success: #1e6b37;
   --color-on-success-container: #14532d;
   --color-success-container: #e2f2e5;
+  --color-forge-github: #24292f;
+  --color-forge-github-container: #e6ebf1;
+  --color-forge-gitlab: #5b3bb0;
+  --color-forge-gitlab-container: #eee8fb;
   --color-dark-surface: #16181c;
   --color-dark-on-surface: #e8e6e1;
   --color-dark-surface-raised: #1f2227;
@@ -32,6 +36,10 @@
   --color-dark-error-container: #3d1d1a;
   --color-dark-success: #7fd39a;
   --color-dark-success-container: #16301f;
+  --color-dark-forge-github: #c9d1d9;
+  --color-dark-forge-github-container: #252c35;
+  --color-dark-forge-gitlab: #c4b5fd;
+  --color-dark-forge-gitlab-container: #2a2140;
   --font-headline-md: "system-ui, \"Hiragino Sans\", \"Noto Sans JP\", sans-serif";
   --font-body-md: "system-ui, \"Hiragino Sans\", \"Noto Sans JP\", sans-serif";
   --font-label-md: "system-ui, \"Hiragino Sans\", \"Noto Sans JP\", sans-serif";

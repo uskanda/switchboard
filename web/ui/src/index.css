@@ -26,6 +26,10 @@
     --color-success: var(--color-dark-success);
     --color-success-container: var(--color-dark-success-container);
     --color-on-success-container: var(--color-dark-success);
+    --color-forge-github: var(--color-dark-forge-github);
+    --color-forge-github-container: var(--color-dark-forge-github-container);
+    --color-forge-gitlab: var(--color-dark-forge-gitlab);
+    --color-forge-gitlab-container: var(--color-dark-forge-gitlab-container);
   }
 }
 

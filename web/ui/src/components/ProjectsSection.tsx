@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { IssueRef } from "@/components/IssueRef";
 import { Loading } from "@/components/Loading";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -38,7 +39,9 @@ function Row({ project }: { project: Project }) {
   return (
     <li>
       <Card className="flex flex-col gap-xs">
-        <p className="font-mono text-mono-sm break-all">{project.ref}</p>
+        <p>
+          <IssueRef value={project.ref} />
+        </p>
         <p className="text-label-md text-muted">
           <span className="font-mono text-mono-sm break-all">{project.path}</span>・
           {project.plan_first ? "計画から始める" : "すぐに実装する"}
@@ -166,7 +169,7 @@ export function ProjectsSection({ onAdded }: { onAdded?: () => void }) {
             onAdded={(a: AddedProject) => {
               toast.success(
                 <>
-                  <span className="font-mono text-mono-sm break-all">{a.project.ref}</span> を追加しました
+                  <IssueRef value={a.project.ref} /> を追加しました
                 </>,
                 { description: "エージェントが10秒ほどでクローンし、状態ラベルを作ります。" },
               );

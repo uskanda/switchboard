@@ -227,7 +227,7 @@ describe("the pinned head of an issue", () => {
     const title = await screen.findByRole("heading", { level: 2, name: "Add a flag" });
     const head = within(title.closest("[data-pane-head]") as HTMLElement);
     expect(head.getByRole("link", { name: "← 一覧へ" })).toBeInTheDocument();
-    expect(head.getByText("gh:o/r#12")).toBeInTheDocument();
+    expect(head.getByText("o/r#12").nextElementSibling).toHaveTextContent("GitHub");
     expect(head.getByRole("link", { name: /フォージで開く/ })).toHaveAttribute("href", "https://github.test/o/r/issues/12");
   });
 

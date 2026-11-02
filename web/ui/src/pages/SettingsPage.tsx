@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { IssueRef } from "@/components/IssueRef";
 import { Loading } from "@/components/Loading";
 import { ProjectsSection } from "@/components/ProjectsSection";
 import { Shell } from "@/components/Shell";
@@ -7,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiError, getInstructions, saveInstructions, type Instruction, type InstructionKind, type Instructions } from "@/lib/api";
+import { refText } from "@/lib/ref";
 import { usePageTitle } from "@/lib/title";
 import { toast } from "@/lib/toast";
 
@@ -35,7 +37,7 @@ function Field({ item, kind }: { item: Instruction; kind: InstructionKind }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const id = `instructions-${kind}-${item.target || "global"}`;
-  const name = item.target || "すべてのプロジェクト";
+  const name = item.target ? refText(item.target) : "すべてのプロジェクト";
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -55,8 +57,8 @@ function Field({ item, kind }: { item: Instruction; kind: InstructionKind }) {
     <section aria-labelledby={`${id}-label`}>
       <Card>
         <form onSubmit={submit} className="flex flex-col gap-sm">
-          <label id={`${id}-label`} htmlFor={id} className={item.target ? "font-mono text-mono-sm break-all" : "text-label-md font-medium"}>
-            {name}
+          <label id={`${id}-label`} htmlFor={id} className={item.target ? undefined : "text-label-md font-medium"}>
+            {item.target ? <IssueRef value={item.target} /> : name}
           </label>
           <Textarea
             id={id}

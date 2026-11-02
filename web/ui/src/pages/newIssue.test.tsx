@@ -48,7 +48,7 @@ async function openDialog() {
   );
   await userEvent.click(await screen.findByRole("button", { name: "新規issue" }));
   const dialog = await screen.findByRole("dialog", { name: "新規issue" });
-  await within(dialog).findByRole("option", { name: "gh:o/r（担当：usknas）" });
+  await within(dialog).findByRole("option", { name: "o/r GitHub（担当：usknas）" });
   return dialog;
 }
 
@@ -57,7 +57,7 @@ describe("a new issue", () => {
     answer({ "GET /api/issue-targets": targets });
     const dialog = await openDialog();
     expect(within(dialog).getByRole("combobox", { name: "プロジェクト" })).toHaveValue("gh:o/r");
-    expect(within(dialog).getByRole("option", { name: "gl:nas/sb（担当：laptop）" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("option", { name: "nas/sb GitLab（担当：laptop）" })).toBeInTheDocument();
     const ready = within(dialog).getByRole("radio", { name: /agent:ready/ });
     expect(ready).toBeChecked();
     expect(within(dialog).getByRole("radio", { name: /agent:plan/ })).not.toBeChecked();
@@ -88,7 +88,8 @@ describe("a new issue", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "作成する" }));
 
     const status = await screen.findByRole("status");
-    expect(status).toHaveTextContent("gl:nas/sb#7 を作りました");
+    expect(status).toHaveTextContent("nas/sb#7 GitLab を作りました");
+    expect(within(status).getByText("nas/sb#7").nextElementSibling).toHaveTextContent("GitLab");
     const toast = status.closest<HTMLElement>("[data-sonner-toast]")!;
     expect(toast).toHaveClass("toast-success");
     const link = within(toast).getByRole("link", { name: /フォージで開く/ });

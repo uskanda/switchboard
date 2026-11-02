@@ -64,10 +64,10 @@ describe("the settings", () => {
     at("/settings");
     const plan = within(await planSection());
     expect(await plan.findByRole("textbox", { name: "すべてのプロジェクト" })).toHaveValue("");
-    expect(plan.getByRole("textbox", { name: "gh:o/r" })).toHaveValue("Mind the API names.");
-    expect(plan.getByRole("textbox", { name: "gl:nas/sb" })).toBeInTheDocument();
+    expect(plan.getByRole("textbox", { name: "o/r GitHub" })).toHaveValue("Mind the API names.");
+    expect(plan.getByRole("textbox", { name: "nas/sb GitLab" })).toBeInTheDocument();
     const run = within(await runSection());
-    expect(run.getByRole("textbox", { name: "gh:o/r" })).toHaveValue("Record an OpenSpec change.");
+    expect(run.getByRole("textbox", { name: "o/r GitHub" })).toHaveValue("Record an OpenSpec change.");
     expect(run.getByRole("textbox", { name: "すべてのプロジェクト" })).toHaveValue("");
     expect(screen.getAllByText(/のファイルです/)[0]).toHaveTextContent("ubuntu-a");
   });
@@ -75,12 +75,12 @@ describe("the settings", () => {
   it("save one field and say so in a toast", async () => {
     const calls = answer({ "GET /api/instructions": { status: 200, body: instructions }, "POST /api/instructions": { status: 204 } });
     at("/settings");
-    const field = await within(await planSection()).findByRole("textbox", { name: "gl:nas/sb" });
+    const field = await within(await planSection()).findByRole("textbox", { name: "nas/sb GitLab" });
     await userEvent.type(field, "Ask in Japanese.");
     const card = field.closest("section")!;
     await userEvent.click(within(card as HTMLElement).getByRole("button", { name: "保存する" }));
     const status = await screen.findByRole("status");
-    expect(status).toHaveTextContent("保存しました");
+    expect(status).toHaveTextContent("nas/sb GitLabの計画の指示を保存しました");
     expect(status.closest("[data-sonner-toast]")).toHaveClass("toast-success");
     expect(within(card as HTMLElement).queryByText("保存しました")).toBeNull();
     const post = calls.find((c) => c.key === "POST /api/instructions");
@@ -97,7 +97,7 @@ describe("the settings", () => {
     const plan = within(await planSection());
     const global = await plan.findByRole("textbox", { name: "すべてのプロジェクト" });
     await userEvent.type(global, "keep me");
-    const field = plan.getByRole("textbox", { name: "gh:o/r" });
+    const field = plan.getByRole("textbox", { name: "o/r GitHub" });
     await userEvent.type(field, " ghp_x");
     const card = field.closest("section") as HTMLElement;
     await userEvent.click(within(card).getByRole("button", { name: "保存する" }));
@@ -110,19 +110,19 @@ describe("the settings", () => {
   it("save a run field as the run kind and leave the plan field alone", async () => {
     const calls = answer({ "GET /api/instructions": { status: 200, body: instructions }, "POST /api/instructions": { status: 204 } });
     at("/settings");
-    const field = await within(await runSection()).findByRole("textbox", { name: "gh:o/r" });
+    const field = await within(await runSection()).findByRole("textbox", { name: "o/r GitHub" });
     await userEvent.type(field, " Tick the tasks.");
     await userEvent.click(within(field.closest("section") as HTMLElement).getByRole("button", { name: "保存する" }));
-    expect(await screen.findByRole("status")).toHaveTextContent("gh:o/rの実装の指示を保存しました");
+    expect(await screen.findByRole("status")).toHaveTextContent("o/r GitHubの実装の指示を保存しました");
     const post = calls.find((c) => c.key === "POST /api/instructions");
     expect(JSON.parse(String(post?.init?.body))).toEqual({ target: "gh:o/r", kind: "run", content: "Record an OpenSpec change. Tick the tasks." });
-    expect(within(await planSection()).getByRole("textbox", { name: "gh:o/r" })).toHaveValue("Mind the API names.");
+    expect(within(await planSection()).getByRole("textbox", { name: "o/r GitHub" })).toHaveValue("Mind the API names.");
   });
 
   it("treat items without a kind as plan instructions", async () => {
     answer({ "GET /api/instructions": { status: 200, body: { host: "ubuntu-a", items: [{ target: "gh:o/r", content: "Old." }] } } });
     at("/settings");
-    expect(await within(await planSection()).findByRole("textbox", { name: "gh:o/r" })).toHaveValue("Old.");
+    expect(await within(await planSection()).findByRole("textbox", { name: "o/r GitHub" })).toHaveValue("Old.");
     expect(within(await runSection()).queryByRole("textbox")).toBeNull();
   });
 

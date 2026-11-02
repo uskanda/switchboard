@@ -46,7 +46,8 @@ describe("the projects of the settings", () => {
     expect(section.compareDocumentPosition(instructions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const rows = within(section).getAllByRole("listitem");
     expect(rows).toHaveLength(2);
-    expect(rows[0]).toHaveTextContent("gh:o/r");
+    expect(rows[0]).not.toHaveTextContent("gh:o/r");
+    expect(within(rows[0]).getByText("o/r").nextElementSibling).toHaveTextContent("GitHub");
     expect(rows[0]).toHaveTextContent("クローン済み");
     expect(rows[0]).toHaveTextContent("状態ラベルはそろっています");
     expect(rows[1]).toHaveTextContent("計画から始める");
@@ -99,7 +100,8 @@ describe("the projects of the settings", () => {
     // The addition is told in a toast; the webhook command stays under the section to be copied.
     const toast = (await screen.findByText(/を追加しました/)).closest<HTMLElement>("[data-sonner-toast]");
     expect(toast).toHaveClass("toast-success");
-    expect(toast).toHaveTextContent("gh:o/notes を追加しました");
+    expect(toast).toHaveTextContent("o/notes GitHub を追加しました");
+    expect(within(toast!).getByText("o/notes").nextElementSibling).toHaveTextContent("GitHub");
     expect(within(section).queryByText(/を追加しました/)).toBeNull();
     expect(within(section).getByText("switchboard relay hook add gh:o/notes")).toBeInTheDocument();
     expect(within(section).getByText(/登録するまでは、ポーリングで扱います/)).toBeInTheDocument();
@@ -152,6 +154,6 @@ describe("the projects of the settings", () => {
     settings();
     await userEvent.type(await screen.findByRole("textbox", { name: "追加するプロジェクト" }), "gh:o/notes");
     await userEvent.click(screen.getByRole("button", { name: "追加する" }));
-    expect((await screen.findAllByRole("textbox", { name: "gh:o/notes" }))[0]).toHaveValue("");
+    expect((await screen.findAllByRole("textbox", { name: "o/notes GitHub" }))[0]).toHaveValue("");
   });
 });
