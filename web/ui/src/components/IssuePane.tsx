@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router";
+import { MergeButton } from "@/components/MergeButton";
 import { PlanQuestions } from "@/components/PlanQuestions";
 import { ReasonBadge } from "@/components/ReasonBadge";
 import { Thread } from "@/components/Thread";
@@ -239,6 +240,16 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
               )}
             </span>
           </div>
+          {finished && !gone && detail.change_number && detail.change_sha ? (
+            <div className="flex flex-wrap items-center gap-sm">
+              {detail.change_url && (
+                <a href={detail.change_url} target="_blank" rel="noreferrer" className="inline-flex min-h-11 min-w-0 items-center break-all font-mono text-mono-sm text-muted underline">
+                  {detail.change_url}
+                </a>
+              )}
+              <MergeButton issueRef={detail.ref} number={detail.change_number} sha={detail.change_sha} url={detail.change_url} />
+            </div>
+          ) : null}
           {gone && <p className="text-muted">このissueは、待ちでも実行中でもなくなりました。</p>}
           {detail.comments ? (
             <Thread
