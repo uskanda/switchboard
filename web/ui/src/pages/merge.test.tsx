@@ -57,6 +57,21 @@ describe("merging a done issue's pull request", () => {
     expect(button.closest("a")).toBeNull();
   });
 
+  it("sits inside the card's frame with the change's link, below and outside the card's link to the issue", async () => {
+    answer({ "GET /api/inbox": listing, [detailPath]: detail });
+    at("/issue/gh%3Ao%2Fr%2350");
+    const buttons = await screen.findAllByRole("button", { name: "PR #9をマージ" });
+    const button = buttons.find((b) => b.closest("li"))!;
+    const card = button.closest("li")!.firstElementChild as HTMLElement;
+    const issueLink = within(card).getAllByRole("link").find((a) => a.getAttribute("href") === "/issue/gh%3Ao%2Fr%2350")!;
+    const changeLink = within(card).getByRole("link", { name: "PR #9" });
+    expect(card).toContainElement(button);
+    expect(issueLink).toHaveAttribute("aria-current", "page");
+    expect(issueLink).not.toContainElement(button);
+    expect(issueLink).not.toContainElement(changeLink);
+    expect(card).toHaveClass("border-primary");
+  });
+
   it("is offered in the issue's pane", async () => {
     answer({ "GET /api/inbox": listing, [detailPath]: detail });
     at("/issue/gh%3Ao%2Fr%2350");

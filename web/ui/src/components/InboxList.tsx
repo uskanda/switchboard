@@ -13,14 +13,15 @@ import { cn } from "@/lib/utils";
 
 /**
  * ChangeLink is the pull or merge request of a done issue, a link of its own beside the issue's, named by its number
- * when the done post gives one, with the button that merges it when the done post names its number and commit. Both stay outside the row's link to the issue.
+ * when the done post gives one, with the button that merges it when the done post names its number and commit. Both
+ * sit inside the row's cell or card, outside the row's link to the issue.
  */
-function ChangeLink({ it }: { it: Item }) {
+function ChangeLink({ it, className }: { it: Item; className?: string }) {
   if (!isDone(it)) return null;
   const mergeable = !!it.change_number && !!it.change_sha;
   if (!it.change_url && !mergeable) return null;
   return (
-    <div className="flex flex-wrap items-center gap-sm">
+    <div className={cn("flex flex-wrap items-center gap-sm", className)}>
       {it.change_url && (
         <a href={it.change_url} target="_blank" rel="noreferrer" className="inline-flex min-h-11 min-w-0 items-center break-all font-mono text-mono-sm text-muted underline">
           {it.change_number ? changeName(it.ref, it.change_number) : it.change_url}
@@ -62,7 +63,8 @@ function cells(it: Item) {
 
 /**
  * Items lists issues. On the list's own page, a screen from 640px gets a table; the pane next to an issue (from
- * 1024px) and a narrow screen get the same items as cards. The selected issue is marked.
+ * 1024px) and a narrow screen get the same items as cards. The selected issue is marked. A card's frame holds its link
+ * to the issue and, below a line, a done issue's change and its merge button, which stay outside that link.
  */
 function Items({ items, timeHead, selected }: { items: Item[]; timeHead: string; selected?: string }) {
   return (
@@ -107,12 +109,12 @@ function Items({ items, timeHead, selected }: { items: Item[]; timeHead: string;
           const current = it.ref === selected;
           return (
             <li key={it.ref}>
-              <Link
-                to={issuePath(it.ref)}
-                aria-current={current ? "page" : undefined}
-                className="block rounded-md focus-visible:outline-2 focus-visible:outline-primary"
-              >
-                <Card className={cn("flex flex-col gap-xs", current && "border-2 border-primary")}>
+              <Card className={cn("flex flex-col p-0", current && "border-2 border-primary")}>
+                <Link
+                  to={issuePath(it.ref)}
+                  aria-current={current ? "page" : undefined}
+                  className="flex flex-col gap-xs rounded-md p-lg focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary"
+                >
                   <IssueRef value={it.ref} className="self-start" />
                   <span className="font-medium break-words">{it.title}</span>
                   <span className="flex flex-wrap items-center gap-sm text-label-md text-muted">
@@ -121,9 +123,9 @@ function Items({ items, timeHead, selected }: { items: Item[]; timeHead: string;
                     <span>{c.time}</span>
                   </span>
                   <span className="text-label-md text-muted break-words">{c.line}</span>
-                </Card>
-              </Link>
-              <ChangeLink it={it} />
+                </Link>
+                <ChangeLink it={it} className="border-t border-outline px-lg pt-sm pb-lg" />
+              </Card>
             </li>
           );
         })}
