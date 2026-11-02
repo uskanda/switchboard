@@ -4,7 +4,6 @@ import { Loading } from "@/components/Loading";
 import { MergeButton, changeName } from "@/components/MergeButton";
 import { NewIssue } from "@/components/NewIssue";
 import { ReasonBadge } from "@/components/ReasonBadge";
-import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
 import { Table, TableCell, TableHead } from "@/components/ui/table";
 import { age, elapsed, isDone, isQueued, isRunning, isWaiting, issuePath, plainText, progressText, queueText, type Item } from "@/lib/api";
@@ -134,7 +133,8 @@ function Items({ items, timeHead, selected }: { items: Item[]; timeHead: string;
 
 /**
  * InboxList is the button for a new issue, then the waiting, the running, the queued and the done issues (open,
- * waiting to be closed), each under its own heading. Until the first listing arrives it says that it is loading.
+ * waiting to be closed), each under its own heading. Until the first listing arrives it says that it is loading. What
+ * the listing could not read is not here: InboxErrors shows it above the panes.
  */
 export function InboxList({ selected }: { selected?: string }) {
   const { inbox, error } = useInbox();
@@ -146,12 +146,6 @@ export function InboxList({ selected }: { selected?: string }) {
     <div className="flex flex-col gap-lg">
       <h2 className="sr-only">一覧</h2>
       <NewIssue />
-      {error && <Alert>{error}</Alert>}
-      {inbox?.errors.map((e) => (
-        <Alert key={e.forge}>
-          {e.forge}を読めませんでした：{e.message}
-        </Alert>
-      ))}
       {!inbox && !error && <Loading />}
       {inbox && (
         <section className="flex flex-col gap-sm">
