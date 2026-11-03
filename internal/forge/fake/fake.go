@@ -54,6 +54,7 @@ type Forge struct {
 type repo struct {
 	private bool
 	branch  string // the default branch; main when empty
+	avatar  []byte // the project's avatar; none when nil
 	labels  map[string]bool
 	issues  map[int]*issue
 }
