@@ -40,7 +40,7 @@ function failure(err: unknown): string {
 
 /**
  * NewIssue is the button above the list that opens a dialog for a new issue in any configured project, with a start
- * label. The issue is opened with the inbox token, so the agent takes it up (ADR-040). Once it is opened the dialog
+ * label; the list puts it in its top row. The issue is opened with the inbox token, so the agent takes it up (ADR-040). Once it is opened the dialog
  * closes and a success toast links to it on the forge.
  */
 export function NewIssue() {
@@ -100,12 +100,10 @@ export function NewIssue() {
   const canSend = ready && title.trim() !== "" && !sending;
 
   return (
-    <div className="flex flex-col gap-sm">
-      <div className="flex justify-end">
-        <Button type="button" variant="secondary" onClick={open}>
-          新規issue
-        </Button>
-      </div>
+    <>
+      <Button type="button" variant="secondary" onClick={open}>
+        新規issue
+      </Button>
       <Dialog ref={dialog} aria-labelledby={`${id}-heading`}>
         <form onSubmit={submit} className="flex flex-col gap-md">
           <h2 id={`${id}-heading`} className="text-headline-md font-semibold">
@@ -172,6 +170,6 @@ export function NewIssue() {
           </div>
         </form>
       </Dialog>
-    </div>
+    </>
   );
 }
