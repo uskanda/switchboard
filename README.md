@@ -79,7 +79,7 @@ GitHubのfine-grained personal access tokenを2つ作り、Secret Serviceに登�
 | 用途 | 設定のキー | 権限（対象のリポジトリだけ） |
 |---|---|---|
 | エージェント（ラベル、コメント、push、PR、CIの見張り） | `token_ref` | Contents、Issues、Pull requestsの読み書き。Actions、Commit statusesの読み取り |
-| 受信箱（一覧、返答、WUIからのマージ） | `inbox_token_ref` | Issues、Pull requests、Contentsの読み書き |
+| 受信箱（一覧、返答、WUIからのマージ） | `inbox_token_ref` | Issues、Pull requests、Contentsの読み書き。Actions、Commit statusesの読み取り |
 
 ```bash
 secret-tool store --label='switchboard github' service switchboard/github username token
@@ -94,6 +94,8 @@ secret-tool store --label='switchboard github inbox' service switchboard/github-
 エージェントのトークンにActionsとCommit statusesの読み取りが無いと、エージェントはPRのCIを見張らない。ほかの動きは変わらない。`switchboard doctor` が警告を出す。
 
 受信箱のトークンのPull requestsとContentsの書き込みは、受信箱のWeb表示から完了のPRをマージするために使う（ADR-043）。マージは人の身元で行い、フォージにも人のマージとして残る。今のトークンに足すときは、GitHubのトークンの設定で、Pull requestsとContentsを「Read and write」にして保存する。トークンの値は変わらないので、登録し直さなくてよい。足さないうちは、マージだけが「権限がありません」で断られる。
+
+受信箱のトークンのActionsとCommit statusesの読み取りは、マージの確認ダイアログにCIの結果を出すために使う（ADR-050）。足し方は上と同じで、ActionsとCommit statusesを「Read-only」にする。足さないうちは、ダイアログに「CIを読む権限がありません」と出るだけで、マージはできる。`switchboard doctor` が警告を出す。
 
 GitLabのプロジェクトを使うときは、GitLabのpersonal access tokenを `api` スコープで作り、同じように登録する。エージェント用と受信箱用に、同じトークンを登録してもよい。このトークンは自分の全プロジェクトを操作できる。エージェントの影響を1つのプロジェクトに限りたいときは、後述のプロジェクトごとの上書きで、Project Access Tokenを使う。GitLab 19.2以降のfine-grainedのトークンでも絞れるが、switchboardが使うすべてのAPIで動くかは確かめていない。
 
@@ -244,7 +246,20 @@ projects:
     allow_tools_extra: ["Bash(openspec *)"]
 ```
 
+`allow_tools_extra` の各項目のツール名（`Skill`、`Bash(openspec *)` なら `Bash`）は、実行に渡すツールにも足される。実行に渡すツールは、ファイルを書く実行では `Bash`、`Read`、`Edit`、`Write`、`Glob`、`Grep`、`WebSearch` だけである。計画の実行には、`Bash`、`Read`、`Glob`、`Grep`、`WebSearch` を渡す。
+
 設定を読むときに、空の項目、制限の無い `Bash` と `Bash(*)`、どの実行でも拒否する操作（`git push`、`git rebase`、`gh`、`WebFetch`）を名指しする項目は誤りになる。`Bash(git *)` のような広い項目は通るが、拒否する操作は拒否されたままである。プロジェクトの `allow_tools_extra` は再起動せずに反映され、`agent.allow_tools_extra` は再起動で反映される。許可は設定ファイルにだけ書け、受信箱のWeb表示からは変えられない。
+
+### 実行のモデルとeffort
+
+`agent.model` と `agent.effort` で、実行のモデルとeffortを選べる。計画の実行は `agent.plan`、直す実行（CIとpushの失敗、baseとの衝突）は `agent.fix` で上書きできる。値が空のときは、Claude Codeの既定とユーザーの設定が使われる。effortは `low`、`medium`、`high`、`xhigh`、`max` のどれかで、それ以外は設定の誤りになる。どちらも再起動で反映される。
+
+```yaml
+agent:
+  model: opus
+  effort: medium
+  fix: { effort: low }
+```
 
 指示は、計画の指示と同じディレクトリに `run.md` の名前で置く。全体は `instructions/run.md` である。GitHubのプロジェクトは `instructions/gh/<owner>/<repo>/run.md` に置く。GitLabなら `instructions/gl/<group>/<project>/run.md` である。保存の検査と監査ログは計画の指示と同じで、Web表示の「設定」の画面からも編集できる。
 
@@ -256,6 +271,20 @@ switchboard instructions edit --run gh:o/switchboard  # 1つのプロジェク�
 ```
 
 OpenSpecを使うプロジェクトでの書き方の例は、[docs/examples/openspec.md](docs/examples/openspec.md) にある。
+
+### 実装の実行だけへの追加の指示とスクリーンショット
+
+`run.md` は直す実行にも渡る。直接の実装（`agent:ready`・`agent:go`）と承認のあとの実装にだけ渡したい指示は、`implement.md` に書く。置き場所は `run.md` と同じディレクトリで、全体は `instructions/implement.md` である。両方あるときは、`run.md` のあとにつなげる。計画の実行と、CI・push・baseとの衝突を直す実行には渡らない。保存の検査と監査ログは、ほかの指示と同じである。`run.started` には、`implement` の鍵でこのファイルのハッシュが残る。
+
+```bash
+switchboard instructions edit --implement gh:o/switchboard
+```
+
+同じ2種類の実行には、画像の置き場所の取り決めもいつも渡す。取り決めでは、issueへ付けたい画像を、worktreeの `.switchboard/screenshots/` の直下に置く。switchboardは、この場所を `.git/info/exclude` へ足す。実行を始める前には、中を消す。doneで終わったら、doneの投稿に続けて、画像だけのコメントを1件issueへ付ける。付けるのは `.png`・`.jpg`・`.jpeg`・`.webp` だけで、1枚5MB、10枚までである。外れたファイルは、名前と理由をそのコメントに書く。画像をコミットするとpushを止め、検査の失敗として待つ。
+
+GitHubでは、端末の `gh`（v2.99.0以上）の `gh issue comment --attach` で付ける。`gh` にはエージェントのトークンだけを渡し、利用者の `gh` のログインは使わない。GitLabでは、uploads APIで上げてノートに並べる。付けられなかったときは、理由だけを書いたコメントを付け、doneはそのままにする。たとえば `gh` が無いときや古いとき、権限が無いときである。`switchboard doctor` は、GitHubのプロジェクトがあるときに `gh` の版を確かめる。
+
+撮影の手順と、それに要るコマンドの許可（`allow_tools_extra`）は、利用者が書く。例は [docs/examples/screenshots.md](docs/examples/screenshots.md) にある。
 
 ### 常駐させる
 
@@ -393,11 +422,12 @@ issueが待ちになったときと完了したときに、エージェントが
 - 実行中の欄には、端末、経過時間、最新の進捗の1行が出る。実行中のissueには返答できない
 - 順番待ちの欄は実行中の欄の下にあり、当たった上限と、順番待ちになってからの時間が出る。返答の待ちから順番待ちになったissueには、今までどおり返答できる
 - 「完了（close待ち）」の欄は順番待ちの欄の下にあり、端末、完了からの時間、PR/MRへのリンクが出る。ヘッダの完了の件数は、1件以上のときだけ出る。完了のissueにも返答でき、返答すると同じPR/MRで作業を再開する。issueをcloseすると欄から消える
-- 完了の行と1件の表示には「マージ」のボタンが出る。確認のダイアログで「マージする」を押すと、受信箱のトークンでPR/MRのdraftを解除してマージする。マージするのは、エージェントが完了を知らせたときのコミットだけで、その後にPR/MRへコミットが足されていれば断る。CIの結果でフォージが断ったときは、その理由がトーストに出る。issueは、PR/MRの本文の `Closes #N` でcloseされ、一覧から消える。baseが既定のブランチでないときはissueが閉じないので、手でcloseする（ADR-043）
+- 完了の行と1件の表示には「マージ」のボタンが出る。確認のダイアログには、PR/MRの衝突の有無と、CIの結果（成功・失敗・実行中の数と、失敗中・実行中のチェックへのリンク）が出る。どちらも情報だけで、マージは止めない（ADR-050）。ダイアログで「マージする」を押すと、受信箱のトークンでPR/MRのdraftを解除してマージする。マージするのは、エージェントが完了を知らせたときのコミットだけで、その後にPR/MRへコミットが足されていれば断る。CIの結果でフォージが断ったときは、その理由がトーストに出る。issueは、PR/MRの本文の `Closes #N` でcloseされ、一覧から消える。baseが既定のブランチでないときはissueが閉じないので、手でcloseする（ADR-043）
 - PR/MRがbaseと衝突していて断られたときは、エージェントが衝突を直したあとに、受信箱のサービスが自動でマージする。待っている間は、行と1件の表示に「自動マージ待ち」の印が出て、1件の表示の「自動マージを取り消す」でやめられる。自動でマージするのは、押したあとにエージェントの直す実行（衝突、CIの失敗、pushの拒否）がpushしたコミットだけである。その間に人がコメントしたか、PR/MRへpushしたときは、自動のマージをやめる。結果は、次に画面を開いたときにトーストで出る（ADR-048）
 - 実行の失敗（理由が `error`）の待ちには「再実行する」のボタンが出る。返答の欄が空のときに押すと再実行を頼む決まった文を返答し、エージェントが同じ作業をやり直す
+- 衝突を直す回数が上限に達した待ち（理由が `conflict`）にも「再実行する」が出る。押すと衝突の解消を頼む決まった文を返答し、エージェントが衝突を直す回数を数え直して、もう一度直す
 - 画面を開いている間は、一覧と選んだissueが自動で更新される。返答の書きかけは、更新されても消えない
-- 一覧の上の「新規issue」から、設定にあるどのプロジェクトにもissueを作れる。開始ラベルは、設定の `labels.ready`、`labels.plan`、`labels.go` から1つを選ぶ（初期値はready）。issueは受信箱のトークンで作るので、エージェントがそのまま着手する（ADR-040）
+- 一覧の上の「新規issue」から、設定にあるどのプロジェクトにもissueを作れる。開始ラベルは、設定の `labels.ready`、`labels.plan`、`labels.go` から1つを選ぶか、「ラベルなし（実装開始しない）」を選ぶ（初期値はready）。issueは受信箱のトークンで作るので、開始ラベルがあればエージェントがそのまま着手する（ADR-040）。ラベルなしのissueには着手しない。あとで開始ラベルを付ければ着手する（ADR-049）
 
 仕組みは次の2つのサービスに分かれる。
 
@@ -490,6 +520,8 @@ inbox:
 
 スロットが空くと、順番待ちに入った順にissueを始める。`agent.prefer_plan: true`（既定はfalse）にすると、順番待ちのうち計画の実行（計画を先に立てるモードで、質問か計画を出す実行）を先に始め、実装の実行は後に回す。並べ替えるのは順番待ちから取り出すときだけで、スロットが空いていれば実装もすぐに始まる。エージェントを再起動すると、順番待ちに入った時刻は消え、再評価で入り直した順になる。
 
+完了したissueのPR/MRがbaseと衝突したときと、CIが失敗したときの直す実行は、順番待ちより先に始まる。`agent.prefer_plan` がオンでも、計画の実行より先になる。直す実行どうしでは、衝突を先に直す。直す実行は順番待ちのコメントを付けず、スロットを待ち始めたことをログに残すだけにする。
+
 ### Androidのアプリで見て、通知を受ける
 
 `app/` のAndroidのアプリは、受信箱のWeb表示をWebViewで開く。画面はWeb表示と同じで、Web表示を新しくすればアプリにも反映される。アプリが足すのは次のものである（ADR-047）。
@@ -553,6 +585,20 @@ agent:
 ```
 
 順番待ちになったissueには、エージェントが「順番待ちにしました」というコメントを1つ付ける。コメントには、当たった上限が端末かプロジェクトかと、その値だけを書く。ラベルは変えない。順番が来て着手するとき、または始めるラベルが外れたときやcloseされたときに、エージェントはこのコメントを消す。エージェントを再起動したときは、前のプロセスが付けたものを消し、順番待ちのままなら付け直す。ログには、順番待ちに入ったことと、順番待ちから始めたことが1行ずつ出る。
+
+### 利用上限とクオータ
+
+実行がAIサービスの利用上限に当たると、エージェントはそのissueを `agent:ready` に戻し、上限で止まったことと再開の時刻を書いた順番待ちのコメントを1つ付ける。待ちにはせず、通知もしない。端末は、その時刻まで新しい実行を始めない。この間に始まるはずだったissueも、再開の時刻を書いた順番待ちのコメントが付く。動いている実行は止めない。時刻を過ぎると、止まったissueを同じ周期のまま再開する。実装の実行なら、前の実行が上限で止まったことをプロンプトに足す。そのうえで、worktreeの変更から続けさせる。サービスが解除時刻を伝えないときは、`agent.limit_wait`（既定は30分）だけ待つ。止めた状態は状態ディレクトリの `pause.json` に残り、エージェントを再起動しても引き継ぐ。CIやpushを直す実行が上限に当たったときは、理由 `error` の待ちになり、自動で直す回数には数えない。
+
+`claude.auth: api_key` のときは、各実行の費用（claudeが報告する `total_cost_usd`）を `cost.json` に日と月で積み上げる。`quota.daily_usd` か `quota.monthly_usd` に達すると、次の日か次の月の0時（端末の時刻）まで新しい実行を始めず、issueは理由 `quota` の順番待ちになる。確かめるのは実行を始める前だけで、実行の途中では止めない。`subscription` のときは費用を数えない。そのとき `quota` を書くと、`switchboard doctor` で警告が出る。
+
+```yaml
+agent:
+  limit_wait: 30m       # 解除時刻が分からない上限の後に待つ時間
+quota:                  # claude.auth: api_key のときだけ使う。書かない項目は無効
+  daily_usd: 20
+  monthly_usd: 300
+```
 
 ```yaml
 agent:

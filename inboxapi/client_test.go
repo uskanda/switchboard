@@ -329,6 +329,34 @@ func TestMergePostsJSONAndTypesTheRefusals(t *testing.T) {
 	}
 }
 
+func TestMergeStatusGetsTheStatusOfTheChange(t *testing.T) {
+	stale := false
+	c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/merge-status" ||
+			r.URL.Query().Get("ref") != "gl:g/sub/p#5" || r.URL.Query().Get("sha") != "abc" {
+			t.Errorf("%s %s", r.Method, r.URL)
+		}
+		if stale {
+			reply(w, http.StatusConflict, Error{Code: CodeStale, Message: "open it again"})
+			return
+		}
+		reply(w, http.StatusOK, MergeStatus{State: "open", HeadMoved: true, Mergeable: MergeConflict, CI: CIRead,
+			Checks: []CheckStatus{{Name: "lint", Status: CheckFailure, URL: "https://ci/2"}}})
+	})
+	st, err := c.MergeStatus(ctx, "gl:g/sub/p#5", "abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.State != "open" || !st.HeadMoved || st.Mergeable != MergeConflict || st.CI != CIRead || len(st.Checks) != 1 ||
+		st.Checks[0] != (CheckStatus{Name: "lint", Status: CheckFailure, URL: "https://ci/2"}) {
+		t.Fatalf("status = %+v", st)
+	}
+	stale = true
+	if _, err := c.MergeStatus(ctx, "gl:g/sub/p#5", "abc"); !errors.Is(err, ErrStale) {
+		t.Fatalf("err = %v, want ErrStale", err)
+	}
+}
+
 // A merge refused for a conflict is answered with 202: the inbox service makes it once the agent has fixed it.
 func TestMergeReportsAMergeThatWaitsForTheFix(t *testing.T) {
 	c := serve(t, func(w http.ResponseWriter, r *http.Request) {

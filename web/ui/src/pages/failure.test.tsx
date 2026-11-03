@@ -48,10 +48,13 @@ describe("waits on a failure after the work", () => {
     expect(screen.queryByRole("button", { name: /承認する/ })).toBeNull();
   });
 
-  it("say that a reply runs the agent again and counts the fixes over (conflict)", async () => {
+  it("say how to run the fix again and that it counts the fixes over (conflict)", async () => {
     answer({ "GET /api/issue?ref=gh%3Ao%2Fr%2312": detail("conflict") });
     at("/issue/gh%3Ao%2Fr%2312");
-    expect(await screen.findByText(/baseとの衝突を自動で直す回数/)).toHaveTextContent("返信すると");
+    const hint = await screen.findByText(/baseとの衝突を自動で直せませんでした/);
+    expect(hint).toHaveTextContent("「再実行する」");
+    expect(hint).toHaveTextContent("「返答を送る」");
+    expect(hint).toHaveTextContent("自動で直す回数を数え直します");
     expect(screen.getByText("conflict")).toBeInTheDocument();
     expect(isFailure("conflict")).toBe(true);
   });
@@ -78,11 +81,12 @@ describe("waits on a failure after the work", () => {
 
 const issue = "GET /api/issue?ref=gh%3Ao%2Fr%2312";
 // The issue on the list: one that left it is not said to have been sent to (it stopped waiting).
-const errorInbox = {
-  items: [{ n: 1, ref: "gh:o/r#12", project: "o/r", number: 12, title: "Add a flag", url: "u", host: "laptop", waiting_since: null, reason: "error", question: "" }],
+const inboxOf = (reason: string) => ({
+  items: [{ n: 1, ref: "gh:o/r#12", project: "o/r", number: 12, title: "Add a flag", url: "u", host: "laptop", waiting_since: null, reason, question: "" }],
   errors: [],
   fetched_at: "",
-};
+});
+const errorInbox = inboxOf("error");
 
 describe("waits on a failed run", () => {
   it("offer to run again and say how (error)", async () => {
@@ -103,8 +107,25 @@ describe("waits on a failed run", () => {
     expect(JSON.parse(String(posts[0].init?.body))).toEqual({ ref: "gh:o/r#12", text: "再実行してください。" });
   });
 
-  it("send what is written instead, and not run again over it", async () => {
-    const calls = answer({ "GET /api/inbox": errorInbox, [issue]: detail("error"), "POST /api/reply": null });
+  it("offer to run the fix of a conflict again (conflict)", async () => {
+    answer({ [issue]: detail("conflict") });
+    at("/issue/gh%3Ao%2Fr%2312");
+    expect(await screen.findByRole("button", { name: "再実行する" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "返答を送る" })).toBeDisabled();
+  });
+
+  it("send the fixed text that asks to resolve the conflict in one click", async () => {
+    const calls = answer({ "GET /api/inbox": inboxOf("conflict"), [issue]: detail("conflict"), "POST /api/reply": null });
+    at("/issue/gh%3Ao%2Fr%2312");
+    await userEvent.click(await screen.findByRole("button", { name: "再実行する" }));
+    expect(await within(screen.getByRole("article")).findByRole("status")).toHaveTextContent("送りました");
+    const posts = calls.filter((c) => c.key === "POST /api/reply");
+    expect(posts).toHaveLength(1);
+    expect(JSON.parse(String(posts[0].init?.body))).toEqual({ ref: "gh:o/r#12", text: "baseとの衝突を解消して、もう一度pushしてください。" });
+  });
+
+  it.each(["error", "conflict"])("send what is written instead, and not run again over it (%s)", async (reason) => {
+    const calls = answer({ "GET /api/inbox": inboxOf(reason), [issue]: detail(reason), "POST /api/reply": null });
     at("/issue/gh%3Ao%2Fr%2312");
     const retry = await screen.findByRole("button", { name: "再実行する" });
     await userEvent.type(screen.getByRole("textbox", { name: "返答" }), "テストを先に直して");
@@ -122,8 +143,13 @@ describe("waits on a failed run", () => {
     expect(screen.queryByRole("button", { name: "再実行する" })).toBeNull();
   });
 
-  it.each(["running", "queued"])("do not run again once the issue stops waiting (%s)", async (state) => {
-    answer({ [issue]: { ...detail("error"), waiting: false, state } });
+  it.each([
+    ["error", "running"],
+    ["error", "queued"],
+    ["conflict", "running"],
+    ["conflict", "queued"],
+  ])("do not run again once the issue stops waiting (%s, %s)", async (reason, state) => {
+    answer({ [issue]: { ...detail(reason), waiting: false, state } });
     at("/issue/gh%3Ao%2Fr%2312");
     expect(await screen.findByText(/The CI of #48 failed\./)).toBeInTheDocument();
     const retry = screen.queryByRole("button", { name: "再実行する" });

@@ -76,8 +76,10 @@ type Item struct {
 	RunningSince *time.Time `json:"running_since,omitempty"`
 	Progress     string     `json:"progress,omitempty"`
 	QueuedSince  *time.Time `json:"queued_since,omitempty"`
-	DoneSince    *time.Time `json:"done_since,omitempty"`
-	ChangeURL    string     `json:"change_url,omitempty"`
+	// QueuedUntil, on an issue queued on a pause of its host (reason limit or quota), is when the pause ends.
+	QueuedUntil *time.Time `json:"queued_until,omitempty"`
+	DoneSince   *time.Time `json:"done_since,omitempty"`
+	ChangeURL   string     `json:"change_url,omitempty"`
 	// ChangeNumber and ChangeSHA are the change request and the commit the marker of the latest done post names
 	// (cr and sha); a page merges that commit of that change request, and offers no merge without them.
 	ChangeNumber int    `json:"change_number,omitempty"`
@@ -375,6 +377,10 @@ func queuedItem(s forge.IssueSummary, m *marker.Marker) Item {
 		at := m.At
 		it.QueuedSince = &at
 	}
+	if !m.Until.IsZero() {
+		until := m.Until
+		it.QueuedUntil = &until
+	}
 	return it
 }
 
@@ -545,7 +551,11 @@ func Print(w io.Writer, items []Item, now time.Time) {
 		tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 		fmt.Fprintln(tw, "ISSUE\tHOST\tQUEUED\tLIMIT")
 		for _, it := range queued {
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", it.Ref, it.Host, age(it.QueuedSince, now), it.Reason)
+			limit := it.Reason
+			if it.QueuedUntil != nil {
+				limit += " (until " + it.QueuedUntil.Local().Format("01-02 15:04") + ")"
+			}
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", it.Ref, it.Host, age(it.QueuedSince, now), limit)
 		}
 		tw.Flush()
 	}
@@ -843,13 +853,24 @@ func (b *Inbox) Merge(ctx context.Context, m forge.Merges, ref forge.IssueRef, s
 	if m == nil {
 		return fmt.Errorf("no client merges on %s", forgeName(ref.Kind()))
 	}
-	agentID, err := b.agentID(ctx, ref)
+	dm, err := b.doneChange(ctx, ref, sha, "nothing was merged")
 	if err != nil {
 		return err
 	}
+	return m.MergeChangeRequest(ctx, ref.Owner, ref.Repo, dm.CR, dm.SHA)
+}
+
+// doneChange is the marker of the agent's latest done post on an open done issue, when it names a change request and
+// the commit sha. Otherwise it is an ErrStale error, which ends with what was left undone (such as "nothing was
+// merged").
+func (b *Inbox) doneChange(ctx context.Context, ref forge.IssueRef, sha, undone string) (*marker.Marker, error) {
+	agentID, err := b.agentID(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
 	is, comments, err := b.forgeOf(ref.Kind()).Thread(ctx, ref)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	n := b.Config.Labels
 	if st := labels.StateOf(is.Labels, n); is.State != "open" || st != n.Done {
@@ -860,16 +881,16 @@ func (b *Inbox) Merge(ctx context.Context, m forge.Merges, ref forge.IssueRef, s
 		if now == "" {
 			now = "no state label"
 		}
-		return wrap(ErrStale, fmt.Errorf("%s is not done (%s); nothing was merged", refString(ref), now))
+		return nil, wrap(ErrStale, fmt.Errorf("%s is not done (%s); %s", refString(ref), now, undone))
 	}
 	_, dm := latestOf(comments, agentID, marker.Done)
 	switch {
 	case dm == nil || dm.CR == 0 || dm.SHA == "":
-		return wrap(ErrStale, fmt.Errorf("the done post of %s names no change request and commit; merge it on the forge", refString(ref)))
+		return nil, wrap(ErrStale, fmt.Errorf("the done post of %s names no change request and commit; merge it on the forge", refString(ref)))
 	case dm.SHA != sha:
-		return wrap(ErrStale, fmt.Errorf("the agent pushed %s to %s after the page was read; open it again", short(dm.SHA), refString(ref)))
+		return nil, wrap(ErrStale, fmt.Errorf("the agent pushed %s to %s after the page was read; open it again", short(dm.SHA), refString(ref)))
 	}
-	return m.MergeChangeRequest(ctx, ref.Owner, ref.Repo, dm.CR, dm.SHA)
+	return dm, nil
 }
 
 // short is the first 7 characters of a commit.

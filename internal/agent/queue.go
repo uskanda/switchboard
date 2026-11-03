@@ -24,12 +24,29 @@ type queuedNote struct {
 // noteQueued posts the queued comment of ref, which has just been queued on the limit named by limitKind, and logs
 // it. The caller has put a placeholder in a.queued, so that a second queueing of the issue posts nothing.
 func (a *Agent) noteQueued(ctx context.Context, ref forge.IssueRef, limitKind string, value int) {
-	a.logf("%s: queued: %s (%d) is reached", ref, limitName(limitKind), value)
-	text := fmt.Sprintf(a.msg.queuedHost, a.Config.Host.Name, value)
-	if limitKind == marker.QueuedProject {
-		text = fmt.Sprintf(a.msg.queuedProject, value)
-	}
 	m := marker.Marker{Host: a.Config.Host.Name, State: marker.Queued, Reason: limitKind, At: time.Now()}
+	var text string
+	switch limitKind {
+	case marker.QueuedProject:
+		text = fmt.Sprintf(a.msg.queuedProject, value)
+	case marker.QueuedLimit, marker.QueuedQuota:
+		a.mu.Lock()
+		if a.paused != nil {
+			m.Until = a.paused.Until
+		}
+		a.mu.Unlock()
+		text = fmt.Sprintf(a.msg.queuedLimit, a.Config.Host.Name, a.msg.when(m.Until))
+		if limitKind == marker.QueuedQuota {
+			text = fmt.Sprintf(a.msg.queuedQuota, a.Config.Host.Name, a.msg.when(m.Until))
+		}
+	default:
+		text = fmt.Sprintf(a.msg.queuedHost, a.Config.Host.Name, value)
+	}
+	if isPause(limitKind) {
+		a.logf("%s: queued: the host is paused (%s) until %s", ref, limitKind, m.Until.Local().Format(time.RFC3339))
+	} else {
+		a.logf("%s: queued: %s (%d) is reached", ref, limitName(limitKind), value)
+	}
 	c, err := a.forgeOf(ref).PostComment(ctx, ref, text+"\n\n"+m.Format()+"\n")
 	if err != nil {
 		a.mu.Lock()
@@ -62,6 +79,7 @@ func (a *Agent) unqueue(ctx context.Context, ref forge.IssueRef) bool {
 	a.mu.Lock()
 	id, ok := a.queued[ref]
 	delete(a.queued, ref)
+	delete(a.resumes, ref)
 	if ok {
 		a.saveQueued()
 	}
@@ -88,11 +106,12 @@ func (a *Agent) removeQueued(ctx context.Context, ref forge.IssueRef, id int64) 
 	}
 }
 
-// saveQueued writes the posted queued comments to queuedFile. Call it with mu held.
+// saveQueued writes the posted queued comments to queuedFile. The resume marks of runs that hit a usage limit are
+// left out, so that a restart keeps them. Call it with mu held.
 func (a *Agent) saveQueued() {
 	notes := []queuedNote{}
 	for ref, id := range a.queued {
-		if id != 0 {
+		if id != 0 && !a.resumes[ref] {
 			notes = append(notes, queuedNote{Issue: ref, Comment: id})
 		}
 	}

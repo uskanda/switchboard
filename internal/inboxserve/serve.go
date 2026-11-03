@@ -64,6 +64,9 @@ type Server struct {
 	// Merges, when set, serves /v1/merge: it merges change requests with each forge's inbox token, by forge kind
 	// (ADR-043). The Inbox must be a Merger.
 	Merges map[string]forge.Merges
+	// CI, when set, serves /v1/merge-status: it reads the change requests and the CI of done issues with each forge's
+	// inbox token, by forge kind, for the merge dialog (ADR-050). The Inbox must be a MergeStatusReader.
+	CI map[string]forge.CI
 	// Relay reports that the service follows the relay's events (inbox.relay is set): the listings then say
 	// whether it is connected, and RelayState and RelayEvent are called as the stream goes.
 	Relay bool
@@ -184,6 +187,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if s.AutoMerge != nil {
 			routes["/v1/automerge/cancel"] = route{http.MethodPost, s.cancelAutoMerge}
 		}
+	}
+	if s.CI != nil {
+		routes["/v1/merge-status"] = route{http.MethodGet, s.mergeStatus}
 	}
 	rt := routes[r.URL.Path]
 	switch {
@@ -440,7 +446,7 @@ func (s *Server) reply(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// instructions serves GET (the global and every project's instructions, of both kinds) and PUT (save one) of
+// instructions serves GET (the global and every project's instructions, of every kind) and PUT (save one) of
 // /v1/instructions.
 func (s *Server) instructions(w http.ResponseWriter, r *http.Request) {
 	in := s.Instructions
@@ -451,7 +457,7 @@ func (s *Server) instructions(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		out := inboxapi.Instructions{Host: in.Host, Items: []inboxapi.Instruction{}}
 		for _, t := range append([]string{instructions.Global}, projects...) {
-			for _, k := range []instructions.Kind{instructions.Plan, instructions.Run} {
+			for _, k := range instructions.Kinds {
 				text, err := in.Store.Of(k).Read(t)
 				if err != nil {
 					fail(w, http.StatusInternalServerError, inboxapi.CodeForge, err.Error())

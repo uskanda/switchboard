@@ -106,6 +106,13 @@ const kinds: Record<InstructionKind, { heading: string; noun: string; about: str
     about: "ファイルを書く実行（実装、承認のあとの実装、CIやpushの失敗とbaseとの衝突を直す実行）に渡します。",
     command: "switchboard instructions edit --run",
   },
+  implement: {
+    heading: "実装の実行だけへの追加の指示",
+    noun: "実装だけの指示",
+    about:
+      "直接の実装と承認のあとの実装にだけ、実装の実行への指示のあとに渡します。計画の実行と、直す実行には渡しません。スクリーンショットを撮る指示はここに書きます。",
+    command: "switchboard instructions edit --implement",
+  },
 };
 
 /** KindSection is the fields of one kind of instructions, global first, under its own heading. */
@@ -134,7 +141,7 @@ function KindSection({ kind, data }: { kind: InstructionKind; data: Instructions
 
 /**
  * SettingsPage, headed 設定, lists and adds the projects, and edits the additional instructions, global and per project: those the
- * plan runs get, then those the runs that write files get.
+ * plan runs get, those the runs that write files get, then those only the runs that implement an issue get.
  */
 export function SettingsPage() {
   const [data, setData] = useState<Instructions | null>(null);
@@ -156,6 +163,7 @@ export function SettingsPage() {
         <>
           <KindSection kind="plan" data={data} />
           <KindSection kind="run" data={data} />
+          <KindSection kind="implement" data={data} />
         </>
       )}
     </Shell>

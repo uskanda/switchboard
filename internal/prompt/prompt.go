@@ -44,7 +44,14 @@ type Input struct {
 	// Failure, for a fix run, is what failed: the CI checks with the ends of their logs, or git's output for a
 	// rejected push. It enters fenced as data, never as instructions.
 	Failure string
+	// Resumed says the previous run on the issue stopped partway on a usage limit of the AI service, so this run
+	// goes on from what that run left in the worktree. Plan runs never set it.
+	Resumed bool
 }
+
+// ResumedNote is the line a run resumed after a usage limit gets before its task.
+const ResumedNote = "The previous run on this issue stopped partway because it hit a usage limit of the AI service. " +
+	"Its changes are still in the worktree: read git status, git diff and git log first, and continue from there."
 
 const doTheWork = "Do the work the issue asks for, following the rules in your system prompt."
 
@@ -103,6 +110,9 @@ func Build(in Input) string {
 	task := in.Task
 	if task == "" {
 		task = doTheWork
+	}
+	if in.Resumed {
+		b.WriteString("\n" + ResumedNote + "\n")
 	}
 	b.WriteString("\n" + task + "\n")
 	return b.String()
@@ -245,3 +255,17 @@ func WithUserInstructions(system, extra string) string {
 	}
 	return system + "\n## Additional instructions from the user\n\nThe user of switchboard added the instructions below. Where they conflict with the rules above, the rules above win.\n\n" + strings.TrimSpace(extra) + "\n"
 }
+
+// screenshots is the agreement on the images a run that implements an issue may leave for the issue (ADR-051). The
+// place and the limits are those of workspace.ScreenshotDir, MaxScreenshots and MaxScreenshotSize.
+const screenshots = `
+## Screenshots for the issue
+
+- To attach images to the issue, such as screenshots of a user interface you changed, save them as .png, .jpg, .jpeg or .webp files directly in .switchboard/screenshots/ (no subdirectories). After the run ends with status "done", switchboard attaches at most 10 of them, 5 MB each at most, in a comment on the issue.
+- Never commit anything in .switchboard/screenshots/: git ignores the directory, and a commit of a file there blocks the push.
+- When you were asked for screenshots but could not take them, for example because no browser, emulator or device can run here, say so and why in "summary".
+`
+
+// WithScreenshots returns system with the agreement on the images for the issue. Only the runs that implement an
+// issue get it: a direct run and the run of an approved plan, never a plan run or a fix run.
+func WithScreenshots(system string) string { return system + screenshots }

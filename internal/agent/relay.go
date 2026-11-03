@@ -170,6 +170,7 @@ func (a *Agent) refresh(p config.Project) {
 	}
 	a.pollMu.Lock()
 	defer a.pollMu.Unlock()
+	a.startFixes(ctx) // before a newly ready issue takes a free slot
 	if err := errors.Join(a.pollProject(ctx, p)...); err != nil && ctx.Err() == nil {
 		a.logf("relay refresh: %v", err)
 	}

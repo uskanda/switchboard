@@ -13,8 +13,8 @@ import (
 // Item is one waiting, done, running or queued issue, as switchboard inbox --json lists it. Waiting and done issues
 // have a row number (N), numbered in this order; an open done issue has DoneSince and ChangeURL, the pull or merge
 // request its done post names ("" without one); a running one has RunningSince and Progress, the last line of its
-// progress comment ("?" without one); a queued one has QueuedSince, and Reason names the limit reached (max-parallel
-// or project-max-parallel).
+// progress comment ("?" without one); a queued one has QueuedSince, and Reason names the limit reached (max-parallel,
+// project-max-parallel, or the pause of its host: limit or quota, with QueuedUntil).
 type Item struct {
 	N            int        `json:"n,omitempty"`
 	State        string     `json:"state"` // waiting, done, running or queued
@@ -30,8 +30,10 @@ type Item struct {
 	RunningSince *time.Time `json:"running_since,omitempty"`
 	Progress     string     `json:"progress,omitempty"`
 	QueuedSince  *time.Time `json:"queued_since,omitempty"`
-	DoneSince    *time.Time `json:"done_since,omitempty"`
-	ChangeURL    string     `json:"change_url,omitempty"`
+	// QueuedUntil, on an issue queued on a pause of its host (Reason limit or quota), is when the pause ends.
+	QueuedUntil *time.Time `json:"queued_until,omitempty"`
+	DoneSince   *time.Time `json:"done_since,omitempty"`
+	ChangeURL   string     `json:"change_url,omitempty"`
 	// ChangeNumber and ChangeSHA are the change request and the commit the marker of the latest done post names; a
 	// page offers the merge (POST /v1/merge) only with both.
 	ChangeNumber int    `json:"change_number,omitempty"`
@@ -150,7 +152,8 @@ type ReplyRequest struct {
 
 // Instruction is one file of the additional instructions. Target is "" for the instructions of every project, else a
 // project as gh:owner/repo or gl:group/project. Kind is "plan" for the plan runs' instructions, "run" for those of
-// the runs that write files. Content is "" when there is no file.
+// the runs that write files, "implement" for those of the runs that implement an issue (a direct run or the run of an
+// approved plan). Content is "" when there is no file.
 type Instruction struct {
 	Target  string `json:"target"`
 	Kind    string `json:"kind"`
@@ -158,7 +161,7 @@ type Instruction struct {
 }
 
 // Instructions is the answer to GET /v1/instructions: the global instructions, then those of each configured project,
-// the plan kind before the run kind for each, all read on Host, the machine of the inbox service.
+// in the order plan, run, implement for each, all read on Host, the machine of the inbox service.
 type Instructions struct {
 	Host  string        `json:"host"`
 	Items []Instruction `json:"items"`
@@ -205,11 +208,13 @@ type AddProjectResponse struct {
 	Webhook string  `json:"webhook,omitempty"`
 }
 
-// The kinds of start label an issue can be opened with: the configuration's labels.ready, labels.plan and labels.go.
+// The kinds of start label an issue can be opened with: the configuration's labels.ready, labels.plan and labels.go,
+// and StartNone, no label at all, which the agent does not take up until a start label is put on (ADR-049).
 const (
 	StartReady = "ready"
 	StartPlan  = "plan"
 	StartGo    = "go"
+	StartNone  = "none"
 )
 
 // IssueTarget is a project an issue can be opened in, with Host, the machine that runs it, and PlanFirst, whether its
@@ -220,14 +225,15 @@ type IssueTarget struct {
 	PlanFirst bool   `json:"plan_first"`
 }
 
-// IssueStart is a kind of start label (StartReady, StartPlan, StartGo) and the label it stands for.
+// IssueStart is a kind of start label (StartReady, StartPlan, StartGo, StartNone) and the label it stands for, which
+// is empty for StartNone.
 type IssueStart struct {
 	Kind  string `json:"kind"`
 	Label string `json:"label"`
 }
 
 // IssueTargets is the answer to GET /v1/issue-targets: every configured project, whatever machine runs it, in the
-// order of the configuration, and the start labels the configuration names.
+// order of the configuration, and the start labels the configuration names, then StartNone.
 type IssueTargets struct {
 	Items  []IssueTarget `json:"items"`
 	Starts []IssueStart  `json:"starts"`
@@ -240,7 +246,7 @@ const (
 )
 
 // CreateIssueRequest is the body of POST /v1/issues. Start is a kind of IssueStart; the inbox service puts the label
-// it stands for on the issue, and no other.
+// it stands for on the issue, and no other, or no label for StartNone. An empty Start is refused.
 type CreateIssueRequest struct {
 	Ref   string `json:"ref"`
 	Title string `json:"title"`
@@ -260,6 +266,43 @@ type MergeRequest struct {
 	Ref string `json:"ref"`
 	SHA string `json:"sha"`
 }
+
+// MergeStatus is the answer to GET /v1/merge-status: where the change request of a done issue stands before the merge
+// dialog's merge (ADR-050). It is information only; the forge still decides whether the merge goes through.
+type MergeStatus struct {
+	// State is the change request's state on the forge: "open", "closed" or "merged".
+	State string `json:"state"`
+	// HeadMoved is set when the change request's head is no longer the commit the page showed.
+	HeadMoved bool `json:"head_moved"`
+	// Mergeable is MergeClean, MergeConflict or MergeComputing.
+	Mergeable string `json:"mergeable"`
+	// CI is CIRead, CINone or CIForbidden; Checks are empty unless it is CIRead.
+	CI     string        `json:"ci"`
+	Checks []CheckStatus `json:"checks"`
+}
+
+// CheckStatus is one check of the commit. Name is the forge's data, to be shown as text only.
+type CheckStatus struct {
+	Name   string `json:"name"`
+	Status string `json:"status"` // CheckSuccess, CheckFailure, CheckRunning or CheckOther
+	URL    string `json:"url"`
+}
+
+// The values of MergeStatus.Mergeable, MergeStatus.CI and CheckStatus.Status.
+const (
+	MergeClean     = "clean"
+	MergeConflict  = "conflict"
+	MergeComputing = "computing" // the forge still computes whether it conflicts
+
+	CIRead      = "ok"        // the commit has checks, listed in Checks
+	CINone      = "none"      // the commit has no checks
+	CIForbidden = "forbidden" // the inbox token may not read CI
+
+	CheckSuccess = "success"
+	CheckFailure = "failure"
+	CheckRunning = "running"
+	CheckOther   = "other"
+)
 
 // MergeAnswer is the body of a POST /v1/merge answered with 202: Code is CodeAutoMergePending, and the inbox service
 // merges the change request once the agent has fixed its conflict (ADR-048).

@@ -57,7 +57,7 @@ func TestProgressMarker(t *testing.T) {
 	if !ok || m.State != "progress" || m.Run != "r-1" || !m.Transient() {
 		t.Fatalf("Parse = %+v, %v", m, ok)
 	}
-	for state, want := range map[string]bool{"running": true, "progress": true, "waiting": false, "done": false} {
+	for state, want := range map[string]bool{"running": true, "progress": true, "attachment": true, "waiting": false, "done": false} {
 		if got := (&Marker{State: state}).Transient(); got != want {
 			t.Errorf("Transient(%s) = %v", state, got)
 		}

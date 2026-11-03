@@ -15,7 +15,8 @@ import (
 )
 
 // NewIssues serves /v1/issue-targets and /v1/issues: opening an issue, with a start label, in any configured project.
-// The issue is opened with the inbox token, so it is the person's own and the agent takes it up (ADR-040).
+// The issue is opened with the inbox token, so it is the person's own and the agent takes it up (ADR-040); one opened
+// without a start label waits until the person puts one on it (ADR-049).
 type NewIssues struct {
 	// Config is the configuration in use; Server.Reload replaces it.
 	Config *config.Config
@@ -29,7 +30,8 @@ func (s *Server) newIssuesConfig() *config.Config {
 	return s.NewIssues.Config
 }
 
-// starts are the start labels the configuration names, as kinds a request can choose from.
+// starts are the start labels the configuration names, as kinds a request can choose from, then StartNone, which
+// stands for no label and is always there (ADR-049).
 func starts(l config.Labels) []inboxapi.IssueStart {
 	out := []inboxapi.IssueStart{}
 	for _, st := range []inboxapi.IssueStart{
@@ -39,7 +41,7 @@ func starts(l config.Labels) []inboxapi.IssueStart {
 			out = append(out, st)
 		}
 	}
-	return out
+	return append(out, inboxapi.IssueStart{Kind: inboxapi.StartNone})
 }
 
 // issueTargets serves GET /v1/issue-targets.
@@ -92,13 +94,18 @@ func (s *Server) createIssue(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, inboxapi.CodeInvalid, "the body ends in a switchboard marker line; remove it")
 		return
 	}
-	label := ""
+	// The kind is looked up, never taken as empty: a request that leaves it out is refused, not opened without a label.
+	var labels []string
+	known := false
 	for _, st := range starts(cfg.Labels) {
 		if st.Kind == req.Start {
-			label = st.Label
+			known = true
+			if st.Label != "" {
+				labels = []string{st.Label}
+			}
 		}
 	}
-	if label == "" {
+	if !known {
 		fail(w, http.StatusBadRequest, inboxapi.CodeInvalid, fmt.Sprintf("%q is not a start label of the configuration", req.Start))
 		return
 	}
@@ -107,7 +114,7 @@ func (s *Server) createIssue(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadGateway, inboxapi.CodeForge, "no client for the forge of "+p.Ref)
 		return
 	}
-	is, err := issues.CreateIssue(r.Context(), p.Owner, p.Repo, title, req.Body, []string{label})
+	is, err := issues.CreateIssue(r.Context(), p.Owner, p.Repo, title, req.Body, labels)
 	if err != nil {
 		fail(w, http.StatusBadGateway, inboxapi.CodeForge, err.Error())
 		return
