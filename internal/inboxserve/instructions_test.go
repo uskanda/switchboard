@@ -39,13 +39,14 @@ func TestInstructionsListsGlobalAndEveryProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Host != "here" || len(got.Items) != 6 {
+	if got.Host != "here" || len(got.Items) != 9 {
 		t.Fatalf("instructions = %+v", got)
 	}
 	want := []inboxapi.Instruction{
-		{Target: "", Kind: "plan"}, {Target: "", Kind: "run"},
+		{Target: "", Kind: "plan"}, {Target: "", Kind: "run"}, {Target: "", Kind: "implement"},
 		{Target: "gh:o/r", Kind: "plan", Content: "Mind the API names."}, {Target: "gh:o/r", Kind: "run", Content: "Record a change."},
-		{Target: "gl:nas/sb", Kind: "plan"}, {Target: "gl:nas/sb", Kind: "run"},
+		{Target: "gh:o/r", Kind: "implement"},
+		{Target: "gl:nas/sb", Kind: "plan"}, {Target: "gl:nas/sb", Kind: "run"}, {Target: "gl:nas/sb", Kind: "implement"},
 	}
 	for i, it := range got.Items {
 		if it != want[i] {
@@ -109,6 +110,15 @@ func TestSaveRunInstructions(t *testing.T) {
 	}
 	if got, _ := s.Read("gh:o/r"); got != "" {
 		t.Fatalf("the plan file changed: %q", got)
+	}
+	if err := w.c.SaveInstructions(ctx, inboxapi.SaveInstructionsRequest{Target: "gh:o/r", Kind: "implement", Content: "Take screenshots."}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Of(instructions.Implement).Read("gh:o/r"); got != "Take screenshots." {
+		t.Fatalf("implement file = %q", got)
+	}
+	if got, _ := s.Of(instructions.Run).Read("gh:o/r"); got != "Record a change." {
+		t.Fatalf("the run file changed: %q", got)
 	}
 	if err := w.c.SaveInstructions(ctx, inboxapi.SaveInstructionsRequest{Target: "gh:o/r", Kind: "build", Content: "x"}); !errors.Is(err, inboxapi.ErrInvalid) {
 		t.Fatalf("an unknown kind = %v, want ErrInvalid", err)

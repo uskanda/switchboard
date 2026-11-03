@@ -2,6 +2,18 @@ package forge
 
 import "testing"
 
+func TestSplitLastLine(t *testing.T) {
+	for body, want := range map[string][2]string{
+		"### Screenshots\n\n<!-- m -->\n": {"### Screenshots", "<!-- m -->"},
+		"<!-- m -->":                      {"", "<!-- m -->"},
+		"a\n\nb  \n\n<!-- m -->\n\n":      {"a\n\nb", "<!-- m -->"},
+	} {
+		if head, last := SplitLastLine(body); head != want[0] || last != want[1] {
+			t.Errorf("SplitLastLine(%q) = %q, %q", body, head, last)
+		}
+	}
+}
+
 func TestIssueRefStringCarriesTheForge(t *testing.T) {
 	for _, c := range []struct {
 		ref  IssueRef

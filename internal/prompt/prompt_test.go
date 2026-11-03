@@ -201,3 +201,21 @@ func TestUserInstructionsGoLastInEveryWritingRun(t *testing.T) {
 		}
 	}
 }
+
+func TestWithScreenshotsAddsThePlaceOfTheImages(t *testing.T) {
+	sys := System("en", "main")
+	s := WithScreenshots(sys)
+	if !strings.HasPrefix(s, sys) {
+		t.Fatalf("WithScreenshots changed the rules:\n%s", s)
+	}
+	for _, want := range []string{"## Screenshots for the issue", ".switchboard/screenshots/", "Never commit", `"summary"`} {
+		if !strings.Contains(s[len(sys):], want) {
+			t.Errorf("the section lacks %q:\n%s", want, s[len(sys):])
+		}
+	}
+	for name, other := range map[string]string{"System": sys, "FixSystem": FixSystem("en", "main", FixCI), "PlanSystem": PlanSystem("en", "/ok", "")} {
+		if strings.Contains(other, ".switchboard/screenshots") {
+			t.Errorf("%s holds the section by itself", name)
+		}
+	}
+}

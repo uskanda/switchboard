@@ -158,9 +158,10 @@ export const watchKey = (it: Item) =>
 
 /**
  * One file of the additional instructions; target "" is the one for every project. kind "plan" is for the plan runs,
- * "run" for the runs that write files; an inbox service older than kinds leaves it out, which means "plan".
+ * "run" for the runs that write files, "implement" for the direct runs and the runs of an approved plan only; an inbox
+ * service older than kinds leaves it out, which means "plan".
  */
-export type InstructionKind = "plan" | "run";
+export type InstructionKind = "plan" | "run" | "implement";
 export type Instruction = { target: string; kind?: InstructionKind; content: string };
 
 /** Instructions are read on host, the machine of the inbox service. */

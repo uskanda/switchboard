@@ -243,3 +243,10 @@
 - 決定：表示は情報だけにとどめる。衝突やCIの失敗があっても「マージする」は押せる。読んでいる間と、読めなかったときも同じである。最後の判定はADR-043のとおりフォージに任せる。衝突の有無の判定はADR-044と同じ（GitHubの `dirty`、GitLabの `has_conflicts`）とする。計算中とみなすのは、GitHubの `mergeable=null` と、GitLabの `detailed_merge_status` が `checking` か `unchecked` のときである
 - 決定：チェックの名前とURLはフォージから読んだデータとして扱う。文字列として出すだけにし、リンクはhttpかhttpsのURLに限る
 - 理由：ダイアログには取り消せないことの1文とPR/MRのURLしかなく、CIと衝突を確かめるにはフォージを開く必要があった。一覧の要素へ足すと、一覧を読むたびに完了のissueの数だけCIのAPIを呼ぶことになる。ブランチの保護で必須のCIはフォージが強制しており、任意のチェックの失敗を承知でマージしたい場面もある。GitHubの `mergeable` は計算のあいだ `null` を返すので、受信箱の側で止めると誤って止めるおそれがある。足す権限は読み取りだけで、ADR-041のエージェントのトークンと同じ進め方である（issue `gh:uskanda/switchboard` #84のQ1〜Q4）
+
+## ADR-051 実装の実行だけへの追加の指示と、スクリーンショットの添付（採用、2026-11-02）
+- 決定：指示に3つめの種類 `implement.md`（全体用とプロジェクト用）を足す。渡すのは直接の実装と承認のあとの実装だけで、`run.md` のあとにつなげる。計画の実行と直す実行には渡さない。保存の検査、監査ログ、CLI（`--implement`）、受信箱のAPIの `kind`、設定の画面は、ほかの種類と同じ作りにする。撮影の方針は利用者がこのファイルに書き、撮影専用の設定の項目は作らない
+- 決定：画像の置き場所 `.switchboard/screenshots/` は、switchboardとClaudeの間の取り決めとし、同じ2種類の実行のsystem promptにいつも入れる。switchboardは、実行の前に置き場所を `.git/info/exclude` に足して中を消す。doneで終わったら、`.png`・`.jpg`・`.jpeg`・`.webp` だけを1枚5MB、10枚まで、runのディレクトリへ移す。置き場所のファイルがコミットに入っていたら、pushせずに検査の失敗にする
+- 決定：doneの投稿とラベルのあとに、画像だけのコメントを1件付ける。マーカーの状態は `attachment` で、待ちやdoneの判定には数えない。GitHubでは `gh issue comment --attach` を使い、`gh` にはエージェントのトークン（`GH_TOKEN`）と空の `GH_CONFIG_DIR` だけを渡す。GitLabではuploads APIを使う。添付に失敗したら理由だけのコメントを付け、doneは保つ。Claude側の `gh` の拒否は変えない
+- 決定：撮影に要るコマンドの許可は、ADR-045の `allow_tools_extra` に書いてもらう。撮影専用の許可の項目は作らない
+- 理由：GitHubには、コメントへ画像を付ける公開のAPIが無い。`gh` のv2.99.0の `--attach` は、Web画面で付けたときと同じ形で付けられるが、非公開のアップロードの仕組みに頼る。そこで、`gh` を呼ぶのは `internal/forge/github` の1つのファイルだけにする。画像をコミットしないので、リポジトリは大きくならない。エージェントのトークンで通るかは未確認で、V47として残す。`run.md` は直す実行にも入るので、「実装のときだけ撮る」を書けなかった。grillingの記録は `add-implement-instructions-and-screenshots`（issue `gh:uskanda/switchboard` #94のQ1〜Q11）

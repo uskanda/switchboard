@@ -230,8 +230,33 @@ func TestRunInstructionsRefuseSecrets(t *testing.T) {
 	}
 }
 
+func TestImplementInstructions(t *testing.T) {
+	s, a := store(t)
+	impl := s.Of(Implement)
+	p, err := impl.Path("gh:alice/sandbox")
+	if err != nil || p != filepath.Join(s.Dir, "gh", "alice", "sandbox", "implement.md") {
+		t.Fatalf("Path = %q, %v", p, err)
+	}
+	if err := impl.Save("gh:alice/sandbox", "Take screenshots.\n"); err != nil {
+		t.Fatal(err)
+	}
+	if a.events[0]["kind"] != "implement" {
+		t.Fatalf("instructions.saved = %v", a.events[0])
+	}
+	got := s.Load(Implement, "gh:alice/sandbox")
+	if got.Text != "Take screenshots." || got.Project != a.events[0]["sha256"] {
+		t.Fatalf("Load = %+v", got)
+	}
+	if r := s.Load(Run, "gh:alice/sandbox"); r != (Loaded{}) {
+		t.Fatalf("Load of the run kind = %+v, want nothing", r)
+	}
+	if err := impl.Save(Global, "token glpat-"+strings.Repeat("Ab1", 8)); !errors.Is(err, ErrSecret) {
+		t.Fatalf("Save of a token = %v", err)
+	}
+}
+
 func TestParseKind(t *testing.T) {
-	for in, want := range map[string]Kind{"": Plan, "plan": Plan, "run": Run} {
+	for in, want := range map[string]Kind{"": Plan, "plan": Plan, "run": Run, "implement": Implement} {
 		if got, err := ParseKind(in); err != nil || got != want {
 			t.Errorf("ParseKind(%q) = %q, %v", in, got, err)
 		}

@@ -150,7 +150,8 @@ type ReplyRequest struct {
 
 // Instruction is one file of the additional instructions. Target is "" for the instructions of every project, else a
 // project as gh:owner/repo or gl:group/project. Kind is "plan" for the plan runs' instructions, "run" for those of
-// the runs that write files. Content is "" when there is no file.
+// the runs that write files, "implement" for those of the runs that implement an issue (a direct run or the run of an
+// approved plan). Content is "" when there is no file.
 type Instruction struct {
 	Target  string `json:"target"`
 	Kind    string `json:"kind"`
@@ -158,7 +159,7 @@ type Instruction struct {
 }
 
 // Instructions is the answer to GET /v1/instructions: the global instructions, then those of each configured project,
-// the plan kind before the run kind for each, all read on Host, the machine of the inbox service.
+// in the order plan, run, implement for each, all read on Host, the machine of the inbox service.
 type Instructions struct {
 	Host  string        `json:"host"`
 	Items []Instruction `json:"items"`

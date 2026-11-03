@@ -13,6 +13,7 @@ import (
 	"github.com/uskanda/switchboard/internal/claudecode"
 	"github.com/uskanda/switchboard/internal/config"
 	"github.com/uskanda/switchboard/internal/forge"
+	ghforge "github.com/uskanda/switchboard/internal/forge/github"
 	"github.com/uskanda/switchboard/internal/secret"
 	"github.com/uskanda/switchboard/internal/state"
 	"github.com/uskanda/switchboard/internal/trust"
@@ -26,6 +27,8 @@ type Doctor struct {
 	// Forge connects to a forge (forge.GitHub or forge.GitLab) with a token.
 	Forge func(kind, token string) forge.Forge
 	Out   io.Writer
+	// GHVersion reads the version of the GitHub CLI; nil runs gh --version.
+	GHVersion func(ctx context.Context) (string, error)
 
 	failures int
 }
@@ -65,6 +68,7 @@ func (d *Doctor) Run(ctx context.Context) int {
 		}
 	}
 	d.claude(ctx)
+	d.gh(ctx)
 	return d.failures
 }
 
@@ -272,4 +276,29 @@ func (d *Doctor) claude(ctx context.Context) {
 		return
 	}
 	d.ok("claude %s (checked against %s)", v, claudecode.CheckedVersion)
+}
+
+// gh checks the GitHub CLI the agent attaches the images of a done run with (ADR-051), when this host has a GitHub
+// project. Without it the runs and their write-backs work as before; only the images are not attached.
+func (d *Doctor) gh(ctx context.Context) {
+	github := false
+	for _, p := range d.Config.ProjectsFor(d.Config.Host.Name) {
+		github = github || kindOf(p) == forge.GitHub
+	}
+	if !github {
+		return
+	}
+	version := d.GHVersion
+	if version == nil {
+		version = func(ctx context.Context) (string, error) { return ghforge.GHVersion(ctx, "") }
+	}
+	v, err := version(ctx)
+	switch {
+	case err != nil:
+		d.warn("gh: %v: the screenshots of a done run cannot be attached to GitHub issues without gh %s or later", err, ghforge.GHMinVersion)
+	case !ghforge.GHAttaches(v):
+		d.warn("gh %s is older than %s: the screenshots of a done run cannot be attached to GitHub issues", v, ghforge.GHMinVersion)
+	default:
+		d.ok("gh %s (attaches the screenshots of a done run)", v)
+	}
 }
