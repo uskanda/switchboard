@@ -52,7 +52,7 @@ func (c *Client) upload(ctx context.Context, ref forge.IssueRef, path string) (s
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("PRIVATE-TOKEN", c.token)
+	c.authorize(req.Header)
 	req.Header.Set("User-Agent", "switchboard")
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	resp, err := c.http.Do(req)

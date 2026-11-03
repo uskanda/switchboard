@@ -814,6 +814,12 @@ func PrintDetail(w io.Writer, d *Detail) {
 // Reply posts text on the issue. Unless force is set, the issue must be open and waiting or done: a comment on an open
 // done issue resumes it (ADR-042).
 func (b *Inbox) Reply(ctx context.Context, ref forge.IssueRef, text string, force bool) error {
+	return b.ReplyAs(ctx, b.forgeOf(ref.Kind()), ref, text, force)
+}
+
+// ReplyAs is Reply posting with f: the client of the person who replies on the web inbox when people log in to it
+// (issue #146), instead of the forge's inbox token.
+func (b *Inbox) ReplyAs(ctx context.Context, f forge.Forge, ref forge.IssueRef, text string, force bool) error {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return wrap(ErrInvalid, errors.New("the reply is empty"))
@@ -821,7 +827,6 @@ func (b *Inbox) Reply(ctx context.Context, ref forge.IssueRef, text string, forc
 	if _, ok := marker.Parse(text); ok {
 		return wrap(ErrInvalid, errors.New("the reply ends in a switchboard marker line; remove it"))
 	}
-	f := b.forgeOf(ref.Kind())
 	is, _, err := f.Thread(ctx, ref)
 	if err != nil {
 		return err

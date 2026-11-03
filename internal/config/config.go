@@ -617,6 +617,7 @@ func (c *Config) validate() error {
 		if len(a.MemberGroups) == 0 && len(a.AdminGroups) == 0 && strings.TrimSpace(a.Owner) == "" {
 			errs = append(errs, errors.New("inbox.auth needs member_groups, admin_groups or owner: nobody could log in"))
 		}
+		errs = append(errs, c.checkBotAgents()...)
 	}
 	errs = append(errs, c.validateRelay()...)
 	errs = append(errs, c.validateNotify()...)
@@ -636,6 +637,28 @@ func (c *Config) validate() error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// checkBotAgents refuses, with inbox.auth set, an agent that posts as someone in trusted_authors: with several
+// people on the inbox, a person's reply and the agent's post must be told apart on the forge (issue #146).
+func (c *Config) checkBotAgents() []error {
+	var errs []error
+	trusted := map[string][]string{"gh": c.TrustedAuthors.GitHub, "gl": c.TrustedAuthors.GitLab}
+	check := func(key, kind, login string) {
+		if login != "" && slices.Contains(trusted[kind], login) {
+			errs = append(errs, fmt.Errorf("%s %s is in trusted_authors: with inbox.auth, the agent needs a bot of its own (a bot account or a project access token)", key, login))
+		}
+	}
+	if c.Uses("gh") {
+		check("forges.github.agent_identity", "gh", c.Forges.GitHub.AgentIdentity)
+	}
+	if c.Uses("gl") {
+		check("forges.gitlab.agent_identity", "gl", c.Forges.GitLab.AgentIdentity)
+	}
+	for i, p := range c.Projects {
+		check(fmt.Sprintf("projects[%d].agent_identity", i), p.Forge, p.AgentIdentity)
+	}
+	return errs
 }
 
 var (

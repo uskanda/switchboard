@@ -77,3 +77,31 @@ describe("the login", () => {
     expect(screen.queryByText("ログアウト")).toBeNull();
   });
 });
+
+describe("several people", () => {
+  it("leaves the settings to an admin", async () => {
+    answer({ "GET /api/auth": { status: 200, body: { enabled: true, user: "alice", admin: false } } });
+    at("/");
+    expect(await screen.findByText("alice")).toBeInTheDocument();
+    expect(screen.queryByText("設定")).toBeNull();
+  });
+
+  it("shows the settings to an admin", async () => {
+    answer({ "GET /api/auth": { status: 200, body: { enabled: true, user: "olivia", admin: true } } });
+    at("/");
+    expect(await screen.findByText("設定")).toBeInTheDocument();
+  });
+
+  it("says a reply of someone not trusted is no instruction", async () => {
+    answer({
+      "GET /api/auth": { status: 200, body: { enabled: true, user: "bob" } },
+      "GET /api/issue?ref=gl%3Anas%2Fsb%235": {
+        status: 200,
+        body: { ref: "gl:nas/sb#5", title: "Pick a port", url: "https://gl.test/nas/sb/-/issues/5", waiting: true, host: "laptop",
+          state: "waiting", reason: "question", since: null, approve_word: "/ok", post: "Which port?", trusted: false },
+      },
+    });
+    at("/issue/gl%3Anas%2Fsb%235");
+    expect(await screen.findByText(/エージェントへの指示としては扱われません/)).toBeInTheDocument();
+  });
+});

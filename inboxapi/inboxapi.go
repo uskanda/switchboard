@@ -125,6 +125,9 @@ type Detail struct {
 	ChangeSHA    string `json:"change_sha,omitempty"`
 	// AutoMerge is set as on its Item.
 	AutoMerge *AutoMerge `json:"auto_merge,omitempty"`
+	// Trusted, set when people log in (issue #146), tells whether the agent takes the logged-in person's replies on
+	// this issue as instructions: whether they are in the forge's trusted_authors.
+	Trusted *bool `json:"trusted,omitempty"`
 	// Author, CreatedAt and Body are the issue's own; Comments are all its comments, oldest first.
 	Author    string     `json:"author"`
 	CreatedAt *time.Time `json:"created_at"`

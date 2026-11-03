@@ -44,7 +44,8 @@ export type Route = { kind: "open"; path: string } | { kind: "approve"; ref: str
  * routeOf is what pressing a notification does: approve sends the approval of a plan, merge opens the issue with
  * its merge dialog, and the notification itself (or a button that does not fit) opens the issue.
  */
-export function routeOf(action: string, p: Payload): Route {
-  if (action === APPROVE && p.state === "waiting" && p.reason === "plan") return { kind: "approve", ref: p.ref, since: p.since };
+export function routeOf(action: string, p: Payload, loginOn = false): Route {
+  // With the WUI's login on (issue #146), the app posts nothing on its own: the approval is pressed on the issue's page.
+  if (action === APPROVE && !loginOn && p.state === "waiting" && p.reason === "plan") return { kind: "approve", ref: p.ref, since: p.since };
   return { kind: "open", path: issuePath(p.ref, action === MERGE) };
 }

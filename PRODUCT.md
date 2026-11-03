@@ -12,7 +12,7 @@ Androidでは、同じ画面をアプリ（`app/`）のWebViewでも開く。ア
 
 ## Users
 
-switchboardを動かしている本人1人である。自分のリポジトリのissueをClaude Codeに任せていて、エージェントが質問を残して止まったときに、判断を返す。issue、PR、エージェントの仕組みは知っている。
+switchboardを動かしている本人1人である。`inbox.auth` を書いた構成では、GitLabのグループで決めた複数の人が共有し、それぞれ自分のGitLabの身元で返答する（ADR-060）。自分のリポジトリのissueをClaude Codeに任せていて、エージェントが質問を残して止まったときに、判断を返す。issue、PR、エージェントの仕組みは知っている。
 
 ## Product Purpose
 

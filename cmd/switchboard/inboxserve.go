@@ -18,6 +18,7 @@ import (
 	"github.com/uskanda/switchboard/internal/automerge"
 	"github.com/uskanda/switchboard/internal/config"
 	"github.com/uskanda/switchboard/internal/forge"
+	"github.com/uskanda/switchboard/internal/forge/gitlab"
 	"github.com/uskanda/switchboard/internal/inbox"
 	"github.com/uskanda/switchboard/internal/inboxserve"
 	"github.com/uskanda/switchboard/internal/instructions"
@@ -168,6 +169,16 @@ func followRelay(ctx context.Context, rc *relayclient.Client, api *inboxserve.Se
 	})
 }
 
+// inboxUsers tells apart the people logged in to the web inbox (issue #146): each one writes to GitLab with their own
+// token from the login.
+func inboxUsers(cfg *config.Config) *inboxserve.Users {
+	a, base := cfg.Inbox.Auth, cfg.Forges.GitLab.BaseURL
+	return &inboxserve.Users{
+		Owner: a.Owner, AdminGroups: a.AdminGroups, TrustedGitLab: cfg.TrustedAuthors.GitLab,
+		GitLab: func(token string) inboxserve.UserForge { return gitlab.NewOAuth(token, base) },
+	}
+}
+
 // sweepSessions drops the ended sessions every minute until ctx ends.
 func sweepSessions(ctx context.Context, a *webauth.Auth) {
 	t := time.NewTicker(time.Minute)
@@ -232,6 +243,7 @@ func inboxServe(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 	if api.Auth != nil {
+		api.Users = inboxUsers(cfg)
 		api.GitLab = cfg.Forges.GitLab.BaseURL
 		go sweepSessions(ctx, api.Auth)
 		fmt.Fprintln(stderr, "switchboard: inbox: the web inbox asks for a GitLab login on", api.GitLab)

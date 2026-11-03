@@ -49,6 +49,7 @@ const (
 	ReasonPushed       = "pushed"        // the change request's head is not the agent's commit
 	ReasonForbidden    = "forbidden"     // the inbox token may not merge
 	ReasonUser         = "user"          // the person cancelled it
+	ReasonRestarted    = "restarted"     // the inbox service restarted and forgot who asked for it (issue #146)
 )
 
 // Result is a finished request: merged, or cancelled for Reason.

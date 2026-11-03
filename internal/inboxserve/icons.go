@@ -63,6 +63,9 @@ func (s *Server) iconConfig() *config.Config {
 func (s *Server) projectIcon(w http.ResponseWriter, r *http.Request) {
 	ref := r.URL.Query().Get("ref")
 	p, ok := findProject(s.iconConfig(), ref)
+	if ok && !s.sees(r.Context(), p.Ref) {
+		ok = false
+	}
 	if !ok {
 		fail(w, http.StatusNotFound, inboxapi.CodeNotFound, ref+" is not a project in the configuration")
 		return
@@ -79,10 +82,10 @@ func (s *Server) projectIcon(w http.ResponseWriter, r *http.Request) {
 }
 
 // projectIcons serves GET /v1/project-icons: the emoji icons of the configuration, by project reference.
-func (s *Server) projectIcons(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) projectIcons(w http.ResponseWriter, r *http.Request) {
 	out := inboxapi.ProjectIcons{}
 	for _, p := range s.iconConfig().Projects {
-		if p.IconKind() == config.IconEmoji {
+		if p.IconKind() == config.IconEmoji && s.sees(r.Context(), p.Ref) {
 			out[p.Ref] = p.Icon
 		}
 	}

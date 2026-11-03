@@ -2,18 +2,6 @@
 
 ## ADDED Requirements
 
-### Requirement: 受信箱の認証の設定
-`config.yaml` の `<inbox.auth>` に、ログインできるGitLabのグループと、ownerを書けなければならない（MUST）。
-`<member_groups>` と `<admin_groups>` はGitLabのグループのフルパスの列、`<owner>` はGitLabのユーザー名1つとする。
-`<inbox.auth>` を書いたとき、次のどちらかなら設定の誤りとしなければならない（MUST）。
-
-- `forges.gitlab` が無い
-- `<member_groups>`、`<admin_groups>`、`<owner>` がどれも空である
-
-#### Scenario: GitLabの無い構成で認証を書く
-- **WHEN** `forges.gitlab` の無い設定に `<inbox.auth>` を書く
-- **THEN** コマンドは0以外の終了コードで終わり、認証にはGitLabの設定が要ると報告する
-
 ### Requirement: 認証を設定したときのエージェントの身元
 `<inbox.auth>` を書いたとき、エージェントの身元は、同じフォージの `trusted_authors` にあってはならない（MUST NOT）。エージェントの身元は、フォージの `agent_identity` と、プロジェクトごとの `agent_identity` である。あれば、設定の誤りとしなければならない（MUST）。
 

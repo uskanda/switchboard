@@ -92,6 +92,8 @@ type Server struct {
 	// those under /v1/auth/ (issue #15). GitLab is the base URL people log in on, for the app's WebView.
 	Auth   *webauth.Auth
 	GitLab string
+	// Users, set with Auth, tells the people apart: what each one sees and writes with (issue #146).
+	Users *Users
 	// observeSession, when set, gets the session of each request let through; for the tests.
 	observeSession func(*webauth.Session)
 
@@ -235,12 +237,12 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 		// The relay's state is the one now, not the one when the listing was read.
 		c := *s.cached
 		c.Relay = s.relayState()
-		send(w, http.StatusOK, &c)
+		send(w, http.StatusOK, s.visible(r.Context(), &c))
 		return
 	}
 	// The forges are asked apart from the request: a caller that gives up (a browser reloading the page) must not
 	// cut the answers short, or the listing would hold its own cancellation.
-	send(w, http.StatusOK, s.fetchLocked(context.WithoutCancel(r.Context())))
+	send(w, http.StatusOK, s.visible(r.Context(), s.fetchLocked(context.WithoutCancel(r.Context()))))
 }
 
 // fetch reads the forges, keeps a complete listing as the cache, and sends the listing to the listeners of
@@ -405,7 +407,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case in := <-ch:
-			data, _ := json.Marshal(in)
+			data, _ := json.Marshal(s.visible(r.Context(), in))
 			_, err = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", inboxapi.EventInbox, data)
 		case <-ping.C:
 			_, err = fmt.Fprint(w, ": ping\n\n")
@@ -423,6 +425,10 @@ func (s *Server) issue(w http.ResponseWriter, r *http.Request) {
 		failWith(w, err)
 		return
 	}
+	if !s.sees(r.Context(), ref.String()) {
+		fail(w, http.StatusNotFound, inboxapi.CodeNotFound, ref.String()+" is not one you may see")
+		return
+	}
 	d, err := s.inbox().Detail(r.Context(), ref)
 	if err != nil {
 		failWith(w, err)
@@ -431,6 +437,10 @@ func (s *Server) issue(w http.ResponseWriter, r *http.Request) {
 	out := detailOf(d)
 	if d.Done {
 		out.AutoMerge = s.autoMergeOf(out.Ref)
+	}
+	if sess := SessionFrom(r.Context()); s.Users != nil && sess != nil {
+		t := s.Users.trusted(sess, ref.Kind())
+		out.Trusted = &t
 	}
 	send(w, http.StatusOK, out)
 }
@@ -460,10 +470,17 @@ func (s *Server) reply(w http.ResponseWriter, r *http.Request) {
 		failWith(w, err)
 		return
 	}
-	if err := s.inbox().Reply(r.Context(), ref, req.Text, req.Force); err != nil {
-		failWith(w, err)
+	if !s.sees(r.Context(), ref.String()) {
+		fail(w, http.StatusNotFound, inboxapi.CodeNotFound, ref.String()+" is not one you may see")
 		return
 	}
+	if err := s.replyAs(r.Context(), ref, req.Text, req.Force); err != nil {
+		if !failWrite(w, writeErr(err)) {
+			failWith(w, err)
+		}
+		return
+	}
+	s.act(r.Context(), "reply", ref.String())
 	s.mu.Lock()
 	s.cached = nil
 	s.mu.Unlock()
@@ -474,6 +491,9 @@ func (s *Server) reply(w http.ResponseWriter, r *http.Request) {
 // instructions serves GET (the global and every project's instructions, of every kind) and PUT (save one) of
 // /v1/instructions.
 func (s *Server) instructions(w http.ResponseWriter, r *http.Request) {
+	if !s.adminOnly(w, r) {
+		return
+	}
 	in := s.Instructions
 	s.vmu.RLock()
 	projects := slices.Clone(in.Projects)
@@ -515,6 +535,7 @@ func (s *Server) instructions(w http.ResponseWriter, r *http.Request) {
 		case err != nil:
 			fail(w, http.StatusInternalServerError, inboxapi.CodeForge, err.Error())
 		default:
+			s.act(r.Context(), "instructions.save", req.Target+" "+req.Kind)
 			w.WriteHeader(http.StatusNoContent)
 		}
 	default:

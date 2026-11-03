@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 
 /** AuthStatus is GET /api/auth: whether people must log in, who is logged in, and the GitLab they log in on. */
-export type AuthStatus = { enabled: boolean; user?: string; gitlab?: string };
+export type AuthStatus = { enabled: boolean; user?: string; gitlab?: string; admin?: boolean };
 
 /** The event a call or the event stream dispatches on window when the inbox service answers that no one is logged in. */
 export const unauthenticatedEvent = "switchboard:unauthenticated";
