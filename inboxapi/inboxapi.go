@@ -205,11 +205,13 @@ type AddProjectResponse struct {
 	Webhook string  `json:"webhook,omitempty"`
 }
 
-// The kinds of start label an issue can be opened with: the configuration's labels.ready, labels.plan and labels.go.
+// The kinds of start label an issue can be opened with: the configuration's labels.ready, labels.plan and labels.go,
+// and StartNone, no label at all, which the agent does not take up until a start label is put on (ADR-049).
 const (
 	StartReady = "ready"
 	StartPlan  = "plan"
 	StartGo    = "go"
+	StartNone  = "none"
 )
 
 // IssueTarget is a project an issue can be opened in, with Host, the machine that runs it, and PlanFirst, whether its
@@ -220,14 +222,15 @@ type IssueTarget struct {
 	PlanFirst bool   `json:"plan_first"`
 }
 
-// IssueStart is a kind of start label (StartReady, StartPlan, StartGo) and the label it stands for.
+// IssueStart is a kind of start label (StartReady, StartPlan, StartGo, StartNone) and the label it stands for, which
+// is empty for StartNone.
 type IssueStart struct {
 	Kind  string `json:"kind"`
 	Label string `json:"label"`
 }
 
 // IssueTargets is the answer to GET /v1/issue-targets: every configured project, whatever machine runs it, in the
-// order of the configuration, and the start labels the configuration names.
+// order of the configuration, and the start labels the configuration names, then StartNone.
 type IssueTargets struct {
 	Items  []IssueTarget `json:"items"`
 	Starts []IssueStart  `json:"starts"`
@@ -240,7 +243,7 @@ const (
 )
 
 // CreateIssueRequest is the body of POST /v1/issues. Start is a kind of IssueStart; the inbox service puts the label
-// it stands for on the issue, and no other.
+// it stands for on the issue, and no other, or no label for StartNone. An empty Start is refused.
 type CreateIssueRequest struct {
 	Ref   string `json:"ref"`
 	Title string `json:"title"`
