@@ -156,10 +156,13 @@ type Plan struct {
 // again while a page listens for changes; 30s when unset, at least MinRefreshInterval. ProjectRoot is the directory
 // the projects added from the web inbox are cloned under; adding is disabled without it. With Relay set, the
 // service also follows the relay's events with a token of its own, and reads the forges again soon after each one.
+// With Notify.FCM set, it reads the forges every RefreshInterval even with no page listening, and sends push
+// notifications to the registered apps.
 type Inbox struct {
 	RefreshInterval time.Duration `yaml:"refresh_interval"`
 	ProjectRoot     string        `yaml:"project_root"`
 	Relay           *AgentRelay   `yaml:"relay"`
+	Notify          InboxNotify   `yaml:"notify"`
 }
 
 // ProjectAddEnabled reports whether projects may be added through the inbox service.

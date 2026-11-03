@@ -291,7 +291,7 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) *outcome {
 		return o.fail(fmt.Sprintf(a.msg.timeout, a.Config.Agent.Timeout))
 	case res.Limit != nil:
 		// The service refused the run on a limit: pause the host, and put the issue back in the queue to resume once
-		// the pause ends (ADR-047). A fix run cannot wait in the queue, so it waits for a reply.
+		// the pause ends (ADR-048). A fix run cannot wait in the queue, so it waits for a reply.
 		until := a.pauseForLimit(res.Limit)
 		a.logf("%s: run %s hit a usage limit (%s): %s", is.Ref, rec.Run, res.Limit.Kind, res.Limit.Message)
 		a.Audit.Log("run.limited", map[string]any{"issue": is.Ref.String(), "run": rec.Run, "kind": res.Limit.Kind, "until": until.UTC().Format(time.RFC3339)})

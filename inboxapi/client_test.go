@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 var ctx = context.Background()
@@ -325,5 +326,49 @@ func TestMergePostsJSONAndTypesTheRefusals(t *testing.T) {
 		if err := c.Merge(ctx, "gh:o/r#5", "abc"); !errors.Is(err, tc.want) {
 			t.Errorf("%s: err = %v, want %v", tc.code, err, tc.want)
 		}
+	}
+}
+
+func TestRegisterDevicePostsJSON(t *testing.T) {
+	var got RegisterDeviceRequest
+	c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/devices" || r.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("%s %s %s", r.Method, r.URL, r.Header.Get("Content-Type"))
+		}
+		json.NewDecoder(r.Body).Decode(&got)
+		w.WriteHeader(http.StatusNoContent)
+	})
+	if err := c.RegisterDevice(ctx, "fcm-token"); err != nil {
+		t.Fatal(err)
+	}
+	if got != (RegisterDeviceRequest{Token: "fcm-token"}) {
+		t.Errorf("sent %+v", got)
+	}
+}
+
+func TestApprovePostsJSONAndTypesStale(t *testing.T) {
+	var got ApproveRequest
+	since := time.Date(2026, 11, 2, 9, 30, 0, 0, time.UTC)
+	stale := false
+	c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/approve" {
+			t.Errorf("%s %s", r.Method, r.URL)
+		}
+		json.NewDecoder(r.Body).Decode(&got)
+		if stale {
+			reply(w, http.StatusConflict, Error{Code: CodeStale, Message: "a newer plan"})
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	if err := c.Approve(ctx, "gh:o/r#5", since); err != nil {
+		t.Fatal(err)
+	}
+	if got.Ref != "gh:o/r#5" || !got.Since.Equal(since) {
+		t.Errorf("sent %+v", got)
+	}
+	stale = true
+	if err := c.Approve(ctx, "gh:o/r#5", since); !errors.Is(err, ErrStale) {
+		t.Errorf("err = %v, want ErrStale", err)
 	}
 }

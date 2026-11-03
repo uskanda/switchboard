@@ -48,7 +48,7 @@ const (
 	// The limits a queued issue waits on: agent.max_parallel, or its project's max_parallel.
 	QueuedHost    = "max-parallel"
 	QueuedProject = "project-max-parallel"
-	// The pauses of a host: it hit a usage limit of the AI service, or its API quota (ADR-047).
+	// The pauses of a host: it hit a usage limit of the AI service, or its API quota (ADR-048).
 	QueuedLimit = "limit"
 	QueuedQuota = "quota"
 	// Fix marks the claim of a fix run; Push, CI and Conflict the waits a rejected push, a CI failure and a change

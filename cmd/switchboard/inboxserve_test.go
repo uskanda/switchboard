@@ -15,6 +15,7 @@ import (
 	"github.com/uskanda/switchboard/internal/forge"
 	"github.com/uskanda/switchboard/internal/instructions"
 	"github.com/uskanda/switchboard/internal/relayclient"
+	"github.com/uskanda/switchboard/internal/state"
 )
 
 const bothForges = `version: 1
@@ -111,5 +112,26 @@ func TestInboxServeTakesNoArguments(t *testing.T) {
 	p := writeConfig(t)
 	if code := inboxServe([]string{"--config", p, "extra"}, &out, &errOut); code != 2 || !strings.Contains(errOut.String(), "usage") {
 		t.Fatalf("code = %d, stderr = %s", code, errOut.String())
+	}
+}
+
+func TestInboxPushFailsWithoutItsKey(t *testing.T) {
+	cfg := load(t, bothForges+"inbox:\n  notify:\n    fcm: {project_id: p, credentials_ref: switchboard/fcm}\n")
+	missing := func(ref string) (string, error) { return "", fmt.Errorf("no token for %s in the Secret Service", ref) }
+	if _, err := inboxPush(cfg, missing, state.Dir{Path: t.TempDir()}); err == nil || !strings.Contains(err.Error(), "switchboard/fcm") {
+		t.Fatalf("err = %v, want the credentials_ref named", err)
+	}
+	broken := func(string) (string, error) { return "not-a-key-SECRET-VALUE", nil }
+	_, err := inboxPush(cfg, broken, state.Dir{Path: t.TempDir()})
+	if err == nil || !strings.Contains(err.Error(), "switchboard/fcm") || strings.Contains(err.Error(), "SECRET-VALUE") {
+		t.Fatalf("err = %v, want the ref named and the content left out", err)
+	}
+}
+
+func TestInboxPushIsOffWithoutTheSetting(t *testing.T) {
+	cfg := load(t, bothForges)
+	n, err := inboxPush(cfg, func(string) (string, error) { t.Fatal("a key was read"); return "", nil }, state.Dir{Path: t.TempDir()})
+	if err != nil || n != nil {
+		t.Fatalf("notifier = %v, err = %v", n, err)
 	}
 }

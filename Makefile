@@ -3,13 +3,13 @@ SHELL := /usr/bin/env bash
 
 GO ?= go
 
-.PHONY: verify verify-fmt verify-vet verify-test verify-web build install restart deploy-check deploy
+.PHONY: verify verify-fmt verify-vet verify-test verify-web verify-app build install restart deploy-check deploy app-apk
 
 # The systemd units `switchboard service install` (and its --relay/--inbox/--web variants) put in place.
 SERVICES := switchboard-relay.service switchboard-inbox.service switchboard-agent.service switchboard-web.service
 PREFIX ?= $(HOME)/.local
 
-verify: verify-fmt verify-vet verify-test verify-web ## Run every check that applies to this repository
+verify: verify-fmt verify-vet verify-test verify-web verify-app ## Run every check that applies to this repository
 	@echo "verify: ok"
 
 verify-fmt: ## Fail when a Go file is not gofmt-formatted
@@ -27,6 +27,10 @@ verify-test:
 verify-web:
 	@cd web/ui && pnpm install --frozen-lockfile --silent && pnpm typecheck && pnpm lint && pnpm test && pnpm build
 	@cd web && $(GO) vet ./... && $(GO) test ./... && echo "[web] ok"
+
+# app/ is the Android app, the web inbox in a WebView. Its checks need neither a JDK nor the Android SDK; app-apk does.
+verify-app:
+	@cd app && pnpm install --frozen-lockfile --silent && pnpm typecheck && pnpm lint && pnpm test --silent && echo "[app] ok"
 
 build: ## Build bin/switchboard and bin/switchboard-web
 	@$(GO) build -o bin/switchboard ./cmd/switchboard
@@ -57,3 +61,19 @@ deploy-check:
 	fi
 
 deploy: deploy-check install restart ## Install the current build and restart every service
+
+# The release APK is signed with the user's own key and built with their Firebase app's google-services.json. Both
+# stay outside the repository and are named by these variables (README: Android app); android/ is made anew by expo
+# prebuild on each build and never committed.
+APP_ENV := SWITCHBOARD_APP_KEYSTORE SWITCHBOARD_APP_KEYSTORE_PASSWORD SWITCHBOARD_APP_KEY_ALIAS SWITCHBOARD_APP_KEY_PASSWORD SWITCHBOARD_APP_GOOGLE_SERVICES
+
+app-apk: ## Build the signed release APK of the Android app to bin/switchboard.apk (needs JDK 17 and the Android SDK)
+	@missing=""; for v in $(APP_ENV); do [ -n "$${!v}" ] || missing="$$missing $$v"; done; \
+	if [ -n "$$missing" ]; then echo "app-apk: set$$missing (README: Android app)" >&2; exit 1; fi; \
+	for f in "$$SWITCHBOARD_APP_KEYSTORE" "$$SWITCHBOARD_APP_GOOGLE_SERVICES"; do \
+		[ -f "$$f" ] || { echo "app-apk: no such file: $$f" >&2; exit 1; }; \
+	done
+	@cd app && pnpm install --frozen-lockfile --silent && pnpm exec expo prebuild --platform android --clean --no-install
+	@cd app/android && ./gradlew assembleRelease
+	@install -D -m 0644 app/android/app/build/outputs/apk/release/app-release.apk bin/switchboard.apk
+	@echo "app-apk: bin/switchboard.apk"

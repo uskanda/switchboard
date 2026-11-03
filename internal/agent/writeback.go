@@ -58,7 +58,7 @@ func (o *outcome) fail(why string) *outcome {
 }
 
 // limited puts the issue of a run that hit a usage limit back in the queue: its comment is the queued comment that
-// marks the issue to resume once the host's pause ends at until (ADR-047).
+// marks the issue to resume once the host's pause ends at until (ADR-048).
 func (o *outcome) limited(host string, until time.Time) *outcome {
 	o.Until = until
 	return o.set(marker.Queued, marker.QueuedLimit, o.msg.limitTitle, fmt.Sprintf(o.msg.limitQueued, host, o.msg.when(until)))

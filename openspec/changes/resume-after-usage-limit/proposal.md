@@ -14,7 +14,7 @@
 - 直す実行が上限に当たったときは、端末を止めたうえで `waiting(reason=error)` で終え、自動で直す回数に数えない
 - 設定に `agent.limit_wait` と `quota` を足す
 - 受信箱（CLIとWeb）の順番待ちの節に、理由が `limit` か `quota` のとき再開の時刻を出す
-- DESIGN.mdの `waiting(reason=limit)` を、順番待ちとしての扱いに置き換える（ADR-047）
+- DESIGN.mdの `waiting(reason=limit)` を、順番待ちとしての扱いに置き換える（ADR-048）
 
 ## Capabilities
 
@@ -38,4 +38,4 @@
 - 受信箱：`internal/inbox`、`inboxapi`、`web/ui`
 - 偽フォージ（`internal/forge/fake`）の `SetLabels` が、足したラベルの付与者をエージェントにする（実際のフォージと同じにする）
 - 状態ディレクトリに `pause.json` と `cost.json` が増える
-- 文書：`docs/DECISIONS.md`（ADR-047）、`docs/DESIGN.md`、`docs/ROADMAP.md`（V12）、README.mdの設定の説明
+- 文書：`docs/DECISIONS.md`（ADR-048）、`docs/DESIGN.md`、`docs/ROADMAP.md`（V12）、README.mdの設定の説明

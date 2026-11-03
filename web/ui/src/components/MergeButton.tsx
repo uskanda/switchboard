@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
@@ -35,8 +35,24 @@ function failure(name: string, err: unknown): { message: string; description?: s
  * the page showed. It asks first in a dialog, since a merge cannot be undone; the outcome is told in a toast. The
  * issue itself is closed by the change request's "Closes #N", and the list drops it on its next read (ADR-043).
  * Until then the issue is marked as being merged (lib/pending.ts), and the button cannot be pressed.
+ * With ask set, the dialog opens by itself, as when the app's merge button opened the page; onClosed is called
+ * whenever the dialog closes.
  */
-export function MergeButton({ issueRef, number, sha, url }: { issueRef: string; number: number; sha: string; url?: string }) {
+export function MergeButton({
+  issueRef,
+  number,
+  sha,
+  url,
+  ask = false,
+  onClosed,
+}: {
+  issueRef: string;
+  number: number;
+  sha: string;
+  url?: string;
+  ask?: boolean;
+  onClosed?: () => void;
+}) {
   const dialog = useRef<HTMLDialogElement>(null);
   const backOut = useRef<HTMLButtonElement>(null);
   const id = useId();
@@ -44,6 +60,10 @@ export function MergeButton({ issueRef, number, sha, url }: { issueRef: string; 
   const { view, markPending } = useInbox();
   const merging = view?.some((it) => it.ref === issueRef && it.pending === "merge") ?? false;
   const name = changeName(issueRef, number);
+
+  useEffect(() => {
+    if (ask && !dialog.current?.open) open();
+  }, [ask]);
 
   async function confirm() {
     setSending(true);
@@ -62,18 +82,18 @@ export function MergeButton({ issueRef, number, sha, url }: { issueRef: string; 
 
   // The dialog would put the focus on its first link, the change request's; a merge cannot be undone, so the focus
   // starts on backing out instead. React's autoFocus focuses on mount, while the dialog is closed, so it is moved here.
-  function ask() {
+  function open() {
     dialog.current?.showModal();
     backOut.current?.focus();
   }
 
   return (
     <>
-      <Button type="button" variant="secondary" onClick={ask} disabled={sending || merging} aria-label={`${name}をマージ`}>
+      <Button type="button" variant="secondary" onClick={open} disabled={sending || merging} aria-label={`${name}をマージ`}>
         {sending && <Spinner />}
         マージ
       </Button>
-      <Dialog ref={dialog} aria-labelledby={`${id}-heading`} onCancel={(e) => sending && e.preventDefault()}>
+      <Dialog ref={dialog} aria-labelledby={`${id}-heading`} onCancel={(e) => sending && e.preventDefault()} onClose={() => onClosed?.()}>
         <div className="flex flex-col gap-md">
           <h2 id={`${id}-heading`} className="text-headline-md font-semibold">
             {name}をマージしますか

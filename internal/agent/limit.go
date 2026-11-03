@@ -10,7 +10,7 @@ import (
 	"github.com/uskanda/switchboard/internal/usage"
 )
 
-// pauseFile keeps the pause of this host, so that an agent started again keeps it (ADR-047).
+// pauseFile keeps the pause of this host, so that an agent started again keeps it (ADR-048).
 const pauseFile = "pause.json"
 
 // costFile keeps what the runs of this host cost today and this month, local time, when claude uses an API key.

@@ -48,6 +48,10 @@ plan:
 inbox:
   refresh_interval: 30s               # how often inbox serve reads the forges while a web page is open; at least 10s
   # project_root: ~/repos              # lets the web inbox add projects, cloned under this directory; off when unset
+  # notify:                            # push notifications to the Android app (app/); off when unset
+  #   fcm:
+  #     project_id: YOUR_FIREBASE_PROJECT
+  #     credentials_ref: switchboard/fcm # Secret Service name of the Firebase service account key (JSON)
 
 agent:
   poll_interval: 60s

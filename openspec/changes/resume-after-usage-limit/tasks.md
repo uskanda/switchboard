@@ -29,7 +29,7 @@
 
 ## 6. 文書
 
-- [x] 6.1 ADR-047を `docs/DECISIONS.md` に足し、`docs/DESIGN.md` の状態遷移表・停止の表・マーカーの表を直す
+- [x] 6.1 ADR-048を `docs/DECISIONS.md` に足し、`docs/DESIGN.md` の状態遷移表・停止の表・マーカーの表を直す
 - [x] 6.2 `docs/ROADMAP.md` のV12に、確かめた出力の形を記録する。README.mdの設定の説明に `agent.limit_wait` と `quota` を足す
 
 ## 7. 確かめ

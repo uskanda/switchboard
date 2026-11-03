@@ -100,7 +100,7 @@ type Agent struct {
 	unwatched map[forge.IssueRef]time.Time
 	scanned   time.Time       // when the done issues were last searched for watches
 	forbidden map[string]bool // by project ref: the CI could not be read, already logged
-	// paused, when set, is the pause of this host on a usage limit or its API quota (ADR-047); pauseTimer takes the
+	// paused, when set, is the pause of this host on a usage limit or its API quota (ADR-048); pauseTimer takes the
 	// queue up again when it ends. cost is what the runs cost today and this month.
 	paused     *pause
 	pauseTimer *time.Timer
@@ -635,7 +635,7 @@ func (a *Agent) decide(ctx context.Context, p config.Project, ref forge.IssueRef
 	}
 	if byAgent {
 		// Only the agent's own resume mark lets a start label it put start a run. The run goes on with the cycle the
-		// limited run was in, as a resume on a reply does (ADR-047).
+		// limited run was in, as a resume on a reply does (ADR-048).
 		if pl.resumeNote = pl.limitResume(); pl.resumeNote == 0 {
 			return nil, nil
 		}
