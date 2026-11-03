@@ -125,7 +125,7 @@ projects:
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := &agent.Agent{Config: cfg, State: dir, Audit: audit, Routes: map[string]agent.Route{
+	a := &agent.Agent{Config: cfg, State: dir, Audit: audit, CheckSandbox: noSandboxCheck, Routes: map[string]agent.Route{
 		"gh:me/tool": {Forge: gh.As("bot"), Judge: jh},
 		"gl:nas/sb":  {Forge: gl.As("bot"), Judge: jl},
 	}}

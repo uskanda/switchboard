@@ -5,7 +5,7 @@ import { useInbox } from "@/lib/inbox";
 const app = "SwitchBoard Inbox";
 
 /** The favicons in public/: the plain one, and the one with a dot that says an issue waits. */
-const icons = { plain: "/favicon.svg", waiting: "/favicon-waiting.svg" };
+const icons = { plain: "/favicon.png", waiting: "/favicon-waiting.png" };
 
 /** setFavicon points the page's icon at href, adding the link where the page has none. */
 function setFavicon(href: string) {

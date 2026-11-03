@@ -11,11 +11,11 @@ type texts struct {
 
 	soFar, question, noQuestion, denied, reply string
 
-	timeout, interrupted, maxTurns, failed, noDeclaration, prepare, start  string
-	configChanged, verifyFailed, notPushed, pushFailed, prFailed, mrFailed string
-	pr, mr, verified, notVerified, prSummary, prVerification, withheld     string
-	prUpdated, mrUpdated                                                   string // the done line of a reused change request
-	claim, multipleStarts                                                  string
+	timeout, interrupted, maxTurns, failed, noDeclaration, prepare, start, sandbox string
+	configChanged, verifyFailed, notPushed, pushFailed, prFailed, mrFailed         string
+	pr, mr, verified, notVerified, prSummary, prVerification, withheld             string
+	prUpdated, mrUpdated                                                           string // the done line of a reused change request
+	claim, multipleStarts                                                          string
 
 	// A push the agent does not fix: the title, why for each kind, and the heading of git's output.
 	pushTitle, pushAuth, pushRule, pushMoved, gitOutput string
@@ -67,6 +67,7 @@ var english = texts{
 	noDeclaration: "The run ended without a valid declaration of its outcome: %s.",
 	prepare:       "The worktree could not be prepared: %s",
 	start:         "claude could not be started: %s",
+	sandbox:       "The sandbox of the run is unavailable, so claude was not started: %s",
 
 	configChanged: "The Claude Code configuration in the worktree differs from the base branch, so claude was not started: %s. Restore these files, then reply.",
 	verifyFailed:  "`%s` failed. The end of its output:",
@@ -161,6 +162,7 @@ var japanese = texts{
 	noDeclaration: "実行は、正しい終了の宣言をせずに終わりました：%s。",
 	prepare:       "worktreeを用意できませんでした：%s",
 	start:         "claudeを起動できませんでした：%s",
+	sandbox:       "実行のsandboxを使えないため、claudeを起動しませんでした：%s",
 
 	configChanged: "worktreeのClaude Codeの設定が基準ブランチと異なるため、claudeを起動しませんでした：%s。これらのファイルを元に戻してから返信してください。",
 	verifyFailed:  "`%s` が失敗しました。出力の末尾：",

@@ -237,7 +237,7 @@ func TestFailedRecoveryDoesNotStopTheStart(t *testing.T) {
 func TestFailedRecoverySearchFailsTheStart(t *testing.T) {
 	x := newH(t, "", nil)
 	x.f.FailSearch = errBadGateway
-	a := &Agent{Config: x.cfg, Forge: x.f, State: x.dir, Audit: x.audit}
+	a := &Agent{Config: x.cfg, Forge: x.f, State: x.dir, Audit: x.audit, CheckSandbox: noSandboxCheck}
 	if err := a.Start(x.ctx); err == nil {
 		a.Close()
 		t.Fatal("the start succeeded without searching for the running issues")

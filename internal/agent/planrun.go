@@ -75,7 +75,7 @@ func planSettings() claudecode.Settings {
 	for _, c := range []string{"git add", "git commit", "git push", "git rebase", "make", "gh"} {
 		deny = append(deny, "Bash("+c+")", "Bash("+c+" *)")
 	}
-	return claudecode.Settings{Allow: allow, Deny: deny}
+	return claudecode.Settings{Allow: allow, Deny: deny, Unsandboxed: gitUnsandboxed}
 }
 
 // planQuestions writes back the questions of a plan round, numbered from first.

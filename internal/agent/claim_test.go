@@ -61,7 +61,7 @@ func TestTwoHostsClaimTheSameIssue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b := &Agent{Config: &cfgB, Forge: x.f, Judge: jb, State: dirB, Audit: x.audit, Env: a.Env,
+	b := &Agent{Config: &cfgB, Forge: x.f, Judge: jb, State: dirB, Audit: x.audit, Env: a.Env, CheckSandbox: noSandboxCheck,
 		IntGrace: 200 * time.Millisecond, TermGrace: 200 * time.Millisecond}
 	ctx, cancel := context.WithCancel(x.ctx)
 	defer cancel()

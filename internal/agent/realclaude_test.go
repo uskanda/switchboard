@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/uskanda/switchboard/internal/claudecode"
+	"github.com/uskanda/switchboard/internal/prompt"
 )
 
 // The plan run's settings keep the writing tools away from claude even when it is asked for a write outright, and the
@@ -214,5 +215,72 @@ func TestRealClaudeRunGetsOnlyItsTools(t *testing.T) {
 	}
 	if res.Structured == nil {
 		t.Fatalf("no structured output: %+v", res)
+	}
+}
+
+// V51, V52: in the sandbox a command runs without an allow rule, a deny rule still refuses gh, a write outside the
+// worktree fails, a hidden path cannot be read, and a hidden path that does not exist is not created. Only the
+// verify command as a whole runs outside: another target of make stays inside.
+func TestRealClaudeSandbox(t *testing.T) {
+	dir := realClaudeRepo(t)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Outside the worktree and outside $TMPDIR, which the sandbox lets commands write to.
+	outside, err := os.MkdirTemp(home, ".switchboard-sandbox-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(outside) })
+	secret, missing := filepath.Join(outside, "secret"), filepath.Join(outside, "missing")
+	if err := os.WriteFile(secret, []byte("TOPSECRET\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	makefile := "verify:\n\ttouch " + filepath.Join(outside, "verify-ran") + "\ndeploy:\n\ttouch " + filepath.Join(outside, "deploy-ran") + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "Makefile"), []byte(makefile), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := settings("make verify")
+	s.DenyRead = []string{secret, missing}
+	res, err := claudecode.Run(context.Background(), claudecode.Request{
+		Binary: realClaudeBinary(), Dir: dir, RunDir: filepath.Join(t.TempDir(), "run"), SessionID: newUUID(),
+		Prompt: "Run each of these commands with the Bash tool, one call per command, exactly as written, and go on " +
+			"after a failure: `python3 -c 'print(6*7)'`, `touch " + filepath.Join(outside, "touched") + "`, `cat " + secret +
+			"`, `gh issue list`, `make verify`, `make deploy`. Do not try any other way. Change no file. End with status " +
+			"\"done\" and list in the summary each command with its output or error.",
+		SystemPrompt: prompt.WithSandbox("Answer with the structured output.", "make verify"), Settings: s,
+		Tools: runTools, MaxTurns: 12, Schema: Schema, Auth: "subscription", Timeout: 10 * time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("result %q; denials %+v", res.Text, res.Denials)
+	exists := func(name string) bool { _, err := os.Lstat(filepath.Join(outside, name)); return err == nil }
+	for _, d := range res.Denials {
+		if c := d.Command(); strings.HasPrefix(c, "python3") || strings.HasPrefix(c, "make") {
+			t.Errorf("%q was refused", c)
+		}
+	}
+	if !strings.Contains(res.Text, "42") {
+		t.Error("python3 did not run")
+	}
+	if !slices.ContainsFunc(res.Denials, func(d claudecode.Denial) bool { return strings.HasPrefix(d.Command(), "gh") }) {
+		t.Error("gh was not refused")
+	}
+	if exists("touched") {
+		t.Error("a command in the sandbox wrote outside the worktree")
+	}
+	if strings.Contains(res.Text, "TOPSECRET") {
+		t.Error("a hidden file was read")
+	}
+	if !exists("verify-ran") {
+		t.Error("make verify did not run outside the sandbox")
+	}
+	if exists("deploy-ran") {
+		t.Error("make deploy ran outside the sandbox")
+	}
+	if exists("missing") {
+		t.Error("the sandbox created the hidden path that did not exist")
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -93,10 +94,81 @@ func declaration(res *claudecode.Result) (*Declaration, string) {
 // rules are not a boundary (Phase 0, V5); keeping the forge token away from claude is.
 func settings(verifyCommand string, extra ...[]string) claudecode.Settings {
 	base := baseAllow(verifyCommand)
-	return claudecode.Settings{
-		Allow: append(base, extraAllow(base, extra...)...),
-		Deny:  []string{"Bash(git push)", "Bash(git push *)", "Bash(git rebase)", "Bash(git rebase *)", "Bash(gh)", "Bash(gh *)", "WebFetch"},
+	var unsandboxed []string
+	if v := strings.Join(strings.Fields(verifyCommand), " "); v != "" {
+		unsandboxed = append(unsandboxed, v)
 	}
+	return claudecode.Settings{
+		Allow:       append(base, extraAllow(base, extra...)...),
+		Deny:        []string{"Bash(git push)", "Bash(git push *)", "Bash(git rebase)", "Bash(git rebase *)", "Bash(gh)", "Bash(gh *)", "WebFetch"},
+		Unsandboxed: append(unsandboxed, gitUnsandboxed...),
+	}
+}
+
+// gitUnsandboxed lets git run outside the sandbox: a worktree's .git points into the clone's .git/worktrees/,
+// which lies outside the worktree, so that git commit cannot write from inside. The verify command of a run that
+// writes files also runs outside, whole, so that another target of the same tool (make deploy) stays inside; the
+// verify command may need what the sandbox withholds, such as unix sockets.
+var gitUnsandboxed = []string{"git", "git *"}
+
+// credentials are the paths under the home directory that the commands in the sandbox may not read.
+var credentials = []string{
+	".ssh", ".gnupg", ".git-credentials", ".netrc",
+	".config/gh", ".config/glab-cli",
+	".aws", ".kube", ".docker/config.json",
+}
+
+// denyRead returns the paths the commands of a run in worktree may not read: the credentials under home, the
+// directory of the configuration file, and every entry of the state directory but the worktrees. Only paths that
+// exist are listed, since the sandbox may leave an empty file at a path it hides (V46, V52). A path that holds the
+// worktree is left out.
+func denyRead(home, configPath, stateDir, worktree string) []string {
+	var paths []string
+	if home != "" {
+		for _, c := range credentials {
+			paths = append(paths, filepath.Join(home, c))
+		}
+	}
+	if configPath != "" {
+		if abs, err := filepath.Abs(configPath); err == nil {
+			paths = append(paths, filepath.Dir(abs))
+		}
+	}
+	if entries, err := os.ReadDir(stateDir); err == nil {
+		for _, e := range entries {
+			if e.Name() != "worktrees" {
+				paths = append(paths, filepath.Join(stateDir, e.Name()))
+			}
+		}
+	}
+	out := []string{}
+	for _, p := range paths {
+		if _, err := os.Lstat(p); err != nil || within(worktree, p) {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+// within reports whether path is dir or lies under it.
+func within(path, dir string) bool {
+	rel, err := filepath.Rel(dir, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// homeOf returns HOME from env, the environment claude is started from, or this process's home directory.
+func homeOf(env []string) string {
+	if env == nil {
+		env = os.Environ()
+	}
+	for _, kv := range slices.Backward(env) {
+		if v, ok := strings.CutPrefix(kv, "HOME="); ok {
+			return v
+		}
+	}
+	h, _ := os.UserHomeDir()
+	return h
 }
 
 // runTools are the tools every run that writes files gets; planTools those of a plan run. A tool the session lacks
@@ -324,9 +396,18 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) (o *outcome) {
 			extra = strings.TrimSpace(extra + "\n\n" + impl.Text)
 			req.SystemPrompt = prompt.WithScreenshots(req.SystemPrompt)
 		}
+		req.SystemPrompt = prompt.WithSandbox(req.SystemPrompt, p.VerifyCommand)
 		req.SystemPrompt = prompt.WithUserInstructions(req.SystemPrompt, extra)
 	}
 	req.Prompt = prompt.Build(in)
+	// The run's directory is made first, so that the runs are hidden from the first run on.
+	if err := os.MkdirAll(req.RunDir, 0o700); err != nil {
+		return o.fail(fmt.Sprintf(a.msg.prepare, err))
+	}
+	req.Settings.DenyRead = denyRead(homeOf(a.Env), a.Config.Path, a.State.Path, dir)
+	if err := a.checkSandbox(ctx); err != nil {
+		return o.fail(fmt.Sprintf(a.msg.sandbox, err))
+	}
 	a.logStarted(is.Ref, rec.Run, pl, added, used, impl)
 	stopProgress := a.followProgress(ctx, is.Ref, rec, filepath.Join(a.runDir(rec.Run), "stream.jsonl"))
 	res, err := claudecode.Run(ctx, req)

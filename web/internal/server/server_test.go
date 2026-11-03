@@ -178,9 +178,9 @@ func TestIconsAndManifest(t *testing.T) {
 	s := &Server{Inbox: &fakeInbox{}, Listen: listen, Assets: fstest.MapFS{
 		"index.html":    {Data: []byte("<!doctype html><title>inbox</title>")},
 		"manifest.json": {Data: []byte(`{"name":"SwitchBoard Inbox"}`)},
-		"favicon.svg":   {Data: []byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`)},
+		"favicon.png":   {Data: []byte("\x89PNG\r\n\x1a\n")},
 	}}
-	for path, want := range map[string]string{"/manifest.json": "application/json", "/favicon.svg": "image/svg+xml"} {
+	for path, want := range map[string]string{"/manifest.json": "application/json", "/favicon.png": "image/png"} {
 		w := do(s, "GET", path, "", nil)
 		if w.Code != 200 || !strings.HasPrefix(w.Header().Get("Content-Type"), want) || strings.Contains(w.Body.String(), "<title>") {
 			t.Fatalf("%s: %d %q %s", path, w.Code, w.Header().Get("Content-Type"), w.Body)
@@ -195,7 +195,7 @@ var textAssets = fstest.MapFS{
 	"index.html":      {Data: []byte("<!doctype html><title>inbox</title>")},
 	"assets/app-1.js": {Data: []byte(bigJS)},
 	"assets/logo.png": {Data: []byte(strings.Repeat("\x89PNG", 200))},
-	"favicon.svg":     {Data: []byte("<svg xmlns='http://www.w3.org/2000/svg'></svg>")},
+	"favicon.png":     {Data: []byte("\x89PNG\r\n\x1a\n")},
 }
 
 func gunzip(t *testing.T, b []byte) string {
@@ -251,7 +251,7 @@ func TestCacheHeaders(t *testing.T) {
 			t.Fatalf("%s: Cache-Control %q", p, cc)
 		}
 	}
-	for _, p := range []string{"/", "/index.html", "/issue/x", "/favicon.svg"} {
+	for _, p := range []string{"/", "/index.html", "/issue/x", "/favicon.png"} {
 		w := do(s, "GET", p, "", nil)
 		if w.Code != 200 || w.Header().Get("Cache-Control") != "no-cache" || w.Header().Get("ETag") == "" {
 			t.Fatalf("%s: %d %v", p, w.Code, w.Header())

@@ -119,7 +119,7 @@ func TestRelayStateSwitchesTheInterval(t *testing.T) {
 	x.cfg.Relay.Hooks = []config.Hook{{Project: "gh:o/r", Key: "k", SecretRef: "s"}} // the relay covers the project
 	c := &counting{Forge: x.f}
 	f := newFeed()
-	x.a = &Agent{Config: x.cfg, Forge: c, State: x.dir, Audit: x.audit, Relay: f, Debounce: 10 * time.Millisecond}
+	x.a = &Agent{Config: x.cfg, Forge: c, State: x.dir, Audit: x.audit, Relay: f, Debounce: 10 * time.Millisecond, CheckSandbox: noSandboxCheck}
 	j, err := trustFor(x)
 	if err != nil {
 		t.Fatal(err)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -112,8 +113,8 @@ func TestRunStartsClaudeAndParsesTheResult(t *testing.T) {
 			t.Errorf("argv lacks %v: %v", want, argv)
 		}
 	}
-	if hasSeq(argv, []string{"--resume"}) || hasSeq(argv, []string{"--setting-sources"}) {
-		t.Errorf("argv must not resume or restrict setting sources: %v", argv)
+	if hasSeq(argv, []string{"--resume"}) {
+		t.Errorf("argv must not resume: %v", argv)
 	}
 	if got := strings.TrimSpace(read(t, filepath.Join(rec, "cwd"))); got != req.Dir {
 		t.Errorf("cwd = %q, want %q", got, req.Dir)
@@ -121,11 +122,11 @@ func TestRunStartsClaudeAndParsesTheResult(t *testing.T) {
 	if got := read(t, filepath.Join(rec, "stdin")); got != "do the thing" {
 		t.Errorf("stdin = %q", got)
 	}
-	var settings map[string]map[string][]string
+	var settings struct{ Permissions map[string][]string }
 	if err := json.Unmarshal([]byte(read(t, filepath.Join(req.RunDir, "settings.json"))), &settings); err != nil {
 		t.Fatal(err)
 	}
-	if settings["permissions"]["deny"][0] != "Bash(git push:*)" {
+	if settings.Permissions["deny"][0] != "Bash(git push:*)" {
 		t.Errorf("settings = %v", settings)
 	}
 	if got := strings.TrimSpace(read(t, filepath.Join(req.RunDir, "mcp.json"))); got != `{"mcpServers":{}}` {
@@ -297,5 +298,102 @@ func TestArgsLeaveUnsetModelAndEffortToTheCLI(t *testing.T) {
 func TestEffortsAreTheCLILevels(t *testing.T) {
 	if want := []string{"low", "medium", "high", "xhigh", "max"}; !slices.Equal(Efforts, want) {
 		t.Fatalf("Efforts = %v, want %v", Efforts, want)
+	}
+}
+
+func TestArgsTakeOnlyProjectAndLocalSettings(t *testing.T) {
+	argv := Args(Request{RunDir: "/run", SessionID: "s", MaxTurns: 3, Schema: "{}"})
+	if !hasSeq(argv, []string{"--setting-sources", "project,local"}) {
+		t.Fatalf("argv lacks --setting-sources project,local: %v", argv)
+	}
+}
+
+func TestRunWritesTheSandbox(t *testing.T) {
+	bin, _ := fakeClaude(t, "done.jsonl", 0, false, false, 0)
+	req := request(t, bin)
+	req.Settings.Unsandboxed = []string{"make verify", "git", "git *"}
+	req.Settings.DenyRead = []string{"/home/alice/.ssh"}
+	if _, err := Run(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	var settings struct {
+		Sandbox struct {
+			Enabled                  *bool    `json:"enabled"`
+			FailIfUnavailable        *bool    `json:"failIfUnavailable"`
+			AllowUnsandboxedCommands *bool    `json:"allowUnsandboxedCommands"`
+			AutoAllowBashIfSandboxed *bool    `json:"autoAllowBashIfSandboxed"`
+			ExcludedCommands         []string `json:"excludedCommands"`
+			Filesystem               struct {
+				DenyRead []string `json:"denyRead"`
+			} `json:"filesystem"`
+		} `json:"sandbox"`
+	}
+	if err := json.Unmarshal([]byte(read(t, filepath.Join(req.RunDir, "settings.json"))), &settings); err != nil {
+		t.Fatal(err)
+	}
+	s := settings.Sandbox
+	is := func(b *bool, want bool) bool { return b != nil && *b == want }
+	if !is(s.Enabled, true) || !is(s.FailIfUnavailable, true) || !is(s.AllowUnsandboxedCommands, false) || !is(s.AutoAllowBashIfSandboxed, true) {
+		t.Errorf("sandbox switches = %+v", s)
+	}
+	if !slices.Equal(s.ExcludedCommands, req.Settings.Unsandboxed) || !slices.Equal(s.Filesystem.DenyRead, req.Settings.DenyRead) {
+		t.Errorf("sandbox lists = %+v", s)
+	}
+}
+
+func TestRunWritesEmptySandboxListsAsArrays(t *testing.T) {
+	bin, _ := fakeClaude(t, "done.jsonl", 0, false, false, 0)
+	req := request(t, bin)
+	if _, err := Run(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	got := read(t, filepath.Join(req.RunDir, "settings.json"))
+	if strings.Contains(got, "null") {
+		t.Fatalf("settings.json has null: %s", got)
+	}
+}
+
+func fakeBwrap(t *testing.T, script string) string {
+	t.Helper()
+	bin := filepath.Join(t.TempDir(), "bwrap")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"+script+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return bin
+}
+
+func TestCheckSandboxPassesWhenBwrapCreatesNamespaces(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the check runs bwrap only on Linux")
+	}
+	rec := filepath.Join(t.TempDir(), "argv")
+	bin := fakeBwrap(t, fmt.Sprintf(`printf '%%s\n' "$@" > %q; exit 0`, rec))
+	if err := CheckSandbox(context.Background(), bin); err != nil {
+		t.Fatal(err)
+	}
+	argv := strings.Split(strings.TrimSpace(read(t, rec)), "\n")
+	if want := []string{"--ro-bind", "/", "/", "--dev", "/dev", "--unshare-all", "true"}; !slices.Equal(argv, want) {
+		t.Errorf("bwrap argv = %v, want %v", argv, want)
+	}
+}
+
+func TestCheckSandboxReportsBwrapsError(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the check runs bwrap only on Linux")
+	}
+	bin := fakeBwrap(t, `echo 'bwrap: Creating new namespace failed: No space left on device' >&2; exit 1`)
+	err := CheckSandbox(context.Background(), bin)
+	if err == nil || !strings.Contains(err.Error(), "Creating new namespace failed") {
+		t.Fatalf("CheckSandbox = %v", err)
+	}
+}
+
+func TestCheckSandboxReportsAMissingBwrap(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the check runs bwrap only on Linux")
+	}
+	err := CheckSandbox(context.Background(), filepath.Join(t.TempDir(), "bwrap"))
+	if err == nil || !strings.Contains(err.Error(), "bwrap") {
+		t.Fatalf("CheckSandbox = %v", err)
 	}
 }
