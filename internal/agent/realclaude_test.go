@@ -172,7 +172,7 @@ func TestRealClaudeDenyWinsOverAllow(t *testing.T) {
 }
 
 // A run that writes files is offered its tools, the tools of the extra allows and the structured output, and nothing
-// else (V47).
+// else (V49).
 func TestRealClaudeRunGetsOnlyItsTools(t *testing.T) {
 	bin := os.Getenv("SWITCHBOARD_CLAUDE")
 	if bin == "" {

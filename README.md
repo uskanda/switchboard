@@ -79,7 +79,7 @@ GitHubのfine-grained personal access tokenを2つ作り、Secret Serviceに登�
 | 用途 | 設定のキー | 権限（対象のリポジトリだけ） |
 |---|---|---|
 | エージェント（ラベル、コメント、push、PR、CIの見張り） | `token_ref` | Contents、Issues、Pull requestsの読み書き。Actions、Commit statusesの読み取り |
-| 受信箱（一覧、返答、WUIからのマージ） | `inbox_token_ref` | Issues、Pull requests、Contentsの読み書き |
+| 受信箱（一覧、返答、WUIからのマージ） | `inbox_token_ref` | Issues、Pull requests、Contentsの読み書き。Actions、Commit statusesの読み取り |
 
 ```bash
 secret-tool store --label='switchboard github' service switchboard/github username token
@@ -94,6 +94,8 @@ secret-tool store --label='switchboard github inbox' service switchboard/github-
 エージェントのトークンにActionsとCommit statusesの読み取りが無いと、エージェントはPRのCIを見張らない。ほかの動きは変わらない。`switchboard doctor` が警告を出す。
 
 受信箱のトークンのPull requestsとContentsの書き込みは、受信箱のWeb表示から完了のPRをマージするために使う（ADR-043）。マージは人の身元で行い、フォージにも人のマージとして残る。今のトークンに足すときは、GitHubのトークンの設定で、Pull requestsとContentsを「Read and write」にして保存する。トークンの値は変わらないので、登録し直さなくてよい。足さないうちは、マージだけが「権限がありません」で断られる。
+
+受信箱のトークンのActionsとCommit statusesの読み取りは、マージの確認ダイアログにCIの結果を出すために使う（ADR-050）。足し方は上と同じで、ActionsとCommit statusesを「Read-only」にする。足さないうちは、ダイアログに「CIを読む権限がありません」と出るだけで、マージはできる。`switchboard doctor` が警告を出す。
 
 GitLabのプロジェクトを使うときは、GitLabのpersonal access tokenを `api` スコープで作り、同じように登録する。エージェント用と受信箱用に、同じトークンを登録してもよい。このトークンは自分の全プロジェクトを操作できる。エージェントの影響を1つのプロジェクトに限りたいときは、後述のプロジェクトごとの上書きで、Project Access Tokenを使う。GitLab 19.2以降のfine-grainedのトークンでも絞れるが、switchboardが使うすべてのAPIで動くかは確かめていない。
 
@@ -270,6 +272,20 @@ switchboard instructions edit --run gh:o/switchboard  # 1つのプロジェク�
 
 OpenSpecを使うプロジェクトでの書き方の例は、[docs/examples/openspec.md](docs/examples/openspec.md) にある。
 
+### 実装の実行だけへの追加の指示とスクリーンショット
+
+`run.md` は直す実行にも渡る。直接の実装（`agent:ready`・`agent:go`）と承認のあとの実装にだけ渡したい指示は、`implement.md` に書く。置き場所は `run.md` と同じディレクトリで、全体は `instructions/implement.md` である。両方あるときは、`run.md` のあとにつなげる。計画の実行と、CI・push・baseとの衝突を直す実行には渡らない。保存の検査と監査ログは、ほかの指示と同じである。`run.started` には、`implement` の鍵でこのファイルのハッシュが残る。
+
+```bash
+switchboard instructions edit --implement gh:o/switchboard
+```
+
+同じ2種類の実行には、画像の置き場所の取り決めもいつも渡す。取り決めでは、issueへ付けたい画像を、worktreeの `.switchboard/screenshots/` の直下に置く。switchboardは、この場所を `.git/info/exclude` へ足す。実行を始める前には、中を消す。doneで終わったら、doneの投稿に続けて、画像だけのコメントを1件issueへ付ける。付けるのは `.png`・`.jpg`・`.jpeg`・`.webp` だけで、1枚5MB、10枚までである。外れたファイルは、名前と理由をそのコメントに書く。画像をコミットするとpushを止め、検査の失敗として待つ。
+
+GitHubでは、端末の `gh`（v2.99.0以上）の `gh issue comment --attach` で付ける。`gh` にはエージェントのトークンだけを渡し、利用者の `gh` のログインは使わない。GitLabでは、uploads APIで上げてノートに並べる。付けられなかったときは、理由だけを書いたコメントを付け、doneはそのままにする。たとえば `gh` が無いときや古いとき、権限が無いときである。`switchboard doctor` は、GitHubのプロジェクトがあるときに `gh` の版を確かめる。
+
+撮影の手順と、それに要るコマンドの許可（`allow_tools_extra`）は、利用者が書く。例は [docs/examples/screenshots.md](docs/examples/screenshots.md) にある。
+
 ### 常駐させる
 
 ログインしていなくてもエージェントが動き続けるように、systemdのサービスとして常駐させられる。サービスは自分のOSユーザーで動き、異常に終わると自動で再起動する。トークンは、ホストの鍵で暗号化したsystemdのクレデンシャルとして置く。置くのは、この端末の担当プロジェクトのエージェント用トークンだけで、受信箱のトークンは置かない。
@@ -406,11 +422,11 @@ issueが待ちになったときと完了したときに、エージェントが
 - 実行中の欄には、端末、経過時間、最新の進捗の1行が出る。実行中のissueには返答できない
 - 順番待ちの欄は実行中の欄の下にあり、当たった上限と、順番待ちになってからの時間が出る。返答の待ちから順番待ちになったissueには、今までどおり返答できる
 - 「完了（close待ち）」の欄は順番待ちの欄の下にあり、端末、完了からの時間、PR/MRへのリンクが出る。ヘッダの完了の件数は、1件以上のときだけ出る。完了のissueにも返答でき、返答すると同じPR/MRで作業を再開する。issueをcloseすると欄から消える
-- 完了の行と1件の表示には「マージ」のボタンが出る。確認のダイアログで「マージする」を押すと、受信箱のトークンでPR/MRのdraftを解除してマージする。マージするのは、エージェントが完了を知らせたときのコミットだけで、その後にPR/MRへコミットが足されていれば断る。CIの結果でフォージが断ったときは、その理由がトーストに出る。issueは、PR/MRの本文の `Closes #N` でcloseされ、一覧から消える。baseが既定のブランチでないときはissueが閉じないので、手でcloseする（ADR-043）
+- 完了の行と1件の表示には「マージ」のボタンが出る。確認のダイアログには、PR/MRの衝突の有無と、CIの結果（成功・失敗・実行中の数と、失敗中・実行中のチェックへのリンク）が出る。どちらも情報だけで、マージは止めない（ADR-050）。ダイアログで「マージする」を押すと、受信箱のトークンでPR/MRのdraftを解除してマージする。マージするのは、エージェントが完了を知らせたときのコミットだけで、その後にPR/MRへコミットが足されていれば断る。CIの結果でフォージが断ったときは、その理由がトーストに出る。issueは、PR/MRの本文の `Closes #N` でcloseされ、一覧から消える。baseが既定のブランチでないときはissueが閉じないので、手でcloseする（ADR-043）
 - PR/MRがbaseと衝突していて断られたときは、エージェントが衝突を直したあとに、受信箱のサービスが自動でマージする。待っている間は、行と1件の表示に「自動マージ待ち」の印が出て、1件の表示の「自動マージを取り消す」でやめられる。自動でマージするのは、押したあとにエージェントの直す実行（衝突、CIの失敗、pushの拒否）がpushしたコミットだけである。その間に人がコメントしたか、PR/MRへpushしたときは、自動のマージをやめる。結果は、次に画面を開いたときにトーストで出る（ADR-048）
 - 実行の失敗（理由が `error`）の待ちには「再実行する」のボタンが出る。返答の欄が空のときに押すと再実行を頼む決まった文を返答し、エージェントが同じ作業をやり直す
 - 画面を開いている間は、一覧と選んだissueが自動で更新される。返答の書きかけは、更新されても消えない
-- 一覧の上の「新規issue」から、設定にあるどのプロジェクトにもissueを作れる。開始ラベルは、設定の `labels.ready`、`labels.plan`、`labels.go` から1つを選ぶ（初期値はready）。issueは受信箱のトークンで作るので、エージェントがそのまま着手する（ADR-040）
+- 一覧の上の「新規issue」から、設定にあるどのプロジェクトにもissueを作れる。開始ラベルは、設定の `labels.ready`、`labels.plan`、`labels.go` から1つを選ぶか、「ラベルなし（実装開始しない）」を選ぶ（初期値はready）。issueは受信箱のトークンで作るので、開始ラベルがあればエージェントがそのまま着手する（ADR-040）。ラベルなしのissueには着手しない。あとで開始ラベルを付ければ着手する（ADR-049）
 
 仕組みは次の2つのサービスに分かれる。
 

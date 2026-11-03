@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -14,6 +15,23 @@ var ErrNotFound = errors.New("not found")
 
 // ErrForbidden reports that the token may not do what was asked (HTTP 403).
 var ErrForbidden = errors.New("forbidden")
+
+// Attacher is a forge client that can post a comment with image files attached, as a person attaches them in the
+// forge's web page (ADR-051). The comment ends with the last line of body, so that a marker there still parses.
+type Attacher interface {
+	AttachComment(ctx context.Context, ref IssueRef, body string, files []string) (*Comment, error)
+}
+
+// SplitLastLine returns body without its last non-blank line, and that line, so that an Attacher can put the
+// attachments before it.
+func SplitLastLine(body string) (head, last string) {
+	body = strings.TrimRight(body, " \t\r\n")
+	i := strings.LastIndex(body, "\n")
+	if i < 0 {
+		return "", body
+	}
+	return strings.TrimRight(body[:i], " \t\r\n"), body[i+1:]
+}
 
 // Hook is a webhook to register: where it is sent, and the secret it is signed with. On GitLab the secret is a
 // signing token (whsec_...) unless SecretToken is set, which sends it as X-Gitlab-Token instead.

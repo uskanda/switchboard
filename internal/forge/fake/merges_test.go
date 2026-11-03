@@ -34,6 +34,24 @@ func TestMergeChangeRequest(t *testing.T) {
 	}
 }
 
+func TestChangeRequestHeadReportsASetChange(t *testing.T) {
+	f := New(nil)
+	ctx := context.Background()
+	f.SetChange("o", "r", 9, Change{Head: "abc", Conflict: true, Computing: true})
+	st, err := f.ChangeRequestHead(ctx, "o", "r", 9)
+	if err != nil || *st != (forge.ChangeRequestState{State: forge.CROpen, Head: "abc", Conflict: true, Computing: true}) {
+		t.Fatalf("ChangeRequestHead = %+v, %v", st, err)
+	}
+	f.SetChange("o", "r", 9, Change{Head: "abc", Merged: true})
+	if st, _ := f.ChangeRequestHead(ctx, "o", "r", 9); st.State != forge.CRMerged {
+		t.Fatalf("merged change = %+v", st)
+	}
+	f.SetChange("o", "r", 9, Change{Head: "abc", Closed: true})
+	if st, _ := f.ChangeRequestHead(ctx, "o", "r", 9); st.State != forge.CRClosed {
+		t.Fatalf("closed change = %+v", st)
+	}
+}
+
 // A change request recorded with SetChange is also what ChangeRequestHead reads, so that the inbox service sees the
 // same state through both; a conflicting one is refused.
 func TestChangeRequestHeadOfASetChange(t *testing.T) {
