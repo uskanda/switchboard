@@ -230,6 +230,18 @@ type MergeRequest struct {
 	SHA string `json:"sha"`
 }
 
+// RegisterDeviceRequest is the body of POST /v1/devices: the FCM token of an app that wants the push notifications.
+type RegisterDeviceRequest struct {
+	Token string `json:"token"`
+}
+
+// ApproveRequest is the body of POST /v1/approve: the issue, and the start of the wait the notification reported
+// (its waiting_since). The inbox service posts the approve word only while the issue still waits on that plan.
+type ApproveRequest struct {
+	Ref   string    `json:"ref"`
+	Since time.Time `json:"since"`
+}
+
 // The codes of Error.
 const (
 	CodeInvalid        = "invalid"         // 400
