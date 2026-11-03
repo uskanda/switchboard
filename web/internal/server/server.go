@@ -29,6 +29,8 @@ type Inbox interface {
 	IssueTargets(ctx context.Context) (*inboxapi.IssueTargets, error)
 	CreateIssue(ctx context.Context, req inboxapi.CreateIssueRequest) (*inboxapi.CreateIssueResponse, error)
 	Merge(ctx context.Context, ref, sha string) error
+	ProjectIcon(ctx context.Context, ref string) (*inboxapi.Icon, error)
+	ProjectIcons(ctx context.Context) (inboxapi.ProjectIcons, error)
 	Events(ctx context.Context, fn func(*inboxapi.Inbox)) error
 }
 
@@ -78,6 +80,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.createIssue(w, r)
 	case r.URL.Path == "/api/merge" && r.Method == http.MethodPost:
 		s.merge(w, r)
+	case r.URL.Path == "/api/project-icon" && r.Method == http.MethodGet:
+		s.projectIcon(w, r)
+	case r.URL.Path == "/api/project-icons" && r.Method == http.MethodGet:
+		out, err := s.Inbox.ProjectIcons(r.Context())
+		s.answer(w, out, err)
 	case strings.HasPrefix(r.URL.Path, "/api/"):
 		send(w, http.StatusNotFound, inboxapi.Error{Code: inboxapi.CodeNotFound, Message: "no such endpoint"})
 	case r.Method == http.MethodGet || r.Method == http.MethodHead:
@@ -199,6 +206,20 @@ func (s *Server) merge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// projectIcon passes a project's icon image on from the inbox service, which read it with the inbox token (ADR-047).
+// The page reads it from this origin, so the content security policy stays default-src 'self'; nosniff, set for
+// every answer, keeps the browser to the image type the inbox service checked.
+func (s *Server) projectIcon(w http.ResponseWriter, r *http.Request) {
+	icon, err := s.Inbox.ProjectIcon(r.Context(), r.URL.Query().Get("ref"))
+	if err != nil {
+		s.answer(w, nil, err)
+		return
+	}
+	w.Header().Set("Content-Type", icon.ContentType)
+	w.Header().Set("Cache-Control", "max-age=3600")
+	w.Write(icon.Data)
 }
 
 // events passes the inbox service's listings on to the browser as server-sent events (event inbox, the Inbox as
