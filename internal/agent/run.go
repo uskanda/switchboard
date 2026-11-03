@@ -308,6 +308,10 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) *outcome {
 // finish handles a run that declared done: verify, check the output, push, open the pull request.
 func (a *Agent) finish(ctx context.Context, pl *plan, sp *workspace.Space, d *Declaration, o *outcome) *outcome {
 	p, is := pl.project, pl.issue
+	if pl.fix != nil {
+		// The done post names what the fix run fixed; the causes are written as the marker's values (fix=).
+		o.Fix = pl.fix.cause
+	}
 	verified := a.msg.notVerified
 	if cmd := p.VerifyCommand; cmd != "" {
 		// The command runs code claude wrote, so it gets claude's environment: no forge token.

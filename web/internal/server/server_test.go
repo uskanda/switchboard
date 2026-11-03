@@ -27,7 +27,10 @@ type fakeInbox struct {
 	merged   []inboxapi.MergeRequest
 	devices  []string
 	approved []inboxapi.ApproveRequest
-	err      error
+	// later makes a merge wait for the fix of a conflict; cancelled lists the cancels of such merges.
+	later     bool
+	cancelled []string
+	err       error
 }
 
 func (f *fakeInbox) List(context.Context) (*inboxapi.Inbox, error) {

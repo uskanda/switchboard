@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/uskanda/switchboard/inboxapi"
+	"github.com/uskanda/switchboard/internal/automerge"
 	"github.com/uskanda/switchboard/internal/config"
 	"github.com/uskanda/switchboard/internal/forge"
 	"github.com/uskanda/switchboard/internal/inbox"
@@ -163,6 +164,14 @@ func inboxServe(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 	api, reload := inboxAPI(cfg, forges, instructions.For(cfg.Path, d.Audit()))
+	// The merges refused for a conflict are kept in the state directory and made once the agent fixed them (ADR-048),
+	// whether or not a page listens.
+	if api.AutoMerge, err = automerge.Open(d); err != nil {
+		return fail(stderr, err)
+	}
+	api.Audit = d.Audit()
+	api.Logf = func(format string, args ...any) { fmt.Fprintf(stderr, "switchboard: inbox: "+format+"\n", args...) }
+	go api.RunAutoMerge(ctx)
 	w, err := config.NewWatcher(cfg)
 	if err != nil {
 		return fail(stderr, err)
