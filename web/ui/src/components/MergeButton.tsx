@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
@@ -33,12 +33,32 @@ function failure(name: string, err: unknown): { message: string; description?: s
  * MergeButton merges the pull or merge request of a done issue: the one its latest done post names, at the commit
  * the page showed. It asks first in a dialog, since a merge cannot be undone; the outcome is told in a toast. The
  * issue itself is closed by the change request's "Closes #N", and the list drops it on its next read (ADR-043).
+ * With ask set, the dialog opens by itself, as when the app's merge button opened the page; onClosed is called
+ * whenever the dialog closes.
  */
-export function MergeButton({ issueRef, number, sha, url }: { issueRef: string; number: number; sha: string; url?: string }) {
+export function MergeButton({
+  issueRef,
+  number,
+  sha,
+  url,
+  ask = false,
+  onClosed,
+}: {
+  issueRef: string;
+  number: number;
+  sha: string;
+  url?: string;
+  ask?: boolean;
+  onClosed?: () => void;
+}) {
   const dialog = useRef<HTMLDialogElement>(null);
   const id = useId();
   const [sending, setSending] = useState(false);
   const name = changeName(issueRef, number);
+
+  useEffect(() => {
+    if (ask && !dialog.current?.open) dialog.current?.showModal();
+  }, [ask]);
 
   async function confirm() {
     setSending(true);
@@ -60,7 +80,7 @@ export function MergeButton({ issueRef, number, sha, url }: { issueRef: string; 
         {sending && <Spinner />}
         マージ
       </Button>
-      <Dialog ref={dialog} aria-labelledby={`${id}-heading`} onCancel={(e) => sending && e.preventDefault()}>
+      <Dialog ref={dialog} aria-labelledby={`${id}-heading`} onCancel={(e) => sending && e.preventDefault()} onClose={() => onClosed?.()}>
         <div className="flex flex-col gap-md">
           <h2 id={`${id}-heading`} className="text-headline-md font-semibold">
             {name}をマージしますか

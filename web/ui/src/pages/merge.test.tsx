@@ -138,3 +138,33 @@ describe("merging a done issue's pull request", () => {
     expect((await screen.findAllByRole("button", { name: "MR !9をマージ" }))[0]).toBeInTheDocument();
   });
 });
+
+describe("opening the merge dialog from the address (the app's merge button)", () => {
+  it("opens the dialog once the issue is read, and sends nothing until confirmed", async () => {
+    const calls = answer({ "GET /api/inbox": listing, [detailPath]: detail });
+    at("/issue/gh%3Ao%2Fr%2350?action=merge");
+    const dialog = await screen.findByRole("dialog", { name: "PR #9をマージしますか" });
+    expect(dialog).toHaveAttribute("open");
+    expect(calls.some((c) => c.key === "POST /api/merge")).toBe(false);
+    await userEvent.click(within(dialog).getByRole("button", { name: "やめる" }));
+    expect(dialog).not.toHaveAttribute("open");
+  });
+
+  it("does not open it again after it is closed", async () => {
+    answer({ "GET /api/inbox": listing, [detailPath]: detail });
+    at("/issue/gh%3Ao%2Fr%2350?action=merge");
+    const dialog = await screen.findByRole("dialog", { name: "PR #9をマージしますか" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "やめる" }));
+    await new Promise((r) => setTimeout(r, 50));
+    for (const d of screen.getAllByRole("dialog", { hidden: true })) expect(d).not.toHaveAttribute("open");
+  });
+
+  it("tells in an error toast that an issue without the merge cannot be merged", async () => {
+    const closed = { status: 200, body: { ...detail.body, done: false, change_number: undefined, change_sha: undefined } };
+    answer({ "GET /api/inbox": { status: 200, body: { items: [], errors: [], fetched_at: "" } }, [detailPath]: closed });
+    at("/issue/gh%3Ao%2Fr%2350?action=merge");
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("このissueは、ここからはマージできません");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
