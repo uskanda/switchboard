@@ -222,3 +222,82 @@ func TestPrepareOfOneCloneAtOnce(t *testing.T) {
 		}
 	}
 }
+
+// placeholder writes what Claude Code's sandbox puts at a path it denies writes to: an empty file nobody may write.
+func placeholder(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, nil, 0o444); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPrepareWritesNoConfig(t *testing.T) {
+	s, _ := space(t)
+	// A running sandbox of another run of the clone holds .git/config.lock (#128).
+	placeholder(t, filepath.Join(s.Repo, ".git", "config.lock"))
+	if _, err := s.Prepare(ctx); err != nil {
+		t.Fatalf("Prepare must not need .git/config: %v", err)
+	}
+}
+
+func TestPrepareRemovesTheSandboxPlaceholdersOfAKilledRun(t *testing.T) {
+	s, _ := space(t)
+	dir, err := s.Prepare(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit(t, dir, "empty.txt", "")
+	if err := os.Chmod(filepath.Join(dir, "empty.txt"), 0o444); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "notes"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	left := []string{".mcp.json", ".bashrc", ".claude/settings.json", ".claude/agents"}
+	for _, p := range left {
+		placeholder(t, filepath.Join(dir, p))
+	}
+	if _, err := s.Prepare(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range left {
+		if _, err := os.Lstat(filepath.Join(dir, p)); !os.IsNotExist(err) {
+			t.Errorf("the placeholder %s is still there: %v", p, err)
+		}
+	}
+	for _, p := range []string{"empty.txt", "notes"} {
+		if _, err := os.Lstat(filepath.Join(dir, p)); err != nil {
+			t.Errorf("%s is not a placeholder and must stay: %v", p, err)
+		}
+	}
+	if err := s.CheckClaudeConfig(ctx); err != nil {
+		t.Fatalf("the worktree must pass once the placeholders are gone: %v", err)
+	}
+}
+
+func TestClearConfigLock(t *testing.T) {
+	clone, _ := repo(t)
+	lock := filepath.Join(clone, ".git", "config.lock")
+	if err := os.WriteFile(lock, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if removed, err := ClearConfigLock(ctx, clone); err != nil || removed {
+		t.Fatalf("git's own lock must stay: %v, %v", removed, err)
+	}
+	if err := os.Remove(lock); err != nil {
+		t.Fatal(err)
+	}
+	placeholder(t, lock)
+	if removed, err := ClearConfigLock(ctx, clone); err != nil || !removed {
+		t.Fatalf("the placeholder must go: %v, %v", removed, err)
+	}
+	if _, err := os.Lstat(lock); !os.IsNotExist(err) {
+		t.Fatalf("config.lock is still there: %v", err)
+	}
+	if removed, err := ClearConfigLock(ctx, clone); err != nil || removed {
+		t.Fatalf("no lock: %v, %v", removed, err)
+	}
+}

@@ -344,3 +344,17 @@ func TestStatusWithoutAnAgent(t *testing.T) {
 		t.Fatalf("status:\n%s", out.String())
 	}
 }
+
+// A run killed in the middle of a sandboxed command leaves the sandbox's placeholder for .git/config.lock in the
+// clone (#128). No run goes while the agent starts, so the agent removes it then.
+func TestStartRemovesTheConfigLockPlaceholderOfAKilledRun(t *testing.T) {
+	x := newH(t, "", nil)
+	lock := filepath.Join(x.clone, ".git", "config.lock")
+	if err := os.WriteFile(lock, nil, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	x.agent()
+	if _, err := os.Lstat(lock); !os.IsNotExist(err) {
+		t.Fatalf("the placeholder is still there: %v", err)
+	}
+}

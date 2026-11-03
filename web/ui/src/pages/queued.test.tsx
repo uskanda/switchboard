@@ -47,6 +47,14 @@ describe("queued issues", () => {
     expect(screen.getByText("待ち1件、実行中1件、順番待ち2件")).toBeInTheDocument();
   });
 
+  it("on a pause of the host say so with the time it ends", async () => {
+    const until = new Date(2026, 10, 3, 18, 30).toISOString();
+    const limited = { ...queued, reason: "limit", queued_until: until };
+    answer({ "GET /api/inbox": { items: [limited], errors: [], fetched_at: "" } });
+    at("/");
+    expect((await screen.findAllByText("利用上限に達しています（11/3 18:30まで）"))[0]).toBeInTheDocument();
+  });
+
   it("show that one waits for a slot, with its queued comment folded", async () => {
     const d = {
       ref: "gh:o/r#40", title: "Queued work", url: "https://github.test/o/r/issues/40", waiting: false, host: "desk",
@@ -58,7 +66,7 @@ describe("queued issues", () => {
     at("/issue/gh%3Ao%2Fr%2340");
     expect(await screen.findByText("順番待ちになりました")).toBeInTheDocument();
     expect(screen.getAllByText("順番待ち")[0]).toBeInTheDocument();
-    expect(screen.getByText("5分前")).toBeInTheDocument();
+    expect(screen.getByText("5分前から順番待ち")).toBeInTheDocument();
     expect(screen.queryByText(/runs as many issues/)).toBeNull();
     expect(screen.getByText("順番待ちのため、まだ返答は要りません")).toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "返答" })).toBeNull();

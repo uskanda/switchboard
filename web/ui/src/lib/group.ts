@@ -1,7 +1,7 @@
 import type { Item } from "@/lib/api";
 
 /** A project's items in one section of the list. */
-export type ProjectGroup = { project: string; items: Item[] };
+export type ProjectGroup<T extends Item = Item> = { project: string; items: T[] };
 
 /**
  * projectRef is the project's reference of an issue's: the part before the last "#" ("gh:o/r#12" → "gh:o/r"). The
@@ -17,8 +17,8 @@ export function projectRef(ref: string): string {
  * items in the order given. The inbox service gives each section oldest first, so the groups come in the order of
  * their oldest items without reading any time here.
  */
-export function groupByProject(items: Item[]): ProjectGroup[] {
-  const groups = new Map<string, ProjectGroup>();
+export function groupByProject<T extends Item>(items: T[]): ProjectGroup<T>[] {
+  const groups = new Map<string, ProjectGroup<T>>();
   for (const it of items) {
     const project = projectRef(it.ref);
     let g = groups.get(project);

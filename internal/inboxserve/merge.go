@@ -17,7 +17,8 @@ type Merger interface {
 }
 
 // merge serves POST /v1/merge: the change request of a done issue is marked ready and merged with the inbox token,
-// only at the commit the page showed (ADR-043).
+// only at the commit the page showed (ADR-043). A merge the forge refused for a conflict is answered with 202 and made
+// once the agent has fixed the conflict (ADR-048).
 func (s *Server) merge(w http.ResponseWriter, r *http.Request) {
 	var req inboxapi.MergeRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
@@ -46,6 +47,11 @@ func (s *Server) merge(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusConflict, inboxapi.CodeStale, "the change request has commits the page did not show; open it again")
 		return
 	case errors.As(err, &nm):
+		if s.waitForFix(r.Context(), b, ref, req.SHA) {
+			send(w, http.StatusAccepted, inboxapi.MergeAnswer{Code: inboxapi.CodeAutoMergePending,
+				Message: "the change request conflicts with its base; it is merged once the agent has fixed the conflict"})
+			return
+		}
 		fail(w, http.StatusConflict, inboxapi.CodeNotMergeable, nm.Reason)
 		return
 	case errors.Is(err, forge.ErrForbidden):

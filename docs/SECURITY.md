@@ -24,17 +24,18 @@
 | T2 | 中継サーバーの侵害による任意指示の注入 | 中継は ID のみを流し、本文はローカルがフォージから再取得。中継にフォージのトークンを置かない |
 | T3 | 偽装 webhook の送信 | 署名検証（定数時間比較）。検証失敗はログに残し破棄 |
 | T4 | webhook の再送・リプレイ | 配信ID による重複排除。エージェント側でも「処理済みコメントID」を記録 |
-| T5 | 端末への直接攻撃（受信口） | 端末は受信ポートを開かない。中継への接続は外向きのみ。例外は受信箱のWeb表示で、LANのアドレスに限って待ち、返答のPOSTは `Origin` と `Host` を検査する。issueの作成のPOSTも同じ検査をする（ADR-040）。完了のPR/MRのマージのPOSTも同じ検査をし、画面で見たコミットに限ってマージする（ADR-043）。認証は当面しない（ADR-036） |
+| T5 | 端末への直接攻撃（受信口） | 端末は受信ポートを開かない。中継への接続は外向きのみ。例外は受信箱のWeb表示で、LANのアドレスに限って待ち、返答のPOSTは `Origin` と `Host` を検査する。issueの作成のPOSTも同じ検査をする（ADR-040）。完了のPR/MRのマージのPOSTも同じ検査をし、画面で見たコミットに限ってマージする（ADR-043）。認証は当面しない（ADR-036）。Androidのアプリの登録と承認のPOSTも同じ検査をする。アプリは、設定したWUIのURLを `Origin` に付けて送る。承認は、通知に載せた待ちの開始時刻が最新の待ちの投稿と一致するときに限る（ADR-047） |
 | T6 | フォージトークンの漏えい | 最小権限（対象リポジトリの issues 読み書き・contents 必要最小）。fine-grained PAT / Project Access Token を使い、OS キーチェーンに保存 |
-| T7 | エージェントの暴走による破壊的操作 | 許可ツールの明示、main への push・マージ・リリースの拒否、worktree での作業、タイムアウト。利用者が足す許可（`allow_tools_extra`）は設定ファイルにだけ書け、受信箱のAPIとWeb表示からは変えられない。読み込みのときに、制限の無い `Bash` と、拒否している操作（`git push`、`git rebase`、`gh`、`WebFetch`）を名指しする項目を誤りにする。denyは境界ではない（V5）ので、フォージの資格情報を渡さないこと（ADR-012）を防壁とする（ADR-045） |
+| T7 | エージェントの暴走による破壊的操作 | 渡すツールの固定（ADR-052）、許可ツールの明示、main への push・マージ・リリースの拒否、worktree での作業、タイムアウト。利用者が足す許可（`allow_tools_extra`）は設定ファイルにだけ書け、受信箱のAPIとWeb表示からは変えられない。読み込みのときに、制限の無い `Bash` と、拒否している操作（`git push`、`git rebase`、`gh`、`WebFetch`）を名指しする項目を誤りにする。denyは境界ではない（V5）ので、フォージの資格情報を渡さないこと（ADR-012）を防壁とする（ADR-045） |
 | T8 | 隠しマーカーの偽装による受信箱の混乱 | マーカーは投稿者がエージェント用アカウント（または自分）のコメントのみ採用 |
-| T9 | issue 本文経由での秘密情報の外部送信 | 出力（コメント）に秘密情報を含めない指示、可能なら送信前のパターン検査 |
+| T9 | issue 本文経由での秘密情報の外部送信 | 出力（コメント）に秘密情報を含めない指示、可能なら送信前のパターン検査。FCMのプッシュ通知に載せるのは、issueの参照、待ちの理由、タイトル、時刻、PR/MRの番号とコミットだけで、質問、計画、コメントの本文は載せない（ADR-047） |
 
 ## 4. トークンと権限
 
 - GitHub：fine-grained PAT。対象リポジトリのみ、Issues: Read/Write、Pull requests: Read/Write、Contents: Read/Write（PR作成に必要な範囲）、Actions: ReadとCommit statuses: Read（PRのCIを見張るため。ADR-041）。PRとbaseの衝突は `Pull requests: Read` で読むので、権限は増えない（ADR-044）
 - GitLab：Project Access Token または PAT の `api` スコープ（最小化できない場合は対象プロジェクト限定の Project Access Token を推奨）
-- 受信箱専用のトークン（`inbox_token_ref`）は人の身元で、エージェントのトークンと分ける（ADR-008）。権限は、GitHubではIssues、Pull requests、Contentsの読み書きとする。Pull requestsとContentsの書き込みは、受信箱のWeb表示から完了のPRをマージするために使う（ADR-043）。GitLabは `api` スコープで足りる
+- 受信箱専用のトークン（`inbox_token_ref`）は人の身元で、エージェントのトークンと分ける（ADR-008）。権限は、GitHubではIssues、Pull requests、Contentsの読み書きとする。Pull requestsとContentsの書き込みは、受信箱のWeb表示から完了のPRをマージするために使う（ADR-043）。加えて、Actions: ReadとCommit statuses: Readを持たせる。マージの確認ダイアログにCIの結果を出すために使う読み取りだけの権限で、無いときはダイアログにCIが出ないだけである（ADR-050）。GitLabは `api` スコープで足りる
+- 受信箱のサービスは、`inbox.notify.fcm` があるとき、Firebaseのサービスアカウントの鍵を `credentials_ref` でSecret Serviceから読む。鍵はFCMで送る権限だけを持つものにし、エージェントのサービスには渡さない（ADR-047）
 - 中継サーバーが持つのは webhook シークレットのみ
 
 ## 5. 監査

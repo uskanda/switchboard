@@ -83,7 +83,7 @@ describe("the header", () => {
     expect(es.url).toBe("/api/events");
     expect(screen.getByText("自動更新に接続しています")).toBeInTheDocument();
     es.emit("inbox", listing(item(), item({ n: 2, ref: "gh:o/r#13" }), item({ n: undefined, state: "running", ref: "gh:o/r#14", progress: "p" })));
-    expect(await screen.findByText("待ち 2・実行中 1")).toBeInTheDocument();
+    expect(await screen.findByText("待ち2件、実行中1件")).toBeInTheDocument();
     expect(screen.getByText("自動更新中")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "設定" })).toHaveAttribute("href", "/settings");
   });
@@ -122,6 +122,56 @@ describe("the header", () => {
   });
 });
 
+describe("the time of the list", () => {
+  // Local times, so the clock text holds in any time zone. The listing was fetched before the stream was cut.
+  const fetched = new Date(2026, 9, 31, 19, 0);
+  const cut = new Date(2026, 9, 31, 19, 45);
+  const timed = (...items: unknown[]) => ({ ...listing(...items), fetched_at: fetched.toISOString() });
+  const stamp = () => document.querySelector("header time");
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(cut);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("is not shown while the updates are live", async () => {
+    serve({}, timed());
+    at("/");
+    FakeEventSource.last!.emit("inbox", timed(item()));
+    expect(await screen.findByText("自動更新中")).toBeInTheDocument();
+    expect(stamp()).toBeNull();
+    expect(screen.queryByText(/時点の一覧/)).toBeNull();
+  });
+
+  it("is the time the stream was cut, later than the listing, and goes when the updates are live again", async () => {
+    serve({}, timed());
+    at("/");
+    const es = FakeEventSource.last!;
+    es.emit("inbox", timed(item()));
+    await screen.findByText("自動更新中");
+    es.fail();
+    await screen.findByText("自動更新が切れています。再接続しています");
+    const time = stamp()!;
+    expect(time).toHaveTextContent("19:45");
+    expect(time).toHaveAttribute("datetime", cut.toISOString());
+    expect(time.parentElement).toHaveTextContent("19:45時点の一覧");
+
+    es.emit("inbox", timed(item()));
+    expect(await screen.findByText("自動更新中")).toBeInTheDocument();
+    expect(stamp()).toBeNull();
+  });
+
+  it("is the time of the listing where the browser has no EventSource", async () => {
+    vi.stubGlobal("EventSource", undefined);
+    serve({}, timed(item()));
+    at("/");
+    expect(await screen.findByText("自動更新なし")).toBeInTheDocument();
+    await waitFor(() => expect(stamp()).toHaveTextContent("19:00"));
+    expect(stamp()).toHaveAttribute("datetime", fetched.toISOString());
+  });
+});
+
 describe("a tab in the background", () => {
   let visibility: DocumentVisibilityState = "visible";
   beforeEach(() => {
@@ -140,7 +190,7 @@ describe("a tab in the background", () => {
     at("/");
     const first = FakeEventSource.last!;
     first.emit("inbox", listing(item()));
-    expect(await screen.findByText("待ち 1・実行中 0")).toBeInTheDocument();
+    expect(await screen.findByText("待ち1件、実行中0件")).toBeInTheDocument();
 
     turn("hidden");
     expect(first.closed).toBe(true);
@@ -151,14 +201,14 @@ describe("a tab in the background", () => {
     expect(second.closed).toBe(false);
     expect(screen.getByText("自動更新に接続しています")).toBeInTheDocument();
     second.emit("inbox", listing(item(), item({ n: 2, ref: "gh:o/r#13" })));
-    expect(await screen.findByText("待ち 2・実行中 0")).toBeInTheDocument();
+    expect(await screen.findByText("待ち2件、実行中0件")).toBeInTheDocument();
   });
 
   it("reads the listing but does not connect when opened in the background", async () => {
     visibility = "hidden";
     serve({}, listing(item()));
     at("/");
-    expect(await screen.findByText("待ち 1・実行中 0")).toBeInTheDocument();
+    expect(await screen.findByText("待ち1件、実行中0件")).toBeInTheDocument();
     expect(FakeEventSource.last).toBeNull();
     turn("visible");
     expect(FakeEventSource.last).not.toBeNull();
@@ -172,13 +222,14 @@ describe("the list", () => {
     expect((await screen.findAllByText("o/r#12"))[0]).toBeInTheDocument();
     FakeEventSource.last!.emit("inbox", listing(item(), item({ n: 2, ref: "gh:o/r#13", title: "Fix a typo" })));
     expect((await screen.findAllByText("Fix a typo"))[0]).toBeInTheDocument();
-    expect(screen.getByText("待ち 2・実行中 0")).toBeInTheDocument();
+    expect(screen.getByText("待ち2件、実行中0件")).toBeInTheDocument();
   });
 
   it("asks to pick an issue on / and shows the list next to the picked one", async () => {
     serve({ "gh:o/r#12": detail() }, listing(item()));
     const { unmount } = at("/");
-    expect(await screen.findByText("左の一覧からissueを選んでください")).toBeInTheDocument();
+    // With an issue waiting, the right pane leads to it instead of asking to pick one.
+    expect(await within(await screen.findByRole("main")).findByRole("link", { name: /Add a flag/ })).toHaveAttribute("href", "/issue/gh%3Ao%2Fr%2312");
     unmount();
     at("/issue/gh%3Ao%2Fr%2312");
     const nav = await screen.findByRole("navigation", { name: "一覧" });

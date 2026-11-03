@@ -92,7 +92,8 @@ func (c *Client) ChangeRequestHead(ctx context.Context, owner, repo string, numb
 	}
 	// has_conflicts may still hold the old answer while GitLab checks the merge again.
 	conflict := mr.HasConflicts && mr.MergeStatus != "checking"
-	st := &forge.ChangeRequestState{State: forge.CRClosed, Head: mr.SHA, Conflict: conflict}
+	computing := mr.MergeStatus == "checking" || mr.MergeStatus == "unchecked"
+	st := &forge.ChangeRequestState{State: forge.CRClosed, Head: mr.SHA, Conflict: conflict, Computing: computing}
 	switch mr.State {
 	case "opened":
 		st.State = forge.CROpen

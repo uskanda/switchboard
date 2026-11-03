@@ -99,9 +99,41 @@ func settings(verifyCommand string, extra ...[]string) claudecode.Settings {
 	}
 }
 
+// runTools are the tools every run that writes files gets; planTools those of a plan run. A tool the session lacks
+// cannot be called, whatever the allow rules say, and every tool left out shortens the system prompt.
+var (
+	runTools  = []string{"Bash", "Read", "Edit", "Write", "Glob", "Grep", "WebSearch"}
+	planTools = []string{"Bash", "Read", "Glob", "Grep", "WebSearch"}
+)
+
+// tools returns base followed by the tool names of the extra allow rules (Bash for "Bash(openspec *)"), each once.
+func tools(base []string, extra ...[]string) []string {
+	out := slices.Clone(base)
+	for _, rules := range extra {
+		for _, r := range rules {
+			name, _, _ := strings.Cut(strings.TrimSpace(r), "(")
+			if name = strings.TrimSpace(name); name != "" && !slices.Contains(out, name) {
+				out = append(out, name)
+			}
+		}
+	}
+	return out
+}
+
+// modelKind is the kind of run whose model and effort level a run of kind k uses.
+func modelKind(k runKind) config.RunKind {
+	switch k {
+	case planRun:
+		return config.PlanRun
+	case fixRun:
+		return config.FixRun
+	}
+	return config.ImplementRun
+}
+
 // baseAllow are the allow rules every run that writes files gets.
 func baseAllow(verifyCommand string) []string {
-	allow := []string{"Read", "Edit", "Write", "Glob", "Grep"}
+	allow := []string{"Read", "Edit", "Write", "Glob", "Grep", "WebSearch"}
 	for _, c := range []string{"git status", "git diff", "git log", "git add", "git commit", "git merge"} {
 		allow = append(allow, "Bash("+c+")", "Bash("+c+" *)")
 	}
@@ -194,10 +226,14 @@ func (a *Agent) ended(p config.Project, ref forge.IssueRef, rec record, o *outco
 	}
 }
 
+// implements reports whether pl implements the issue: a direct run or the run of an approved plan. Only these get the
+// implement instructions and the screenshot rules (ADR-051).
+func (pl *plan) implements() bool { return pl.kind == directRun || pl.kind == approvedRun }
+
 // work prepares the worktree, runs claude and judges the result. It returns nil when the run was canceled.
-func (a *Agent) work(ctx context.Context, pl *plan, rec record) *outcome {
+func (a *Agent) work(ctx context.Context, pl *plan, rec record) (o *outcome) {
 	p, is := pl.project, pl.issue
-	o := &outcome{Run: rec.Run, Session: rec.Session, Ack: rec.Ack, msg: a.msg}
+	o = &outcome{Run: rec.Run, Session: rec.Session, Ack: rec.Ack, msg: a.msg}
 	if pl.kind == conflictRun {
 		var starts []string
 		for _, l := range is.Labels {
@@ -221,8 +257,24 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) *outcome {
 		}
 		return o.verify(fmt.Sprintf(a.msg.configChanged, err))
 	}
+	if pl.implements() {
+		if err := sp.PrepareScreenshots(ctx); err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			return o.fail(fmt.Sprintf(a.msg.prepare, err))
+		}
+		// The images of a run that does not end done are not attached; those of a run handed to a fix run of a
+		// refused push are, when the fix run ends done.
+		defer func() {
+			if o != nil && o.State != "done" && o.next == nil {
+				_ = sp.ClearScreenshots()
+			}
+		}()
+	}
 	include := p.IncludeUntrusted && a.isPrivate(p.Ref)
-	in := prompt.Input{Ref: is.Ref, Title: is.Title, Body: is.Body, IncludeUntrusted: include, Nonce: newID()}
+	in := prompt.Input{Ref: is.Ref, Title: is.Title, Body: is.Body, IncludeUntrusted: include, Nonce: newID(),
+		Resumed: pl.resumeNote != 0 && pl.kind != planRun}
 	for i, c := range pl.comments {
 		var k prompt.Kind
 		switch pl.kinds[i] {
@@ -243,14 +295,18 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) *outcome {
 		SystemPrompt: prompt.System(lang, p.BaseBranch), Settings: settings(p.VerifyCommand, a.Config.Agent.AllowToolsExtra, p.AllowToolsExtra), MaxTurns: a.Config.Agent.MaxTurns,
 		Schema: Schema, Auth: a.Config.Claude.Auth, Timeout: a.Config.Agent.Timeout,
 		IntGrace: a.IntGrace, TermGrace: a.TermGrace, Env: a.Env,
+		Tools: tools(runTools, a.Config.Agent.AllowToolsExtra, p.AllowToolsExtra),
 	}
+	m := a.Config.Agent.ModelFor(modelKind(pl.kind))
+	req.Model, req.Effort = m.Model, m.Effort
 	head := ""
-	var used instructions.Loaded
+	var used, impl instructions.Loaded
 	switch pl.kind {
 	case planRun:
 		in.Task = prompt.PlanTask
-		used, added = a.planInstructions(p), []string{}
+		used, added = a.loadInstructions(instructions.Plan, p), []string{}
 		req.SystemPrompt, req.Settings, req.Schema = prompt.PlanSystem(lang, word, used.Text), planSettings(), PlanSchema
+		req.Tools = planTools
 		if head, err = sp.Head(ctx); err != nil {
 			return o.fail(fmt.Sprintf(a.msg.prepare, err))
 		}
@@ -261,14 +317,21 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) *outcome {
 		req.SystemPrompt = prompt.FixSystem(lang, p.BaseBranch, pl.fix.cause)
 	}
 	if pl.kind != planRun {
-		used = a.runInstructions(p)
-		req.SystemPrompt = prompt.WithUserInstructions(req.SystemPrompt, used.Text)
+		used = a.loadInstructions(instructions.Run, p)
+		extra := used.Text
+		if pl.implements() {
+			impl = a.loadInstructions(instructions.Implement, p)
+			extra = strings.TrimSpace(extra + "\n\n" + impl.Text)
+			req.SystemPrompt = prompt.WithScreenshots(req.SystemPrompt)
+		}
+		req.SystemPrompt = prompt.WithUserInstructions(req.SystemPrompt, extra)
 	}
 	req.Prompt = prompt.Build(in)
-	a.logStarted(is.Ref, rec.Run, pl, added, used)
+	a.logStarted(is.Ref, rec.Run, pl, added, used, impl)
 	stopProgress := a.followProgress(ctx, is.Ref, rec, filepath.Join(a.runDir(rec.Run), "stream.jsonl"))
 	res, err := claudecode.Run(ctx, req)
 	stopProgress()
+	a.addCost(res)
 	discarded := false
 	if head != "" {
 		// A plan run changes nothing; whatever it changed anyway is thrown away, also when it failed.
@@ -287,6 +350,16 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) *outcome {
 		return nil
 	case res.TimedOut:
 		return o.fail(fmt.Sprintf(a.msg.timeout, a.Config.Agent.Timeout))
+	case res.Limit != nil:
+		// The service refused the run on a limit: pause the host, and put the issue back in the queue to resume once
+		// the pause ends (ADR-053). A fix run cannot wait in the queue, so it waits for a reply.
+		until := a.pauseForLimit(res.Limit)
+		a.logf("%s: run %s hit a usage limit (%s): %s", is.Ref, rec.Run, res.Limit.Kind, res.Limit.Message)
+		a.Audit.Log("run.limited", map[string]any{"issue": is.Ref.String(), "run": rec.Run, "kind": res.Limit.Kind, "until": until.UTC().Format(time.RFC3339)})
+		if pl.kind == fixRun {
+			return o.limitedFix(a.Config.Host.Name, until)
+		}
+		return o.limited(a.Config.Host.Name, until)
 	}
 	if pl.kind == planRun {
 		return a.planOutcome(res, pl, o, discarded)
@@ -302,12 +375,35 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) *outcome {
 	case d.Status == "waiting":
 		return o.wait(d, res.Denials)
 	}
-	return a.finish(ctx, pl, sp, d, o)
+	o = a.finish(ctx, pl, sp, d, o)
+	if o != nil && o.State == "done" {
+		a.collectShots(is.Ref, sp, o)
+	}
+	return o
+}
+
+// collectShots moves the images a done run left for the issue to its run directory, where the write-back reads them
+// (ADR-051), and says on the done post that they follow. A failure is recorded; it never undoes the done.
+func (a *Agent) collectShots(ref forge.IssueRef, sp *workspace.Space, o *outcome) {
+	names, skipped, err := sp.CollectScreenshots(filepath.Join(a.runDir(o.Run), "screenshots"))
+	if err != nil {
+		a.logf("%s: collect the screenshots of run %s: %v", ref, o.Run, err)
+		a.Audit.Log("attachment.failed", map[string]any{"issue": ref.String(), "run": o.Run, "error": err.Error()})
+		o.ShotsError = err.Error()
+	}
+	o.Shots, o.Skipped = names, skipped
+	if len(names) > 0 || len(skipped) > 0 || o.ShotsError != "" {
+		o.Body += "\n\n" + a.msg.shotsNext
+	}
 }
 
 // finish handles a run that declared done: verify, check the output, push, open the pull request.
 func (a *Agent) finish(ctx context.Context, pl *plan, sp *workspace.Space, d *Declaration, o *outcome) *outcome {
 	p, is := pl.project, pl.issue
+	if pl.fix != nil {
+		// The done post names what the fix run fixed; the causes are written as the marker's values (fix=).
+		o.Fix = pl.fix.cause
+	}
 	verified := a.msg.notVerified
 	if cmd := p.VerifyCommand; cmd != "" {
 		// The command runs code claude wrote, so it gets claude's environment: no forge token.
@@ -437,31 +533,24 @@ func (a *Agent) planOutcome(res *claudecode.Result, pl *plan, o *outcome, discar
 	return o.planText(d, res.Denials, discarded, word)
 }
 
-// planInstructions returns the user's additional instructions for the plan runs of p, read again for every run.
-// A configuration that was not loaded from a file has none.
-func (a *Agent) planInstructions(p config.Project) instructions.Loaded {
+// loadInstructions returns the user's additional instructions of kind for a run of p, read again for every run. A
+// configuration that was not loaded from a file has none.
+func (a *Agent) loadInstructions(kind instructions.Kind, p config.Project) instructions.Loaded {
 	if a.Config.Path == "" {
 		return instructions.Loaded{}
 	}
-	return instructions.For(a.Config.Path, nil).Load(instructions.Plan, p.Ref)
-}
-
-// runInstructions returns the user's additional instructions for the runs of p that write files, read again for every
-// run. A configuration that was not loaded from a file has none.
-func (a *Agent) runInstructions(p config.Project) instructions.Loaded {
-	if a.Config.Path == "" {
-		return instructions.Loaded{}
-	}
-	return instructions.For(a.Config.Path, nil).Load(instructions.Run, p.Ref)
+	return instructions.For(a.Config.Path, nil).Load(kind, p.Ref)
 }
 
 // logStarted records, as claude starts, the allow rules the run added and the hashes of the instruction files it got,
-// so that the audit log tells which permissions and which saved version of the instructions a run used. The text of
-// the instructions is never logged, as for instructions.saved.
-func (a *Agent) logStarted(ref forge.IssueRef, run string, pl *plan, added []string, used instructions.Loaded) {
+// so that the audit log tells which permissions and which saved version of the instructions a run used: used are the
+// plan or run instructions, impl the implement instructions. The text of the instructions is never logged, as for
+// instructions.saved.
+func (a *Agent) logStarted(ref forge.IssueRef, run string, pl *plan, added []string, used, impl instructions.Loaded) {
 	fields := map[string]any{
 		"issue": ref.String(), "run": run, "kind": pl.kind.String(), "allow": added,
 		"instructions": map[string]string{"global": used.Global, "project": used.Project},
+		"implement":    map[string]string{"global": impl.Global, "project": impl.Project},
 	}
 	if pl.kind == fixRun {
 		fields["cause"] = pl.fix.cause

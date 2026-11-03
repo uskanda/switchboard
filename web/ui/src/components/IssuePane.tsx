@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { IssueRef } from "@/components/IssueRef";
 import { Loading } from "@/components/Loading";
-import { MergeButton, changeName } from "@/components/MergeButton";
+import { AutoMergeBadge, CancelAutoMergeButton, MergeButton, changeName } from "@/components/MergeButton";
 import { PlanQuestions } from "@/components/PlanQuestions";
 import { ReasonBadge } from "@/components/ReasonBadge";
 import { Thread } from "@/components/Thread";
@@ -11,14 +11,17 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
-import { ApiError, age, elapsed, getIssue, postReply, queueText, watchKey, type Detail } from "@/lib/api";
+import { ApiError, getIssue, isWaiting, issuePath, postReply, queueText, timeText, watchKey, type Detail } from "@/lib/api";
 import { draftOf, keepDraft } from "@/lib/drafts";
 import { useInbox } from "@/lib/inbox";
 import { useHeightVar } from "@/lib/height";
 import { cachedIssue, rememberIssue } from "@/lib/issueCache";
 import { composeReply, defaultAnswers, parsePlanQuestions, type Answer } from "@/lib/planQuestions";
-import { addedCards, cardsOf, targetOf, type Card as ThreadCard } from "@/lib/scrollTarget";
+import { addedCards, cardsOf, revealAndScroll, targetOf, type Card as ThreadCard } from "@/lib/scrollTarget";
+import { markSent } from "@/lib/sent";
+import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
+import { nextWait } from "@/lib/waits";
 
 /** RETRY_TEXT is the reply that runs a failed run again: a trusted comment is all a wait on an error needs. */
 const RETRY_TEXT = "再実行してください。";
@@ -110,11 +113,6 @@ function markOf(detail: Detail): SentMark {
   return { since: detail.since, waitKey: JSON.stringify(last ? [last.created_at, last.body] : [detail.post]) };
 }
 
-/** scrollToCard scrolls the thread's card of the comment at index into view, below the pinned head. */
-function scrollToCard(root: HTMLElement | null, index: number) {
-  root?.querySelector(`[data-index="${index}"]`)?.scrollIntoView({ block: "start" });
-}
-
 /** headerHeight is the height of the page's pinned header, as Header measures it into --header-h. */
 const headerHeight = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--header-h")) || 0;
 
@@ -128,15 +126,19 @@ const headerHeight = () => parseFloat(getComputedStyle(document.documentElement)
  * An issue read before in this tab shows its last read at once, marked as being brought up to date until the read
  * arrives; one never read shows that it is loading.
  * Once a reply is sent, it says so while the issue comes back in the wait answered; once the issue runs, queues,
- * waits anew or leaves the list, it shows that state instead, with the reply form again for a new wait.
+ * waits anew or leaves the list, it shows that state instead, with the reply form again for a new wait. Below the
+ * words saying it was sent is the button to the next wait (lib/waits.ts), which takes the focus, or the words that
+ * no other wait is left, in which case the focus goes to the words saying it was sent.
  * A waiting or done issue opens scrolled to the card a reply is about (targetOf), once per opening: the cached read
  * drawn first counts, and the read after it moves nothing. A later read that adds cards leaves the place as it is and
  * shows a notice at the bottom instead; pressing it scrolls to the card, and it goes once that card is scrolled into
- * view or another issue opens. The way back, the reference, the title and the state stay pinned at the top; once
+ * view or another issue opens. Either scroll opens the folded round its card is in first, and another issue starts
+ * with its rounds folded again. The way back, the reference, the title and the state stay pinned at the top; once
  * scrolled, the title is cut to two lines, with the whole of it in its title.
  */
 export function IssuePane({ issueRef }: { issueRef: string }) {
-  const { inbox } = useInbox();
+  const { inbox, view, markPending } = useInbox();
+  const navigate = useNavigate();
   const item = inbox?.items.find((it) => it.ref === issueRef);
   const key = item ? watchKey(item) : inbox ? "gone" : "first";
   const gone = inbox !== null && !item;
@@ -220,7 +222,7 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
     seen.current = { ref: issueRef, settled: fresh, cards };
     if (was?.ref !== issueRef) {
       const target = targetOf(detail);
-      if (target !== null) scrollToCard(article.current, target);
+      if (target !== null) revealAndScroll(article.current, target);
       return;
     }
     // The first read after the cache was shown brings the issue up to date: it is part of the opening.
@@ -268,15 +270,20 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
   // check or a fix first.
   const retrying = detail?.reason === "error" && !plan;
 
-  // justSent is set by a send that worked, so the words saying so take the focus from the form that goes.
+  // justSent is set by a send that worked, so the button to the next wait (or the words saying it was sent, when
+  // no other wait is left) takes the focus from the form that goes.
   const justSent = useRef(false);
   const sentLine = useRef<HTMLParagraphElement>(null);
+  const nextButton = useRef<HTMLButtonElement>(null);
 
   async function send(reply: string) {
     setSending(true);
     setError(null);
     try {
       await postReply(issueRef, reply);
+      if (item && isWaiting(item)) markSent(item);
+      // The list shows the issue as being processed until the agent takes the reply up (lib/pending.ts).
+      markPending(issueRef, "reply");
       justSent.current = true;
       if (detail) setSentAt(markOf(detail));
       setText("");
@@ -305,9 +312,34 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
   // An open done issue takes a reply too: a comment resumes the work until the issue is closed.
   const replyable = !!detail && (detail.waiting || !!detail.done);
   const finished = !!detail?.done && !running && !queued;
+  // A merge waiting for the fix of a conflict starts and ends without the issue changing on the forge, so the detail
+  // is not read again: the listing says whether one waits, and the detail only until the first listing arrives.
+  const autoMerge = !!(item ? item.auto_merge : !inbox && detail?.auto_merge);
   const now = detail && markOf(detail);
   // The reply stays said to be sent only while the issue is still in the wait (or the done state) it answered.
   const sent = !!sentAt && !!detail && !!now && !gone && replyable && !running && !queued && now.since === sentAt.since && now.waitKey === sentAt.waitKey;
+  // ?action=merge (the app's merge button) opens the merge dialog once this issue's own read has arrived; an issue
+  // that offers no merge says so instead. Either way the address loses the query, so the dialog opens once.
+  const [params, setParams] = useSearchParams();
+  const mergeable = finished && !gone && !!detail?.change_number && !!detail?.change_sha;
+  const askMerge = params.get("action") === "merge" && fresh && !reading;
+  const forgetMerge = () =>
+    setParams(
+      (p) => {
+        p.delete("action");
+        return p;
+      },
+      { replace: true },
+    );
+  useEffect(() => {
+    if (!askMerge || mergeable) return;
+    toast.error("このissueは、ここからはマージできません。", {
+      description: "マージできるのは、openで完了のissueのうち、PR/MRの番号とコミットが分かるものだけです。",
+    });
+    forgetMerge();
+    // forgetMerge changes with every render; the query is what is answered.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [askMerge, mergeable]);
   // Once out of that wait, the mark goes, so coming back to it later does not say sent again.
   useEffect(() => {
     if (sentAt && !sent) setSentAt(null);
@@ -315,8 +347,12 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
   useEffect(() => {
     if (!sent || !justSent.current) return;
     justSent.current = false;
-    sentLine.current?.focus();
+    (nextButton.current ?? sentLine.current)?.focus();
   }, [sent]);
+  // The wait to go to next is looked for while the reply stays said to be sent, on the list as it is now. The listing
+  // keeps its order, with current in it; an issue the list shows as being processed (lib/pending.ts) is passed over.
+  const busy = new Set(view?.filter((it) => it.pending).map((it) => it.ref));
+  const next = sent ? nextWait(inbox?.items.filter((it) => isWaiting(it) && (it.ref === issueRef || !busy.has(it.ref))) ?? [], issueRef) : null;
   // The form stays while something is typed or chosen, so a draft survives the issue leaving its wait.
   const showForm = detail && !sent && (replyable || text !== "" || touched);
 
@@ -346,13 +382,16 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
               ) : queued ? (
                 <span className="font-medium">順番待ち</span>
               ) : finished ? (
-                <span className="font-medium">完了</span>
+                <>
+                  <span className="font-medium">完了</span>
+                  {autoMerge && <AutoMergeBadge />}
+                </>
               ) : (
                 <ReasonBadge reason={detail.reason} />
               )}
               {queued && <span>{queueText(detail.reason)}</span>}
               <span>{detail.host}</span>
-              <span>{running ? elapsed(detail.since) : age(detail.since)}</span>
+              <span>{timeText(running ? "running" : queued ? "queued" : finished ? "done" : "waiting", detail.since)}</span>
               <a href={detail.url} className="inline-flex min-h-11 items-center underline" target="_blank" rel="noreferrer">
                 フォージで開く（新しいタブ）
               </a>
@@ -377,12 +416,22 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
                   {changeName(detail.ref, detail.change_number)}
                 </a>
               )}
-              <MergeButton issueRef={detail.ref} number={detail.change_number} sha={detail.change_sha} url={detail.change_url} />
+              <MergeButton
+                issueRef={detail.ref}
+                number={detail.change_number}
+                sha={detail.change_sha}
+                url={detail.change_url}
+                autoMerge={autoMerge}
+                ask={askMerge}
+                onClosed={() => params.get("action") === "merge" && forgetMerge()}
+              />
+              {autoMerge && <CancelAutoMergeButton issueRef={detail.ref} number={detail.change_number} />}
             </div>
           ) : null}
           {gone && <p className="text-muted">このissueは、待ちでも実行中でもなくなりました。</p>}
           {detail.comments ? (
             <Thread
+              key={detail.ref}
               detail={detail}
               answering={
                 plan && !sent
@@ -404,6 +453,21 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
               送りました。エージェントが作業を再開します。
             </p>
           )}
+          {sent &&
+            (next ? (
+              <Button
+                ref={nextButton}
+                type="button"
+                variant="secondary"
+                className="self-start"
+                aria-label={`次の待ちへ：${next.title}`}
+                onClick={() => navigate(issuePath(next.ref))}
+              >
+                次の待ちへ
+              </Button>
+            ) : (
+              <p className="text-muted">他に待ちはありません</p>
+            ))}
           {showForm && (
             <form onSubmit={submit} className="flex flex-col gap-sm">
               <label htmlFor="reply" className="text-label-md font-medium">
@@ -418,7 +482,7 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
                 onChange={(e) => setText(e.target.value)}
                 onKeyDown={onKeyDown}
                 aria-describedby="reply-hint"
-                aria-keyshortcuts="Control+Enter Meta+Enter"
+                aria-keyshortcuts="Control+Enter Meta+Enter r"
                 disabled={sending}
               />
               {finished && <p className="text-label-md text-muted">作業は終わっています。返答すると、エージェントが同じPR/MRで作業を再開します。</p>}
@@ -476,7 +540,7 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
             type="button"
             className="pointer-events-auto min-h-11 rounded-md border border-outline bg-surface-raised px-lg text-label-md font-medium"
             onClick={() => {
-              scrollToCard(article.current, notice);
+              revealAndScroll(article.current, notice);
               setNotice(null);
             }}
           >
