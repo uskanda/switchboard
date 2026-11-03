@@ -53,4 +53,5 @@ CLIの `switchboard inbox` と `switchboard reply` を、ブラウザから使�
 - キーボードだけで、一覧から1件を開いて返答を送れる。フォーカスの位置を常に見えるようにする
 - 色だけで理由を伝えない。バッジには理由の語（`question` など）を書く
 - 動きは最小にし、`prefers-reduced-motion` のときは止める
+  - 処理中の表示と一覧の並べ替えは、状態の変化を伝えるため例外として動かす。`prefers-reduced-motion` のときは止める
 - 文言は日本語とする

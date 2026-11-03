@@ -33,6 +33,14 @@
   }
 }
 
+/* The words of a row being processed (components/InboxList.tsx) pulse slowly; under prefers-reduced-motion they stay
+   at full opacity. */
+@keyframes pending-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.pending-pulse { animation: pending-pulse 2s ease-in-out infinite; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }
@@ -44,8 +52,8 @@ body { font-size: var(--text-body-md); }
 
 /* Markdown from issues (components/Markdown.tsx): the type scale of DESIGN.md, no other colors. */
 .md > * + * { margin-top: var(--spacing-sm); }
-.md h1, .md h2, .md h3, .md h4 { font-size: var(--text-body-md); font-weight: 600; margin-top: var(--spacing-lg); }
-.md h1:first-child, .md h2:first-child, .md h3:first-child { margin-top: 0; }
+.md h3, .md h4, .md h5, .md h6 { font-size: var(--text-body-md); font-weight: 600; margin-top: var(--spacing-lg); }
+.md h3:first-child, .md h4:first-child, .md h5:first-child, .md h6:first-child { margin-top: 0; }
 .md ul { list-style: disc; padding-left: var(--spacing-xl); }
 .md ol { list-style: decimal; padding-left: var(--spacing-xl); }
 .md code { font-family: var(--font-mono); font-size: var(--text-mono-sm); }

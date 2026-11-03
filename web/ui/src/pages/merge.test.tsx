@@ -74,6 +74,14 @@ describe("merging a done issue's pull request", () => {
     expect(screen.getAllByRole("link", { name: "https://github.test/o/r/pull/9" })[0]).toBeInTheDocument();
   });
 
+  it("puts the focus on the button that backs out when the dialog opens", async () => {
+    answer({ "GET /api/inbox": listing });
+    at("/");
+    await userEvent.click((await screen.findAllByRole("button", { name: "PR #9をマージ" }))[0]);
+    const dialog = await screen.findByRole("dialog", { name: "PR #9をマージしますか" });
+    expect(within(dialog).getByRole("button", { name: "やめる" })).toHaveFocus();
+  });
+
   it("sends nothing when the dialog is dismissed", async () => {
     const calls = answer({ "GET /api/inbox": listing });
     at("/");
@@ -92,8 +100,8 @@ describe("merging a done issue's pull request", () => {
     await userEvent.click((await screen.findAllByRole("button", { name: "PR #9をマージ" }))[0]);
     const dialog = await screen.findByRole("dialog", { name: "PR #9をマージしますか" });
     await userEvent.click(within(dialog).getByRole("button", { name: "マージする" }));
-    const status = await screen.findByRole("status");
-    expect(status).toHaveTextContent("PR #9をマージしました");
+    // The toast, not the row's own status that the merge is being processed.
+    const status = (await screen.findByText("PR #9をマージしました")).closest<HTMLElement>("[role=status]")!;
     expect(status.closest("[data-sonner-toast]")).toHaveClass("toast-success");
     const sent = calls.find((c) => c.key === "POST /api/merge");
     expect(JSON.parse(String(sent?.init?.body))).toEqual({ ref: "gh:o/r#50", sha: "abc" });

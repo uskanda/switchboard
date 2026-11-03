@@ -3,7 +3,11 @@
 package server
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,7 +15,9 @@ import (
 	"mime"
 	"net/http"
 	"path"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/uskanda/switchboard/inboxapi"
@@ -45,6 +51,9 @@ type Server struct {
 	Listen string
 	// Assets is the built front end, with index.html at its root.
 	Assets fs.FS
+
+	filesMu sync.Mutex
+	files   map[string]*staticFile
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -317,24 +326,125 @@ func (s *Server) answer(w http.ResponseWriter, out any, err error) {
 }
 
 // static serves a file of the front end, and index.html for every other path: the front end routes them.
+// staticFile is what is served for one file of the front end, made on its first request and kept.
+type staticFile struct {
+	data, gz    []byte // gz is nil when the file is not worth compressing
+	contentType string
+	etag        string // of data; the gzip version's is etag with "-gz" before the closing quote
+}
+
+// compressible tells whether a type is text that gzip shrinks; images and fonts are compressed already.
+func compressible(contentType string) bool {
+	mt, _, _ := mime.ParseMediaType(contentType)
+	switch mt {
+	case "application/javascript", "text/javascript", "application/json", "application/manifest+json", "image/svg+xml":
+		return true
+	}
+	return strings.HasPrefix(mt, "text/")
+}
+
+func newStaticFile(name string, data []byte) *staticFile {
+	f := &staticFile{data: data, contentType: mime.TypeByExtension(path.Ext(name))}
+	if f.contentType == "" {
+		f.contentType = http.DetectContentType(data)
+	}
+	sum := sha256.Sum256(data)
+	f.etag = `"` + hex.EncodeToString(sum[:16]) + `"`
+	if compressible(f.contentType) {
+		var b bytes.Buffer
+		zw, _ := gzip.NewWriterLevel(&b, gzip.BestCompression)
+		zw.Write(data)
+		zw.Close()
+		if b.Len() < len(data) {
+			f.gz = b.Bytes()
+		}
+	}
+	return f
+}
+
+// file gives the kept staticFile of name, reading it on the first request. Assets are never replaced while the
+// server runs, so what is kept is never dropped.
+func (s *Server) file(name string) (*staticFile, error) {
+	s.filesMu.Lock()
+	defer s.filesMu.Unlock()
+	if f, ok := s.files[name]; ok {
+		return f, nil
+	}
+	data, err := fs.ReadFile(s.Assets, name)
+	if err != nil {
+		return nil, err
+	}
+	f := newStaticFile(name, data)
+	if s.files == nil {
+		s.files = map[string]*staticFile{}
+	}
+	s.files[name] = f
+	return f, nil
+}
+
+// acceptsGzip tells whether the request's Accept-Encoding takes gzip with a q above 0.
+func acceptsGzip(r *http.Request) bool {
+	for _, part := range strings.Split(r.Header.Get("Accept-Encoding"), ",") {
+		coding, params, _ := strings.Cut(strings.TrimSpace(part), ";")
+		if !strings.EqualFold(strings.TrimSpace(coding), "gzip") {
+			continue
+		}
+		for _, p := range strings.Split(params, ";") {
+			k, v, _ := strings.Cut(strings.TrimSpace(p), "=")
+			if strings.EqualFold(strings.TrimSpace(k), "q") {
+				if q, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil && q <= 0 {
+					return false
+				}
+			}
+		}
+		return true
+	}
+	return false
+}
+
 func (s *Server) static(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
-	if name != "" && name != "index.html" {
-		if st, err := fs.Stat(s.Assets, name); err == nil && !st.IsDir() {
-			http.ServeFileFS(w, r, s.Assets, name)
+	if name == "" {
+		name = "index.html"
+	}
+	var f *staticFile
+	if st, err := fs.Stat(s.Assets, name); err == nil && !st.IsDir() {
+		f, err = s.file(name)
+		if err != nil {
+			f = nil
+		}
+	}
+	if f == nil {
+		// Any other path is a page of the front end, which index.html routes.
+		name = "index.html"
+		var err error
+		if f, err = s.file(name); err != nil {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte("The front end is not built: run pnpm build in web/ui, then build switchboard-web again.\n"))
 			return
 		}
 	}
-	page, err := fs.ReadFile(s.Assets, "index.html")
-	if err != nil {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.WriteHeader(http.StatusServiceUnavailable)
-		w.Write([]byte("The front end is not built: run pnpm build in web/ui, then build switchboard-web again.\n"))
-		return
+	h := w.Header()
+	h.Set("Content-Type", f.contentType)
+	if strings.HasPrefix(name, "assets/") {
+		// Vite puts a hash of the content in the names under assets/.
+		h.Set("Cache-Control", "public, max-age=31536000, immutable")
+	} else {
+		h.Set("Cache-Control", "no-cache")
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Write(page)
+	data, etag := f.data, f.etag
+	if f.gz != nil {
+		h.Add("Vary", "Accept-Encoding")
+		if acceptsGzip(r) {
+			data, etag = f.gz, strings.TrimSuffix(f.etag, `"`)+`-gz"`
+			h.Set("Content-Encoding", "gzip")
+			// A range of the gzip bytes means nothing to the browser: send the whole of it.
+			r.Header.Del("Range")
+		}
+	}
+	h.Set("ETag", etag)
+	http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(data))
 }
 
 func send(w http.ResponseWriter, code int, v any) {

@@ -2,7 +2,9 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
 import { forgetDrafts } from "@/lib/drafts";
+import { forgetInstructionDrafts } from "@/lib/instructionDrafts";
 import { forgetIssues } from "@/lib/issueCache";
+import { forgetSent } from "@/lib/sent";
 import { dismiss } from "@/lib/toast";
 import { installObservers, resetObservers } from "@/test-observers";
 
@@ -30,6 +32,10 @@ afterEach(() => {
   cleanup();
   forgetIssues();
   forgetDrafts();
+  forgetInstructionDrafts();
+  forgetSent();
   resetObservers();
   dismiss();
+  // The pending marks (lib/pending.ts) live in the tab's storage, which jsdom keeps across the tests of a file.
+  sessionStorage.clear();
 });
