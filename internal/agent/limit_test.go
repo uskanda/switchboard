@@ -292,6 +292,32 @@ func TestUntrustedStartLabelOnAQueuedLimitIsNoResume(t *testing.T) {
 	}
 }
 
+func TestStartLabelOfATrustedAgentAccountStartsARun(t *testing.T) {
+	// One account as both the agent and the trusted user: its start label with no resume mark is a person's, as
+	// before ADR-053, since the forge cannot tell the two apart.
+	x := newH(t, "", func(c *config.Config) { c.TrustedAuthors.GitHub = []string{"master", "agent"} })
+	x.f.AddLabel(x.ref, "agent:ready", x.bot)
+	x.poll()
+	x.settle()
+	if x.starts() != 1 {
+		t.Fatalf("starts = %d, want 1", x.starts())
+	}
+	claims := x.claims(x.ref)
+	if m, _ := marker.Parse(claims[len(claims)-1].Body); m.Mode == "" {
+		t.Error("the run's claim names no mode; a person's start label starts a new cycle")
+	}
+}
+
+func TestStartLabelOfAnUntrustedAgentAccountStartsNothing(t *testing.T) {
+	x := newH(t, "", nil)
+	x.f.AddLabel(x.ref, "agent:ready", x.bot)
+	x.poll()
+	x.settle()
+	if x.starts() != 0 {
+		t.Fatalf("starts = %d; the agent's start label without a resume mark must start nothing", x.starts())
+	}
+}
+
 func TestQuotaQueuesUntilTheNextDay(t *testing.T) {
 	w := newLimit(t, "quota: {daily_usd: 1}\n", func(c *config.Config) { c.Claude.Auth = "api_key" })
 	second := w.f.AddIssue("o", "r", 13, "Second", "Do it.", w.master)

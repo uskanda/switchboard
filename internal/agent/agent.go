@@ -620,9 +620,10 @@ func (a *Agent) decide(ctx context.Context, p config.Project, ref forge.IssueRef
 	}
 	st := labels.StateOf(is.Labels, n)
 	byAgent := false // the agent put the start label back after a run hit a usage limit
+	var actor *forge.User
 	switch {
 	case labels.IsStart(st, n):
-		actor, err := a.forgeOf(ref).LabelActor(ctx, ref, st)
+		actor, err = a.forgeOf(ref).LabelActor(ctx, ref, st)
 		if errors.Is(err, forge.ErrNotFound) {
 			actor = nil
 		} else if err != nil {
@@ -642,10 +643,16 @@ func (a *Agent) decide(ctx context.Context, p config.Project, ref forge.IssueRef
 	}
 	if byAgent {
 		// Only the agent's own resume mark lets a start label it put start a run. The run goes on with the cycle the
-		// limited run was in, as a resume on a reply does (ADR-053).
+		// limited run was in, as a resume on a reply does (ADR-053). Without the mark, the label is a person's when the
+		// agent's account is also a trusted user's, which the forge cannot tell apart (ADR-056).
 		if pl.resumeNote = pl.limitResume(); pl.resumeNote == 0 {
-			return nil, nil
+			if !j.ReadyLabel(ref, actor) {
+				return nil, nil
+			}
+			byAgent = false
 		}
+	}
+	if byAgent {
 		pl.classify(a.Config.Plan.ApproveWord)
 		if !j.Body(is) {
 			return nil, nil
