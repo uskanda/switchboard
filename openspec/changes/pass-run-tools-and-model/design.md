@@ -39,7 +39,7 @@
 
 ### モデルとeffortの解決
 
-`config.Agent` に `Model`、`Effort`、`Plan`、`Fix` を足す。`Plan` と `Fix` は、`Model` と `Effort` を持つ同じ型にする。`internal/agent` は、実行の種類から上書きを選び、空の項目を既定で埋める。承認のあとの実装の実行と衝突を直す実行は、それぞれ実装の実行と直す実行に含める。
+`config.Agent` に `Model`、`Effort`、`Plan`、`Fix` を足す。`Plan` と `Fix` は、`Model` と `Effort` を持つ同じ型にする。実行の種類から上書きを選び、空の項目を既定で埋める処理は、設定の側に置く。`internal/agent` は、自分の実行の種類を設定の側の種類に対応させるだけにする。承認のあとの実装の実行と衝突を直す実行は、それぞれ実装の実行と直す実行に含める。
 
 ### effortの許容値はアダプタが持つ
 

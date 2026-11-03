@@ -244,7 +244,20 @@ projects:
     allow_tools_extra: ["Bash(openspec *)"]
 ```
 
+`allow_tools_extra` の各項目のツール名（`Skill`、`Bash(openspec *)` なら `Bash`）は、実行に渡すツールにも足される。実行に渡すツールは、ファイルを書く実行では `Bash`、`Read`、`Edit`、`Write`、`Glob`、`Grep`、`WebSearch` だけである。計画の実行には、`Bash`、`Read`、`Glob`、`Grep`、`WebSearch` を渡す。
+
 設定を読むときに、空の項目、制限の無い `Bash` と `Bash(*)`、どの実行でも拒否する操作（`git push`、`git rebase`、`gh`、`WebFetch`）を名指しする項目は誤りになる。`Bash(git *)` のような広い項目は通るが、拒否する操作は拒否されたままである。プロジェクトの `allow_tools_extra` は再起動せずに反映され、`agent.allow_tools_extra` は再起動で反映される。許可は設定ファイルにだけ書け、受信箱のWeb表示からは変えられない。
+
+### 実行のモデルとeffort
+
+`agent.model` と `agent.effort` で、実行のモデルとeffortを選べる。計画の実行は `agent.plan`、直す実行（CIとpushの失敗、baseとの衝突）は `agent.fix` で上書きできる。値が空のときは、Claude Codeの既定とユーザーの設定が使われる。effortは `low`、`medium`、`high`、`xhigh`、`max` のどれかで、それ以外は設定の誤りになる。どちらも再起動で反映される。
+
+```yaml
+agent:
+  model: opus
+  effort: medium
+  fix: { effort: low }
+```
 
 指示は、計画の指示と同じディレクトリに `run.md` の名前で置く。全体は `instructions/run.md` である。GitHubのプロジェクトは `instructions/gh/<owner>/<repo>/run.md` に置く。GitLabなら `instructions/gl/<group>/<project>/run.md` である。保存の検査と監査ログは計画の指示と同じで、Web表示の「設定」の画面からも編集できる。
 

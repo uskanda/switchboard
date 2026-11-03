@@ -156,12 +156,15 @@ claude -p \
   --append-system-prompt-file <run-dir>/system.md \
   --max-turns <agent.max_turns> \
   --json-schema <outcome schema> \
+  --tools <実行の種類のツール> \
+  [--model <モデル>] [--effort <effort>] \
   < <run-dir>/prompt.md
 ```
 
 - 新規起動時は `--session-id` でセッションIDをエージェント側で先に決める〔確認済C17、`-p` との組み合わせはV7〕。フック入力から取り出す必要がなくなり、V1への依存が下がる
 - 再開時は `--fork-session` で毎回新しいIDに分岐させ、新しいIDはstream-jsonの結果から取る。分岐なしで同じセッションを2か所から再開すると発言が1つのtranscriptに混ざる〔確認済C17〕ので、マスターが同じセッションを対話で開いていても衝突しないようにする（V4のリスクを設計で消す）
 - `--permission-mode dontAsk` と明示allowで動かす。`-p` で事前許可のないツールは確認待ちにならず拒否され、最終resultの `permission_denials` に残る〔確認済C15、dontAskの厳密な挙動はV18〕
+- `--tools` で渡すツールを実行の種類ごとに固定する（ADR-049）。ファイルを書く実行は `Bash,Read,Edit,Write,Glob,Grep,WebSearch` に、`allow_tools_extra` の項目のツール名を足す。計画の実行は `Bash,Read,Glob,Grep,WebSearch` とする。`--model` と `--effort` は、`agent.model`、`agent.effort`、`agent.plan`、`agent.fix` の値があるときだけ付ける
 - `--strict-mcp-config` と空に近い `mcp.json` で、対象リポジトリの `.mcp.json` 由来のMCPサーバーを読み込ませない
 - `-p` は `--bare` を付けない限り、対象リポジトリの `.claude/settings.json` のフックと `.mcp.json` を信頼確認なしで読み込む〔確認済C19〕。`--bare` はサブスクリプションのOAuth認証を読まないため使えない〔確認済C19, C21〕。対策は次の3つ。(1) `--strict-mcp-config` でMCPを固定する。(2) `--setting-sources` は付けず、プロジェクト設定も読み込む（ADR-028。V17のとおり、外すと `CLAUDE.md` も読み込まれない）。(3) 実行前にworktreeの `.claude/`・`.mcp.json`・`CLAUDE.md` がベースブランチと一致するか確認し、一致しなければ実行しない（ADR-018）
 - `settings.json` はrunごとにエージェントが生成する（許可ツール・拒否ルール・フック・サンドボックス設定）。フックはこの設定経由でのみ登録するので、マスターが手で開く対話セッションには影響しない
@@ -440,6 +443,10 @@ agent:
   max_parallel: 1
   prefer_plan: false                   # 順番待ちから計画の実行を先に取り出す（ADR-046）
   max_turns: 80
+  model: ""                            # 実行のモデル。空ならCLIとユーザーの設定に任せる（ADR-049）
+  effort: ""                           # low | medium | high | xhigh | max。空ならCLIに任せる
+  plan: { model: "", effort: "" }      # 計画の実行の上書き
+  fix: { model: "", effort: "" }       # 直す実行の上書き
   run_user: ""                         # Phase 3：専用 OS ユーザー名
   retention: 720h
 ```

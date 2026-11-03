@@ -27,5 +27,5 @@
 ## Impact
 
 - コード：`internal/claudecode`（起動の引数）、`internal/agent`（ツール、モデル、effortの決定）、`internal/config`（項目と検査）。
-- 文書：`docs/DECISIONS.md` にADRを足し、`docs/ROADMAP.md` の検証項目に `--tools` と `--effort` の確認結果を書く。設定の例と `docs/ARCHITECTURE.md` の起動の説明を直す。
+- 文書：`docs/DECISIONS.md` にADRを足し、`docs/ROADMAP.md` の検証項目に `--tools` と `--effort` の確認結果を書く。設定の例と `docs/DESIGN.md`、`README.md` の起動の説明を直す。
 - 既存の設定は、新しい項目が無くても今までどおり読める。モデルとeffortの項目が無いと、今までと同じくユーザーの設定が使われる。

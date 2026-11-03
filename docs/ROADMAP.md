@@ -104,6 +104,8 @@
 | V44 | 終了しているアプリで、計画の承認待ちの通知の「承認」を押すと、`registerTaskAsync` のタスクが動き、承認の語が投稿されるか。動かなければ、「承認」をアプリを開く形に変える（design D6） | 未確認（`add-android-app` の実装の時点。実機のAndroidで確かめる） | |
 | V45 | GitHubで、衝突のあるPRのマージが405で断られた直後に、`GET /repos/:owner/:repo/pulls/:number` が `mergeable=false` と `mergeable_state=dirty` を返すか（`null` で計算中のままにならないか）。GitLabで、衝突のあるMRのマージの拒否のあとに `has_conflicts=true` が返るか | 未確認（issue #119の実装の時点。switchboardの実行からはフォージに届かない。計算中で衝突と分からないときは、今までどおり `not_mergeable` を返し、人が押し直す） | |
 | V46 | Claude Codeのsandboxは、書き込みを拒否するパスに何を置くか。コマンドが強制終了したとき、それは残るか | 0バイトで権限0444の通常のファイルを置く。worktreeでは `.claude/settings.json` や `.mcp.json`、`.bashrc` など、クローンでは `.git/config.lock` に置く。実行中にエージェントが止まると消されずに残り、worktreeの作成と設定の検査が失敗した（issue #128。usknasのエージェントの実行で観察） | 2026-11-03 |
+| V47 | `-p` に `--tools` を渡すと、セッションのツールはその一覧に絞られるか。`--json-schema` の構造化出力は動くか | 絞られる。initの `tools` は渡した一覧と `StructuredOutput` だけになり、構造化出力は動いた。`Bash,Read,Edit,Write,Glob,Grep` で、起動直後の文脈は約39kから約9kトークンに減った。`allow_tools_extra` の `Skill` を足すと `Skill` も渡った。claude 2.1.316。`go test -tags realclaude -run RealClaudeRunGetsOnlyItsTools ./internal/agent/` で再現できる | 2026-11-03 |
+| V48 | `-p` で `--model` と `--effort` は効くか。`--setting-sources project,local` で何が外れるか | `--model sonnet` はinitの `model` に反映された。`--effort` は受け付けられるが、initとresultに値は出ない。`--setting-sources project,local` では、ユーザーのスキル、プラグイン、model設定が外れ、文脈は約3kトークン減った。`~/.claude/CLAUDE.md` は外れなかった。claude 2.1.316 | 2026-11-03 |
 
 ### 検証で分かった、設計に関わる点
 
