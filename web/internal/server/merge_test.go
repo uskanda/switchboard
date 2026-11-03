@@ -9,12 +9,65 @@ import (
 	"github.com/uskanda/switchboard/inboxapi"
 )
 
-func (f *fakeInbox) Merge(_ context.Context, ref, sha string) error {
+func (f *fakeInbox) Merge(_ context.Context, ref, sha string) (*inboxapi.MergeResult, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	f.merged = append(f.merged, inboxapi.MergeRequest{Ref: ref, SHA: sha})
+	return &inboxapi.MergeResult{AutoMerge: f.later}, nil
+}
+
+func (f *fakeInbox) CancelAutoMerge(_ context.Context, ref string) error {
 	if f.err != nil {
 		return f.err
 	}
-	f.merged = append(f.merged, inboxapi.MergeRequest{Ref: ref, SHA: sha})
+	f.cancelled = append(f.cancelled, ref)
 	return nil
+}
+
+// A merge refused for a conflict reaches the page as the inbox service's 202.
+func TestAMergeThatWaitsForTheFixIsPassedOn(t *testing.T) {
+	f := &fakeInbox{later: true}
+	w := do(newServer(f), "POST", "/api/merge", `{"ref":"gh:o/r#50","sha":"abc"}`, good)
+	var a inboxapi.MergeAnswer
+	if w.Code != http.StatusAccepted || json.Unmarshal(w.Body.Bytes(), &a) != nil || a.Code != inboxapi.CodeAutoMergePending {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body)
+	}
+}
+
+func TestCancelOfAnAutoMergeIsPassedOn(t *testing.T) {
+	f := &fakeInbox{}
+	w := do(newServer(f), "POST", "/api/automerge/cancel", `{"ref":"gh:o/r#50"}`, good)
+	if w.Code != http.StatusNoContent || len(f.cancelled) != 1 || f.cancelled[0] != "gh:o/r#50" {
+		t.Fatalf("status = %d, cancelled = %v", w.Code, f.cancelled)
+	}
+	f = &fakeInbox{err: &inboxapi.Error{Code: inboxapi.CodeNotFound, Message: "none"}}
+	if w := do(newServer(f), "POST", "/api/automerge/cancel", `{"ref":"gh:o/r#50"}`, good); w.Code != http.StatusNotFound {
+		t.Fatalf("no request: status = %d", w.Code)
+	}
+	if w := do(newServer(&fakeInbox{}), "POST", "/api/automerge/cancel", `not json`, good); w.Code != http.StatusBadRequest {
+		t.Fatalf("not json: status = %d", w.Code)
+	}
+}
+
+// The cancel gets the checks of a merge: a page of another origin, or a body that is not JSON, is refused.
+func TestCancellingFromElsewhereIsRefused(t *testing.T) {
+	for name, tc := range map[string]struct {
+		h    map[string]string
+		want int
+	}{
+		"other origin":  {map[string]string{"Content-Type": "application/json", "Origin": "https://evil.example"}, http.StatusForbidden},
+		"rebound host":  {map[string]string{"Content-Type": "application/json", "Origin": "http://" + listen, "Host": "evil.example:8783"}, http.StatusForbidden},
+		"form encoding": {map[string]string{"Content-Type": "application/x-www-form-urlencoded", "Origin": "http://" + listen}, http.StatusUnsupportedMediaType},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := &fakeInbox{}
+			w := do(newServer(f), "POST", "/api/automerge/cancel", `{"ref":"gh:o/r#50"}`, tc.h)
+			if w.Code != tc.want || len(f.cancelled) != 0 {
+				t.Fatalf("status = %d, want %d; cancelled = %v", w.Code, tc.want, f.cancelled)
+			}
+		})
+	}
 }
 
 func TestMergeIsPassedOn(t *testing.T) {

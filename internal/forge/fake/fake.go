@@ -48,7 +48,9 @@ type Forge struct {
 	ci     *ci
 	// FailMerge, when set, is returned by every MergeChangeRequest call.
 	FailMerge error
-	changes   map[string]*Change // change requests by changeKey, for MergeChangeRequest
+	// FailHead, when set, is returned by every ChangeRequestHead call.
+	FailHead error
+	changes  map[string]*Change // change requests by changeKey, for MergeChangeRequest
 }
 
 type repo struct {

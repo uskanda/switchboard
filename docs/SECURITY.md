@@ -35,7 +35,7 @@
 - GitHub：fine-grained PAT。対象リポジトリのみ、Issues: Read/Write、Pull requests: Read/Write、Contents: Read/Write（PR作成に必要な範囲）、Actions: ReadとCommit statuses: Read（PRのCIを見張るため。ADR-041）。PRとbaseの衝突は `Pull requests: Read` で読むので、権限は増えない（ADR-044）
 - GitLab：Project Access Token または PAT の `api` スコープ（最小化できない場合は対象プロジェクト限定の Project Access Token を推奨）
 - 受信箱専用のトークン（`inbox_token_ref`）は人の身元で、エージェントのトークンと分ける（ADR-008）。権限は、GitHubではIssues、Pull requests、Contentsの読み書きとする。Pull requestsとContentsの書き込みは、受信箱のWeb表示から完了のPRをマージするために使う（ADR-043）。GitLabは `api` スコープで足りる
-- 受信箱のトークンでは、Web表示に出すプロジェクトのアイコンも読む。GitHubはオーナーの公開のプロフィール、GitLabはプロジェクトとグループのアバターを読むだけで、新しい権限は要らない。トークンはフォージのAPIのホストとGitLabのインスタンスのホストにだけ送り、GitHubのアバターの画像のホスト、設定の `icon` のURL、リダイレクトの先の別のホストには送らない。画像はPNG、JPEG、GIF、WebPの256KiBまでとし、SVGは受け付けない。switchboard-webは画像を自分のオリジンから返すので、CSP（`default-src 'self'`）は緩めない（ADR-048）
+- 受信箱のトークンでは、Web表示に出すプロジェクトのアイコンも読む。GitHubはオーナーの公開のプロフィール、GitLabはプロジェクトとグループのアバターを読むだけで、新しい権限は要らない。トークンはフォージのAPIのホストとGitLabのインスタンスのホストにだけ送り、GitHubのアバターの画像のホスト、設定の `icon` のURL、リダイレクトの先の別のホストには送らない。画像はPNG、JPEG、GIF、WebPの256KiBまでとし、SVGは受け付けない。switchboard-webは画像を自分のオリジンから返すので、CSP（`default-src 'self'`）は緩めない（ADR-049）
 - 受信箱のサービスは、`inbox.notify.fcm` があるとき、Firebaseのサービスアカウントの鍵を `credentials_ref` でSecret Serviceから読む。鍵はFCMで送る権限だけを持つものにし、エージェントのサービスには渡さない（ADR-047）
 - 中継サーバーが持つのは webhook シークレットのみ
 

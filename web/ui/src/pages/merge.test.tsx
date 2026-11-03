@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "@/App";
+import { dismiss } from "@/lib/toast";
 
 type Answer = { status: number; body?: unknown };
 
@@ -23,7 +24,10 @@ function answer(routes: Record<string, Answer>) {
   return calls;
 }
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  localStorage.clear();
+});
 
 function at(path: string) {
   return render(
@@ -137,6 +141,73 @@ describe("merging a done issue's pull request", () => {
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("マージする権限がありません");
     expect(alert).toHaveTextContent("Pull requests と Contents");
+  });
+
+  it("says in a toast that a conflicting change is merged after the fix, and stops the button", async () => {
+    answer({
+      "GET /api/inbox": listing,
+      "POST /api/merge": { status: 202, body: { code: "auto_merge_pending", message: "merged once the agent has fixed the conflict" } },
+    });
+    at("/");
+    await userEvent.click((await screen.findAllByRole("button", { name: "PR #9をマージ" }))[0]);
+    const dialog = await screen.findByRole("dialog", { name: "PR #9をマージしますか" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "マージする" }));
+    const status = (await screen.findByText("PR #9は衝突しているため、エージェントが直したあと自動でマージします")).closest<HTMLElement>("[role=status]")!;
+    expect(status.closest("[data-sonner-toast]")).toHaveClass("toast-info");
+    await waitFor(() => expect(dialog).not.toHaveAttribute("open"));
+    const waiting = screen.getAllByRole("button", { name: "PR #9は自動マージ待ち" })[0];
+    expect(waiting).toBeDisabled();
+    expect(waiting).toHaveTextContent("自動マージ待ち");
+  });
+
+  it("names the merge waiting for the fix on a row and in the pane, where it can be cancelled", async () => {
+    const waiting = { ...done, auto_merge: { sha: "abc", since: new Date().toISOString() } };
+    const calls = answer({
+      "GET /api/inbox": { status: 200, body: { items: [waiting], errors: [], fetched_at: "" } },
+      [detailPath]: { ...detail, body: { ...detail.body, auto_merge: waiting.auto_merge } },
+      "POST /api/automerge/cancel": { status: 204 },
+    });
+    at("/issue/gh%3Ao%2Fr%2350");
+    await screen.findByRole("heading", { level: 2, name: "Finished" });
+    const article = screen.getByRole("article");
+    expect(within(article).getByText("自動マージ待ち", { selector: "[data-auto-merge]" })).toBeInTheDocument();
+    expect(within(article).getByRole("button", { name: "PR #9は自動マージ待ち" })).toBeDisabled();
+    const list = screen.getByRole("navigation", { name: /一覧/ });
+    expect(within(list).getAllByText("自動マージ待ち", { selector: "[data-auto-merge]" })[0]).toBeInTheDocument();
+
+    await userEvent.click(within(article).getByRole("button", { name: "自動マージを取り消す" }));
+    const dialog = await screen.findByRole("dialog", { name: "PR #9の自動マージを取り消しますか" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "やめる" }));
+    expect(calls.some((c) => c.key === "POST /api/automerge/cancel")).toBe(false);
+
+    await userEvent.click(within(article).getByRole("button", { name: "自動マージを取り消す" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "取り消す" }));
+    expect(await screen.findByText("PR #9の自動マージを取り消しました")).toBeInTheDocument();
+    const sent = calls.find((c) => c.key === "POST /api/automerge/cancel");
+    expect(JSON.parse(String(sent?.init?.body))).toEqual({ ref: "gh:o/r#50" });
+    await waitFor(() => expect(dialog).not.toHaveAttribute("open"));
+  });
+
+  it("tells each finished automatic merge once", async () => {
+    const at1 = new Date(Date.now() - 3600_000).toISOString();
+    const results = [
+      { ref: "gh:o/r#50", number: 9, outcome: "merged", at: at1 },
+      { ref: "gh:o/r#51", number: 10, outcome: "cancelled", reason: "instruction", at: at1 },
+    ];
+    answer({ "GET /api/inbox": { status: 200, body: { items: [], errors: [], fetched_at: "", auto_merge_results: results } } });
+    const first = at("/");
+    const merged = (await screen.findByText("PR #9を自動でマージしました")).closest("[data-sonner-toast]");
+    expect(merged).toHaveClass("toast-success");
+    const stopped = (await screen.findByText("PR #10の自動マージをやめました")).closest<HTMLElement>("[data-sonner-toast]")!;
+    expect(stopped).toHaveClass("toast-error");
+    expect(stopped).toHaveTextContent("人の指示で実行が始まりました");
+    first.unmount();
+    dismiss();
+    await waitFor(() => expect(screen.queryByText("PR #9を自動でマージしました")).toBeNull());
+    at("/");
+    await screen.findByRole("navigation", { name: "一覧" });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText("PR #9を自動でマージしました")).toBeNull();
   });
 
   it("names a GitLab merge request by its own sign", async () => {

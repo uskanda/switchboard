@@ -34,7 +34,8 @@ type Inbox interface {
 	AddProject(ctx context.Context, req inboxapi.AddProjectRequest) (*inboxapi.AddProjectResponse, error)
 	IssueTargets(ctx context.Context) (*inboxapi.IssueTargets, error)
 	CreateIssue(ctx context.Context, req inboxapi.CreateIssueRequest) (*inboxapi.CreateIssueResponse, error)
-	Merge(ctx context.Context, ref, sha string) error
+	Merge(ctx context.Context, ref, sha string) (*inboxapi.MergeResult, error)
+	CancelAutoMerge(ctx context.Context, ref string) error
 	ProjectIcon(ctx context.Context, ref string) (*inboxapi.Icon, error)
 	ProjectIcons(ctx context.Context) (inboxapi.ProjectIcons, error)
 	RegisterDevice(ctx context.Context, token string) error
@@ -96,6 +97,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/api/project-icons" && r.Method == http.MethodGet:
 		out, err := s.Inbox.ProjectIcons(r.Context())
 		s.answer(w, out, err)
+	case r.URL.Path == "/api/automerge/cancel" && r.Method == http.MethodPost:
+		s.cancelAutoMerge(w, r)
 	case r.URL.Path == "/api/devices" && r.Method == http.MethodPost:
 		s.registerDevice(w, r)
 	case r.URL.Path == "/api/approve" && r.Method == http.MethodPost:
@@ -217,14 +220,40 @@ func (s *Server) merge(w http.ResponseWriter, r *http.Request) {
 		send(w, http.StatusBadRequest, inboxapi.Error{Code: inboxapi.CodeInvalid, Message: "the body is not a merge"})
 		return
 	}
-	if err := s.Inbox.Merge(r.Context(), req.Ref, req.SHA); err != nil {
+	res, err := s.Inbox.Merge(r.Context(), req.Ref, req.SHA)
+	if err != nil {
+		s.answer(w, nil, err)
+		return
+	}
+	if res.AutoMerge {
+		// The forge refused it for a conflict: the inbox service merges it once the agent has fixed it (ADR-048).
+		send(w, http.StatusAccepted, inboxapi.MergeAnswer{Code: inboxapi.CodeAutoMergePending,
+			Message: "the change request conflicts with its base; it is merged once the agent has fixed the conflict"})
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// cancelAutoMerge passes the cancel of a merge waiting for the fix of a conflict on, from the web inbox's own page
+// only: it gets the same checks as a merge.
+func (s *Server) cancelAutoMerge(w http.ResponseWriter, r *http.Request) {
+	if code, why := s.sameOrigin(r); code != 0 {
+		send(w, code, inboxapi.Error{Code: inboxapi.CodeInvalid, Message: why})
+		return
+	}
+	var req inboxapi.CancelAutoMergeRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
+		send(w, http.StatusBadRequest, inboxapi.Error{Code: inboxapi.CodeInvalid, Message: "the body is not a cancel of an automatic merge"})
+		return
+	}
+	if err := s.Inbox.CancelAutoMerge(r.Context(), req.Ref); err != nil {
 		s.answer(w, nil, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// projectIcon passes a project's icon image on from the inbox service, which read it with the inbox token (ADR-048).
+// projectIcon passes a project's icon image on from the inbox service, which read it with the inbox token (ADR-049).
 // The page reads it from this origin, so the content security policy stays default-src 'self'; nosniff, set for
 // every answer, keeps the browser to the image type the inbox service checked.
 func (s *Server) projectIcon(w http.ResponseWriter, r *http.Request) {
