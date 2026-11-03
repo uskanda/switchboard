@@ -180,14 +180,14 @@ describe("the favicon", () => {
   it("is marked while an issue waits", async () => {
     answer({ "GET /api/inbox": listing(item()) });
     at("/");
-    await waitFor(() => expect(icon()).toBe("/favicon-waiting.svg"));
+    await waitFor(() => expect(icon()).toBe("/favicon-waiting.png"));
   });
 
   it("is the plain one while nothing waits", async () => {
     answer({ "GET /api/inbox": listing(item({ n: undefined, state: "running", progress: "p" })) });
     at("/");
     await screen.findByText("待ち0件、実行中1件");
-    expect(icon()).toBe("/favicon.svg");
+    expect(icon()).toBe("/favicon.png");
   });
 });
 
