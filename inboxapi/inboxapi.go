@@ -41,7 +41,7 @@ type Item struct {
 	UpdatedAt *time.Time `json:"updated_at"`
 	Notes     int        `json:"notes"`
 	// AutoMerge is set on a done issue while the inbox service waits to merge its change request: the person pressed
-	// merge, the forge refused it for a conflict, and the merge is made once the agent has fixed it (ADR-047).
+	// merge, the forge refused it for a conflict, and the merge is made once the agent has fixed it (ADR-048).
 	AutoMerge *AutoMerge `json:"auto_merge,omitempty"`
 }
 
@@ -262,7 +262,7 @@ type MergeRequest struct {
 }
 
 // MergeAnswer is the body of a POST /v1/merge answered with 202: Code is CodeAutoMergePending, and the inbox service
-// merges the change request once the agent has fixed its conflict (ADR-047).
+// merges the change request once the agent has fixed its conflict (ADR-048).
 type MergeAnswer struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
@@ -279,6 +279,18 @@ type MergeResult struct {
 // CancelAutoMergeRequest is the body of POST /v1/automerge/cancel: the issue whose waiting merge to cancel.
 type CancelAutoMergeRequest struct {
 	Ref string `json:"ref"`
+}
+
+// RegisterDeviceRequest is the body of POST /v1/devices: the FCM token of an app that wants the push notifications.
+type RegisterDeviceRequest struct {
+	Token string `json:"token"`
+}
+
+// ApproveRequest is the body of POST /v1/approve: the issue, and the start of the wait the notification reported
+// (its waiting_since). The inbox service posts the approve word only while the issue still waits on that plan.
+type ApproveRequest struct {
+	Ref   string    `json:"ref"`
+	Since time.Time `json:"since"`
 }
 
 // The codes of Error.

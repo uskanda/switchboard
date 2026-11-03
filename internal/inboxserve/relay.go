@@ -33,12 +33,12 @@ func (s *Server) RelayState(connected bool) {
 
 // RelayEvent takes an event of the relay. While a page listens, the forges are read RelayDebounce later, and no
 // sooner than the gap (config.MinRefreshInterval) after the last listing; the events arriving meanwhile join that
-// read. With no page listening, the cached listing is dropped so that the next page reads the forges.
+// read. With no page listening and no Watch, the cached listing is dropped so that the next page reads the forges.
 func (s *Server) RelayEvent() {
-	// An event may be the done post of a fix run that a waiting merge needs (ADR-047).
+	// An event may be the done post of a fix run that a waiting merge needs (ADR-048).
 	s.kickAutoMerge()
 	s.subMu.Lock()
-	if len(s.subs) == 0 {
+	if len(s.subs) == 0 && !s.watching {
 		s.subMu.Unlock()
 		s.drop()
 		return
@@ -57,8 +57,9 @@ func (s *Server) RelayEvent() {
 		s.subMu.Lock()
 		s.pending = nil
 		n := len(s.subs)
+		watching := s.watching
 		s.subMu.Unlock()
-		if n == 0 {
+		if n == 0 && !watching {
 			// The last page left while waiting: the change is read when the next one opens.
 			s.drop()
 			return

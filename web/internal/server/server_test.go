@@ -20,11 +20,13 @@ const listen = "192.168.0.82:8783"
 
 // fakeInbox stands in for the inbox service.
 type fakeInbox struct {
-	replies []inboxapi.ReplyRequest
-	saved   []inboxapi.SaveInstructionsRequest
-	added   []inboxapi.AddProjectRequest
-	created []inboxapi.CreateIssueRequest
-	merged  []inboxapi.MergeRequest
+	replies  []inboxapi.ReplyRequest
+	saved    []inboxapi.SaveInstructionsRequest
+	added    []inboxapi.AddProjectRequest
+	created  []inboxapi.CreateIssueRequest
+	merged   []inboxapi.MergeRequest
+	devices  []string
+	approved []inboxapi.ApproveRequest
 	// later makes a merge wait for the fix of a conflict; cancelled lists the cancels of such merges.
 	later     bool
 	cancelled []string

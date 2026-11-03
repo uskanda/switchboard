@@ -31,7 +31,7 @@
 
 ## 7. 文書
 
-- [x] 7.1 `docs/DECISIONS.md` にADR-047を足す
+- [x] 7.1 `docs/DECISIONS.md` にADR-048を足す
 - [x] 7.2 `docs/ARCHITECTURE.md`、`docs/SPEC.md`、`docs/ROADMAP.md`、`README.md`、`DESIGN.md` を直す
 
 ## 8. 全体の確認

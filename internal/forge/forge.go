@@ -78,7 +78,7 @@ type Merges interface {
 	MergeChangeRequest(ctx context.Context, owner, repo string, number int, sha string) error
 	// ChangeRequestHead returns the state, the head commit and the conflict with the base of the change request
 	// number, as CI's does: the inbox service reads it to tell a merge refused for a conflict, and to merge after the
-	// agent fixed it (ADR-047).
+	// agent fixed it (ADR-048).
 	ChangeRequestHead(ctx context.Context, owner, repo string, number int) (*ChangeRequestState, error)
 }
 

@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Client calls the inbox service on its Unix socket.
@@ -72,6 +73,17 @@ func (c *Client) Merge(ctx context.Context, ref, sha string) (*MergeResult, erro
 // CancelAutoMerge cancels the merge the inbox service waits to make on the issue; ErrNotFound when there is none.
 func (c *Client) CancelAutoMerge(ctx context.Context, ref string) error {
 	return c.do(ctx, http.MethodPost, "/v1/automerge/cancel", CancelAutoMergeRequest{Ref: ref}, nil)
+}
+
+// RegisterDevice adds an app's FCM token to the devices the inbox service sends push notifications to.
+func (c *Client) RegisterDevice(ctx context.Context, token string) error {
+	return c.do(ctx, http.MethodPost, "/v1/devices", RegisterDeviceRequest{Token: token}, nil)
+}
+
+// Approve posts the approve word on an issue waiting on a plan, only while the wait started at since; else it is
+// refused with ErrStale.
+func (c *Client) Approve(ctx context.Context, ref string, since time.Time) error {
+	return c.do(ctx, http.MethodPost, "/v1/approve", ApproveRequest{Ref: ref, Since: since}, nil)
 }
 
 // Instructions returns the additional instructions of both kinds, as the inbox service's machine has them.

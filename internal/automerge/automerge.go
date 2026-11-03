@@ -1,6 +1,6 @@
 // Package automerge keeps the merges the inbox service takes on after the forge refused them for a conflict: the
 // person pressed merge, the change request conflicted with its base, and the inbox service merges it once the agent's
-// fix runs have fixed it (ADR-047). The requests are kept in a file of the state directory, so that they survive a
+// fix runs have fixed it (ADR-048). The requests are kept in a file of the state directory, so that they survive a
 // restart; issue labels and comments are never used for them.
 package automerge
 

@@ -68,7 +68,7 @@ type Server struct {
 	// whether it is connected, and RelayState and RelayEvent are called as the stream goes.
 	Relay bool
 	// AutoMerge, when set with Merges, keeps the merges the forge refused for a conflict, which the inbox service
-	// makes once the agent has fixed it (ADR-047), and serves /v1/automerge/cancel. RunAutoMerge looks at them.
+	// makes once the agent has fixed it (ADR-048), and serves /v1/automerge/cancel. RunAutoMerge looks at them.
 	AutoMerge *automerge.Store
 	// Audit, when set, records what happens to those merges; Logf, when set, what went wrong looking at them.
 	Audit state.Auditor
@@ -77,6 +77,11 @@ type Server struct {
 	// kick wakes RunAutoMerge; made once.
 	kickOnce sync.Once
 	kick     chan struct{}
+
+	// Devices, when set, serves /v1/devices: the apps register their FCM tokens there.
+	Devices Registry
+	// Observer, when set, gets every listing read from the forges, in order. Watch keeps them read with no page.
+	Observer Observer
 
 	// vmu guards Inbox, Instructions.Projects, Projects.Config and NewIssues.Config, which Reload replaces while
 	// requests read them.
@@ -91,11 +96,18 @@ type Server struct {
 	stop    context.CancelFunc
 	refresh chan struct{}
 	last    *inboxapi.Inbox
-	// Under subMu too: whether the relay is connected, and the read a relay event has asked for and not yet made.
-	relayUp bool
-	pending *time.Timer
+	// Under subMu too: whether the relay is connected, the read a relay event has asked for and not yet made, and
+	// whether Watch keeps the loop running with no listener.
+	relayUp  bool
+	watching bool
+	pending  *time.Timer
 	// The debounce and the gap of relay events; RelayDebounce and config.MinRefreshInterval when zero.
 	debounce, gap time.Duration
+
+	// The listings waiting for the Observer.
+	obsOnce sync.Once
+	obsMu   sync.Mutex
+	obs     chan *inboxapi.Inbox
 }
 
 // inbox is the inbox in use.
@@ -148,10 +160,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h      func(http.ResponseWriter, *http.Request)
 	}
 	routes := map[string]route{
-		"/v1/inbox":  {http.MethodGet, s.list},
-		"/v1/issue":  {http.MethodGet, s.issue},
-		"/v1/reply":  {http.MethodPost, s.reply},
-		"/v1/events": {http.MethodGet, s.events},
+		"/v1/inbox":   {http.MethodGet, s.list},
+		"/v1/issue":   {http.MethodGet, s.issue},
+		"/v1/reply":   {http.MethodPost, s.reply},
+		"/v1/events":  {http.MethodGet, s.events},
+		"/v1/approve": {http.MethodPost, s.approve},
+	}
+	if s.Devices != nil {
+		routes["/v1/devices"] = route{http.MethodPost, s.devices}
 	}
 	if s.Instructions != nil {
 		routes["/v1/instructions"] = route{"", s.instructions}
@@ -228,6 +244,7 @@ func (s *Server) fetchLocked(ctx context.Context) *inboxapi.Inbox {
 		s.cached = out
 	}
 	s.publish(out)
+	s.observe(out)
 	return out
 }
 
@@ -296,7 +313,7 @@ func (s *Server) unsubscribe(ch chan *inboxapi.Inbox) {
 	s.subMu.Lock()
 	defer s.subMu.Unlock()
 	delete(s.subs, ch)
-	if len(s.subs) == 0 && s.stop != nil {
+	if len(s.subs) == 0 && !s.watching && s.stop != nil {
 		s.stop()
 		s.stop, s.refresh = nil, nil
 	}

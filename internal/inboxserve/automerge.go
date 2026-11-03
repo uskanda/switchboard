@@ -14,7 +14,7 @@ import (
 )
 
 // AutoMerger is what the merges the inbox service waits to make need of the inbox: *inbox.Inbox decides whether a
-// refused merge waits for a fix, and looks at a waiting one (ADR-047).
+// refused merge waits for a fix, and looks at a waiting one (ADR-048).
 type AutoMerger interface {
 	AutoMergeCandidate(ctx context.Context, m forge.Merges, ref forge.IssueRef, sha string) (*automerge.Request, error)
 	AutoMergeStep(ctx context.Context, m forge.Merges, r automerge.Request) (inbox.AutoMergeStep, error)

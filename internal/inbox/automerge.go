@@ -15,7 +15,7 @@ import (
 
 // AutoMergeCandidate is the request to keep after the forge refused to merge the change request of ref at sha: the
 // change request is open, still at sha, and conflicts with its base. It is nil when the refusal was for anything
-// else, which the person sees as before (ADR-047).
+// else, which the person sees as before (ADR-048).
 func (b *Inbox) AutoMergeCandidate(ctx context.Context, m forge.Merges, ref forge.IssueRef, sha string) (*automerge.Request, error) {
 	agentID, err := b.agentID(ctx, ref)
 	if err != nil {

@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -35,8 +35,11 @@ function failure(name: string, err: unknown): { message: string; description?: s
  * Until then the issue is marked as being merged (lib/pending.ts), and the button cannot be pressed.
  *
  * When the forge refuses the merge for a conflict, the inbox service merges it once the agent has fixed the conflict
- * (ADR-047). The toast says so, and the button reads "自動マージ待ち" and cannot be pressed: while autoMerge (the
+ * (ADR-048). The toast says so, and the button reads "自動マージ待ち" and cannot be pressed: while autoMerge (the
  * listing's auto_merge) says the inbox service waits, and from the answer for the commit it was pressed on.
+ *
+ * With ask set, the dialog opens by itself, as when the app's merge button opened the page; onClosed is called
+ * whenever the dialog closes.
  */
 export function MergeButton({
   issueRef,
@@ -44,12 +47,16 @@ export function MergeButton({
   sha,
   url,
   autoMerge = false,
+  ask = false,
+  onClosed,
 }: {
   issueRef: string;
   number: number;
   sha: string;
   url?: string;
   autoMerge?: boolean;
+  ask?: boolean;
+  onClosed?: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const backOut = useRef<HTMLButtonElement>(null);
@@ -61,6 +68,10 @@ export function MergeButton({
   const merging = view?.some((it) => it.ref === issueRef && it.pending === "merge") ?? false;
   const name = changeName(issueRef, number);
   const waiting = autoMerge || later === sha;
+
+  useEffect(() => {
+    if (ask && !dialog.current?.open) open();
+  }, [ask]);
 
   async function confirm() {
     setSending(true);
@@ -86,7 +97,7 @@ export function MergeButton({
 
   // The dialog would put the focus on its first link, the change request's; a merge cannot be undone, so the focus
   // starts on backing out instead. React's autoFocus focuses on mount, while the dialog is closed, so it is moved here.
-  function ask() {
+  function open() {
     dialog.current?.showModal();
     backOut.current?.focus();
   }
@@ -96,14 +107,14 @@ export function MergeButton({
       <Button
         type="button"
         variant="secondary"
-        onClick={ask}
+        onClick={open}
         disabled={sending || merging || waiting}
         aria-label={waiting ? `${name}は自動マージ待ち` : `${name}をマージ`}
       >
         {sending && <Spinner />}
         {waiting ? "自動マージ待ち" : "マージ"}
       </Button>
-      <Dialog ref={dialog} aria-labelledby={`${id}-heading`} onCancel={(e) => sending && e.preventDefault()}>
+      <Dialog ref={dialog} aria-labelledby={`${id}-heading`} onCancel={(e) => sending && e.preventDefault()} onClose={() => onClosed?.()}>
         <div className="flex flex-col gap-md">
           <h2 id={`${id}-heading`} className="text-headline-md font-semibold">
             {name}をマージしますか

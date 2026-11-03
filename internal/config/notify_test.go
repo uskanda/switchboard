@@ -51,3 +51,45 @@ func TestNotifyRejects(t *testing.T) {
 		})
 	}
 }
+
+const inboxFCM = `inbox:
+  notify:
+    fcm:
+      project_id: switchboard-app
+      credentials_ref: switchboard/fcm
+`
+
+func TestInboxNotifyFCM(t *testing.T) {
+	cfg, err := Load(write(t, valid+inboxFCM))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := cfg.Inbox.Notify.FCM
+	if f == nil || f.ProjectID != "switchboard-app" || f.CredentialsRef != "switchboard/fcm" {
+		t.Fatalf("fcm = %+v", f)
+	}
+}
+
+func TestInboxNotifyFCMIsOptional(t *testing.T) {
+	cfg, err := Load(write(t, valid))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Inbox.Notify.FCM != nil {
+		t.Fatalf("fcm = %+v, want none", cfg.Inbox.Notify.FCM)
+	}
+}
+
+func TestInboxNotifyFCMRejects(t *testing.T) {
+	for name, c := range map[string]struct{ body, want string }{
+		"project_id only":      {valid + "inbox:\n  notify:\n    fcm:\n      project_id: p\n", "credentials_ref"},
+		"credentials_ref only": {valid + "inbox:\n  notify:\n    fcm:\n      credentials_ref: switchboard/fcm\n", "project_id"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := Load(write(t, c.body))
+			if err == nil || !strings.Contains(err.Error(), "inbox.notify.fcm") || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("err = %v, want inbox.notify.fcm and %q", err, c.want)
+			}
+		})
+	}
+}

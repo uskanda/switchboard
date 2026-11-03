@@ -12,7 +12,7 @@ WUIでマージを押し、PR/MRがbaseと衝突していて断られると、�
 - doneのマーカーに、直す実行の投稿であることを示す `fix=<ci|push|conflict>` を足す
 - APIの一覧と詳細に `auto_merge`、一覧に終わった依頼の `auto_merge_results` を足す。`POST /v1/automerge/cancel` で依頼を取り消せる
 - WUIは、202をトーストで知らせ、一覧の完了の行と詳細のペインに「自動マージ待ち」の印を付け、詳細のペインに取り消しのボタンを置く。終わった依頼の結果をトーストで出す
-- ADR-047を足し、ADR-043の「画面で見た `sha` に限る」を、押したあとに直す実行がpushしたコミットまで広げる
+- ADR-048を足し、ADR-043の「画面で見た `sha` に限る」を、押したあとに直す実行がpushしたコミットまで広げる
 
 ## Capabilities
 
@@ -33,5 +33,5 @@ WUIでマージを押し、PR/MRがbaseと衝突していて断られると、�
 - Goの受信箱側：新しい `internal/automerge`、`internal/inbox`、`internal/inboxserve`、`cmd/switchboard`
 - GoのAPI：`inboxapi`（クライアントのマージの戻り値が変わる）、`web/internal/server`
 - Web UI：`MergeButton`、`InboxList`、`IssuePane`、`lib/api.ts`、受信箱の購読
-- 文書：`docs/DECISIONS.md`（ADR-047）、`docs/ARCHITECTURE.md`、`docs/SPEC.md`、`docs/ROADMAP.md`、`README.md`、`DESIGN.md`
+- 文書：`docs/DECISIONS.md`（ADR-048）、`docs/ARCHITECTURE.md`、`docs/SPEC.md`、`docs/ROADMAP.md`、`README.md`、`DESIGN.md`
 - トークンの権限は変えない

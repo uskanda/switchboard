@@ -86,7 +86,7 @@ type Item struct {
 	// on GitHub): a page watching one issue reads it again when either moves.
 	UpdatedAt *time.Time `json:"updated_at"`
 	Notes     int        `json:"notes"`
-	// AutoMerge is set by the inbox service on a done issue whose merge it waits to make (ADR-047); the listing of the
+	// AutoMerge is set by the inbox service on a done issue whose merge it waits to make (ADR-048); the listing of the
 	// inbox itself never sets it.
 	AutoMerge *inboxapi.AutoMerge `json:"auto_merge,omitempty"`
 }
