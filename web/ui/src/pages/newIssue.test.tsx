@@ -85,9 +85,12 @@ describe("a new issue", () => {
     await userEvent.click(within(dialog).getByRole("radio", { name: "ラベルなし（実装開始しない）" }));
     await userEvent.click(within(dialog).getByRole("button", { name: "作成する" }));
 
-    expect(await screen.findByRole("status")).toHaveTextContent("o/r#3 GitHub を作りました");
+    expect((await screen.findByText(/を作りました/)).closest("[role=status]")).toHaveTextContent("o/r#3 GitHub を作りました");
     const post = calls.find((c) => c.key === "POST /api/issues");
     expect(JSON.parse(String(post?.init?.body))).toEqual({ ref: "gh:o/r", title: "Later", body: "", start: "none" });
+    // The agent does not take it up, so the list gets no row of it being processed.
+    expect(screen.queryByText("実行の開始を待っています")).toBeNull();
+    expect(screen.queryByRole("link", { name: /Later/ })).toBeNull();
   });
 
   it("cannot be sent without a title", async () => {
@@ -113,7 +116,8 @@ describe("a new issue", () => {
     await userEvent.click(within(dialog).getByRole("radio", { name: /agent:plan/ }));
     await userEvent.click(within(dialog).getByRole("button", { name: "作成する" }));
 
-    const status = await screen.findByRole("status");
+    // The toast, not the new row's own status that the issue is being processed.
+    const status = (await screen.findByText(/を作りました/)).closest<HTMLElement>("[role=status]")!;
     expect(status).toHaveTextContent("nas/sb#7 GitLab を作りました");
     expect(within(status).getByText("nas/sb#7").nextElementSibling).toHaveTextContent("GitLab");
     const toast = status.closest<HTMLElement>("[data-sonner-toast]")!;
@@ -132,7 +136,7 @@ describe("a new issue", () => {
     expect(within(pane).queryByText(/を作りました/)).toBeNull();
 
     await userEvent.click(within(toast).getByRole("button", { name: "閉じる" }));
-    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+    await waitFor(() => expect(screen.queryByText(/を作りました/)).toBeNull());
   });
 
   it("keeps what was written and shows why it was refused", async () => {

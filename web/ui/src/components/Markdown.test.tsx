@@ -21,4 +21,10 @@ describe("Markdown", () => {
     expect(container.querySelector("b")).toBeNull();
     expect(container.querySelectorAll("br")).toHaveLength(1);
   });
+
+  it("draws headings two levels down, under the page's own", () => {
+    const { container } = render(<Markdown text={"# a\n\n## b\n\n### c\n\n#### d\n\n###### e"} />);
+    const tags = [...container.querySelectorAll("h1, h2, h3, h4, h5, h6")].map((h) => `${h.tagName}:${h.textContent}`);
+    expect(tags).toEqual(["H3:a", "H4:b", "H5:c", "H6:d", "H6:e"]);
+  });
 });

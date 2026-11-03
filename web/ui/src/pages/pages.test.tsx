@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -107,7 +107,7 @@ describe("one issue", () => {
     expect(send).toBeDisabled();
     await userEvent.type(screen.getByRole("textbox", { name: "返答" }), "Go with B.");
     await userEvent.click(send);
-    expect(await screen.findByRole("status")).toHaveTextContent("送りました");
+    expect(await within(screen.getByRole("article")).findByRole("status")).toHaveTextContent("送りました");
     const post = calls.find((c) => c.key === "POST /api/reply");
     expect(JSON.parse(String(post?.init?.body))).toEqual({ ref: "gh:o/r#12", text: "Go with B." });
     expect(new Headers(post?.init?.headers).get("Content-Type")).toBe("application/json");
@@ -144,10 +144,13 @@ describe("running issues", () => {
     at("/");
     const heading = await screen.findByRole("heading", { level: 2, name: "実行中" });
     expect(heading).toBeInTheDocument();
-    const progress = screen.getAllByText("13:41 7分 Bash 12・Edit 5 ｜ テストを直している")[0];
+    // What the run is doing, without the time and the tools before it.
+    const progress = screen.getAllByText("テストを直している")[0];
     expect(heading.compareDocumentPosition(progress) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(progress.closest("a")).toHaveAttribute("href", "/issue/gh%3Ao%2Fr%2330");
+    expect(screen.queryByText(/Bash 12/)).toBeNull();
     expect(screen.getAllByText("7分")[0]).toBeInTheDocument();
+    expect(screen.getAllByText("7分経過")[0]).toBeInTheDocument();
     expect(screen.getAllByText("desk")[0]).toBeInTheDocument();
     expect(screen.getAllByText("Which default should --dry-run have?")[0]).toBeInTheDocument();
   });
@@ -171,6 +174,6 @@ describe("running issues", () => {
     expect(screen.getByText("実行中のため返答できません")).toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "返答" })).toBeNull();
     expect(screen.queryByText("?")).toBeNull(); // no reason badge
-    expect(screen.getByText("7分")).toBeInTheDocument();
+    expect(screen.getByText("7分経過")).toBeInTheDocument();
   });
 });

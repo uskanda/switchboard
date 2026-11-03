@@ -7,7 +7,8 @@ import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiError, createIssue, getIssueTargets, type IssueTargets, type StartKind } from "@/lib/api";
-import { refText } from "@/lib/ref";
+import { useInbox } from "@/lib/inbox";
+import { refText, splitRef } from "@/lib/ref";
 import { toast } from "@/lib/toast";
 
 /** What each kind of start does, before the label it stands for. */
@@ -41,11 +42,14 @@ function failure(err: unknown): string {
 
 /**
  * NewIssue is the button above the list that opens a dialog for a new issue in any configured project, with a start
- * label or none. The issue is opened with the inbox token, so the agent takes it up when it has a start label
- * (ADR-040); one without waits until the person puts one on it (ADR-047). Once it is opened the dialog closes and a
- * success toast links to it on the forge.
+ * label or none. The ready start says whether the chosen project starts with a plan. The issue is opened with the inbox
+ * token, so the agent takes it up when it has a start label (ADR-040); one without waits until the person puts one on
+ * it (ADR-048). Once it is opened the dialog closes and a success toast links to it on the forge. Until the agent
+ * takes up an issue with a start label, the list shows a running row of it, marked as being processed
+ * (lib/pending.ts); one without gets no such row, since the agent does not take it up.
  */
 export function NewIssue() {
+  const { markPending } = useInbox();
   const dialog = useRef<HTMLDialogElement>(null);
   const id = useId();
   const [targets, setTargets] = useState<IssueTargets | null>(null);
@@ -76,6 +80,15 @@ export function NewIssue() {
     setError(null);
     try {
       const out = await createIssue({ ref: project, title: title.trim(), body, start });
+      const hash = out.ref.lastIndexOf("#");
+      if (start !== "none") {
+        markPending(out.ref, "create", {
+          title: title.trim(),
+          url: out.url,
+          project: splitRef(hash < 0 ? out.ref : out.ref.slice(0, hash)).path,
+          number: hash < 0 ? 0 : Number(out.ref.slice(hash + 1)) || 0,
+        });
+      }
       toast.success(
         <>
           <IssueRef value={out.ref} /> を作りました
@@ -98,6 +111,9 @@ export function NewIssue() {
     }
   }
 
+  // What the ready label does in the chosen project; an older inbox service does not say, and nothing is added.
+  const planFirst = targets?.items.find((it) => it.ref === project)?.plan_first;
+  const readyNote = planFirst === undefined ? "" : planFirst ? "（このプロジェクトは計画から始めます）" : "（このプロジェクトはすぐに実装します）";
   const ready = targets !== null && project !== "" && targets.starts.some((st) => st.kind === start);
   const canSend = ready && title.trim() !== "" && !sending;
 
@@ -164,6 +180,7 @@ export function NewIssue() {
                       （<span className="font-mono text-mono-sm">{st.label}</span>）
                     </>
                   )}
+                  {st.kind === "ready" && readyNote && <span className="text-muted">{readyNote}</span>}
                 </span>
               </label>
             ))}

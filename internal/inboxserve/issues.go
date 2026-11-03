@@ -16,7 +16,7 @@ import (
 
 // NewIssues serves /v1/issue-targets and /v1/issues: opening an issue, with a start label, in any configured project.
 // The issue is opened with the inbox token, so it is the person's own and the agent takes it up (ADR-040); one opened
-// without a start label waits until the person puts one on it (ADR-047).
+// without a start label waits until the person puts one on it (ADR-048).
 type NewIssues struct {
 	// Config is the configuration in use; Server.Reload replaces it.
 	Config *config.Config
@@ -31,7 +31,7 @@ func (s *Server) newIssuesConfig() *config.Config {
 }
 
 // starts are the start labels the configuration names, as kinds a request can choose from, then StartNone, which
-// stands for no label and is always there (ADR-047).
+// stands for no label and is always there (ADR-048).
 func starts(l config.Labels) []inboxapi.IssueStart {
 	out := []inboxapi.IssueStart{}
 	for _, st := range []inboxapi.IssueStart{
@@ -49,7 +49,7 @@ func (s *Server) issueTargets(w http.ResponseWriter, _ *http.Request) {
 	cfg := s.newIssuesConfig()
 	out := inboxapi.IssueTargets{Items: []inboxapi.IssueTarget{}, Starts: starts(cfg.Labels)}
 	for _, p := range cfg.Projects {
-		out.Items = append(out.Items, inboxapi.IssueTarget{Ref: p.Ref, Host: p.Host})
+		out.Items = append(out.Items, inboxapi.IssueTarget{Ref: p.Ref, Host: p.Host, PlanFirst: p.PlanFirst})
 	}
 	send(w, http.StatusOK, out)
 }

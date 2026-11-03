@@ -12,7 +12,7 @@
 
 ## 3. 文書
 
-- [x] 3.1 `docs/DECISIONS.md` にADR-047を足し、ADR-040に注記する。`docs/SPEC.md`、`README.md`、`DESIGN.md` の開始ラベルの説明に「ラベルなし」を足し、textlintで確かめる
+- [x] 3.1 `docs/DECISIONS.md` にADR-048を足し、ADR-040に注記する。`docs/SPEC.md`、`README.md`、`DESIGN.md` の開始ラベルの説明に「ラベルなし」を足し、textlintで確かめる
 
 ## 4. 確認
 
