@@ -183,7 +183,7 @@ describe("the favicon", () => {
   it("is the plain one while nothing waits", async () => {
     answer({ "GET /api/inbox": listing(item({ n: undefined, state: "running", progress: "p" })) });
     at("/");
-    await screen.findByText("待ち 0・実行中 1");
+    await screen.findByText("待ち0件、実行中1件");
     expect(icon()).toBe("/favicon.svg");
   });
 });
