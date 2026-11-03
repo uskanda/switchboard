@@ -100,6 +100,7 @@
 | V40 | usknasの常駐のサービスのWUIから、`gh:uskanda/switchboard-sandbox` のdraftのPRをマージすると、PRの `Closes` でissueが閉じ、受信箱から消えるか | 未確認（issue #69の実装の時点。受信箱のトークンにREADMEの手順で権限を足してから確かめる） | |
 | V41 | `--permission-mode dontAsk` の `claude -p` で、allowに `Skill` が無いときにSkillツールを呼べるか | スキルによる。`allowed-tools` の無いスキルは、allowに `Skill` が無くても呼べた。`allowed-tools` を持つスキルは拒否され、`permission_denials` に `Skill` が残った。allowに `Skill` を足すと呼べた。claude 2.1.316で確かめた。`go test -tags realclaude -run RealClaudeSkillAllow ./internal/agent/` で再現できる | 2026-11-02 |
 | V42 | allowの `Bash(git *)` とdenyの `Bash(git push *)` が重なるとき、`git push` が拒否されるか | 拒否される。denyがallowより優先され、`permission_denials` に記録された。リモートには何も届かなかった。ただし、denyは境界にならない（V5）。`go test -tags realclaude -run RealClaudeDenyWinsOverAllow ./internal/agent/` で再現できる | 2026-11-02 |
+| V43 | GitHubで、衝突のあるPRのマージが405で断られた直後に、`GET /repos/:owner/:repo/pulls/:number` が `mergeable=false` と `mergeable_state=dirty` を返すか（`null` で計算中のままにならないか）。GitLabで、衝突のあるMRのマージの拒否のあとに `has_conflicts=true` が返るか | 未確認（issue #119の実装の時点。switchboardの実行からはフォージに届かない。計算中で衝突と分からないときは、今までどおり `not_mergeable` を返し、人が押し直す） | |
 
 ### 検証で分かった、設計に関わる点
 
