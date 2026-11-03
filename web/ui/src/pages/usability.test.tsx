@@ -171,6 +171,23 @@ describe("the page title", () => {
   });
 });
 
+describe("the favicon", () => {
+  const icon = () => document.querySelector<HTMLLinkElement>('link[rel="icon"]')?.getAttribute("href");
+
+  it("is marked while an issue waits", async () => {
+    answer({ "GET /api/inbox": listing(item()) });
+    at("/");
+    await waitFor(() => expect(icon()).toBe("/favicon-waiting.svg"));
+  });
+
+  it("is the plain one while nothing waits", async () => {
+    answer({ "GET /api/inbox": listing(item({ n: undefined, state: "running", progress: "p" })) });
+    at("/");
+    await screen.findByText("待ち0件、実行中1件");
+    expect(icon()).toBe("/favicon.svg");
+  });
+});
+
 describe("loading", () => {
   it("says the settings are loading", async () => {
     answer({ "GET /api/inbox": listing(), "GET /api/projects": "never", "GET /api/instructions": "never" });
