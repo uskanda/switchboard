@@ -133,7 +133,8 @@ const headerHeight = () => parseFloat(getComputedStyle(document.documentElement)
  * drawn first counts, and the read after it moves nothing. A later read that adds cards leaves the place as it is and
  * shows a notice at the bottom instead; pressing it scrolls to the card, and it goes once that card is scrolled into
  * view or another issue opens. Either scroll opens the folded round its card is in first, and another issue starts
- * with its rounds folded again. The way back, the reference, the title and the state stay pinned at the top; once
+ * with its rounds folded again. The way back, the reference, the title and the state stay pinned at the top, and so
+ * do the link to a done issue's PR/MR and its merge buttons, so the merge is at hand after reading a long thread; once
  * scrolled, the title is cut to two lines, with the whole of it in its title.
  */
 export function IssuePane({ issueRef }: { issueRef: string }) {
@@ -402,6 +403,26 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
                 </span>
               )}
             </span>
+            {/* The change and its merge stay in the pinned head, in reach however far the thread is read. */}
+            {mergeable && detail.change_number && detail.change_sha && (
+              <div className="flex flex-wrap items-center gap-sm">
+                {detail.change_url && (
+                  <a href={detail.change_url} target="_blank" rel="noreferrer" className="inline-flex min-h-11 min-w-0 items-center break-all font-mono text-mono-sm text-muted underline">
+                    {changeName(detail.ref, detail.change_number)}
+                  </a>
+                )}
+                <MergeButton
+                  issueRef={detail.ref}
+                  number={detail.change_number}
+                  sha={detail.change_sha}
+                  url={detail.change_url}
+                  autoMerge={autoMerge}
+                  ask={askMerge}
+                  onClosed={() => params.get("action") === "merge" && forgetMerge()}
+                />
+                {autoMerge && <CancelAutoMergeButton issueRef={detail.ref} number={detail.change_number} />}
+              </div>
+            )}
           </>
         )}
       </div>
@@ -409,25 +430,6 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
       {!detail && reading && <Loading />}
       {detail && (
         <>
-          {finished && !gone && detail.change_number && detail.change_sha ? (
-            <div className="flex flex-wrap items-center gap-sm">
-              {detail.change_url && (
-                <a href={detail.change_url} target="_blank" rel="noreferrer" className="inline-flex min-h-11 min-w-0 items-center break-all font-mono text-mono-sm text-muted underline">
-                  {changeName(detail.ref, detail.change_number)}
-                </a>
-              )}
-              <MergeButton
-                issueRef={detail.ref}
-                number={detail.change_number}
-                sha={detail.change_sha}
-                url={detail.change_url}
-                autoMerge={autoMerge}
-                ask={askMerge}
-                onClosed={() => params.get("action") === "merge" && forgetMerge()}
-              />
-              {autoMerge && <CancelAutoMergeButton issueRef={detail.ref} number={detail.change_number} />}
-            </div>
-          ) : null}
           {gone && <p className="text-muted">このissueは、待ちでも実行中でもなくなりました。</p>}
           {detail.comments ? (
             <Thread
