@@ -48,6 +48,11 @@ colors:
   dark-forge-gitlab: "#C4B5FD"
   dark-forge-gitlab-container: "#2A2140"
 typography:
+  display-lg:
+    fontFamily: system-ui, "Hiragino Sans", "Noto Sans JP", sans-serif
+    fontSize: 40px
+    fontWeight: 700
+    lineHeight: 1.2
   headline-md:
     fontFamily: system-ui, "Hiragino Sans", "Noto Sans JP", sans-serif
     fontSize: 20px
@@ -183,6 +188,7 @@ components:
 
 書体はOSのものを使う。外のCDNからWebフォントを読み込まないためである。和文は、macOSとiOSではヒラギノ角ゴ、それ以外ではNoto Sans JPを順に探す。
 
+- `display-lg`（40px）：GitHub Pagesの紹介ページ（`site/`）の最上部の見出しだけに使う。幅560px未満では28pxにし、見出しが1文字ずつ折り返さないようにする。受信箱の画面では使わない
 - `headline-md`（20px）：画面の見出し（設定の画面の「設定」など）と、1件の画面のissueのタイトル。設定の画面の節の見出しは、画面の見出しと見分けられるよう`body-md`の太字にする
 - `body-md`（15px）：質問の全文と、返答の欄。行の長さは、デスクトップでも全角40字程度に収める
 - `label-md`（13px）：バッジ、表の見出し、補足
