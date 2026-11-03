@@ -120,6 +120,9 @@ type Agent struct {
 	AllowToolsExtra []string `yaml:"allow_tools_extra"`
 	// LimitWait is how long the host waits after a run hit a usage limit whose reset time is unknown; 30m when unset.
 	LimitWait time.Duration `yaml:"limit_wait"`
+	// ResumeWithinSet is how soon after the post of a plan run the next plan run of the issue forks from its
+	// session; nil means DefaultResumeWithin, 0 never.
+	ResumeWithinSet *time.Duration `yaml:"resume_within"`
 	// Model and Effort are the model and the effort level of every run; Plan and Fix override them for the plan runs
 	// and the fix runs. The names stay free of any one coding agent's terms; empty leaves the choice to it.
 	Model  string   `yaml:"model"`
@@ -180,6 +183,17 @@ func (a Agent) FixAttempts() int {
 		return DefaultFixAttempts
 	}
 	return *a.MaxFixAttempts
+}
+
+// DefaultResumeWithin is agent.resume_within when unset: the time the prompt cache lasts (V53).
+const DefaultResumeWithin = time.Hour
+
+// ResumeWithin is how soon after a plan run's post the next plan run may fork from its session; 0 never.
+func (a Agent) ResumeWithin() time.Duration {
+	if a.ResumeWithinSet == nil {
+		return DefaultResumeWithin
+	}
+	return *a.ResumeWithinSet
 }
 
 // AgentRelay is where the agent subscribes: the relay's SSE URL and the token_ref of this host's bearer token.
@@ -521,6 +535,9 @@ func (c *Config) validate() error {
 	}
 	if n := c.Agent.MaxFixAttempts; n != nil && *n < 0 {
 		errs = append(errs, fmt.Errorf("agent.max_fix_attempts must be at least 0, got %d", *n))
+	}
+	if d := c.Agent.ResumeWithinSet; d != nil && *d < 0 {
+		errs = append(errs, fmt.Errorf("agent.resume_within must not be negative, got %v", *d))
 	}
 	if c.Agent.LimitWait < 0 {
 		errs = append(errs, fmt.Errorf("agent.limit_wait must not be negative, got %v", c.Agent.LimitWait))

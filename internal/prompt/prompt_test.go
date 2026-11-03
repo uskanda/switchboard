@@ -247,3 +247,16 @@ func TestPlanSystemPromptSaysCommandsRunInTheSandbox(t *testing.T) {
 		t.Error("the plan system prompt still says every other command is refused")
 	}
 }
+
+func TestAContinuedPlanRoundSaysSoFirst(t *testing.T) {
+	in := Input{Ref: forge.IssueRef{Owner: "o", Repo: "r", Number: 1}, Title: "T", Body: "B", Nonce: "n"}
+	plain := Build(in)
+	in.Continued = true
+	s := Build(in)
+	if !strings.HasPrefix(s, ContinuedNote) || strings.TrimPrefix(s, ContinuedNote) != plain {
+		t.Fatalf("continued prompt:\n%s", s)
+	}
+	if strings.HasPrefix(plain, ContinuedNote) {
+		t.Fatal("a fresh prompt says it continues")
+	}
+}

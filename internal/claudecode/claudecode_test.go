@@ -397,3 +397,38 @@ func TestCheckSandboxReportsAMissingBwrap(t *testing.T) {
 		t.Fatalf("CheckSandbox = %v", err)
 	}
 }
+
+func TestArgsResumeFromAnotherSessionByForking(t *testing.T) {
+	argv := Args(Request{RunDir: "/run", SessionID: "new", MaxTurns: 3, Schema: "{}", ResumeFrom: "old"})
+	if !hasSeq(argv, []string{"--resume", "old"}) || !slices.Contains(argv, "--fork-session") || !hasSeq(argv, []string{"--session-id", "new"}) {
+		t.Fatalf("argv = %v, want --resume old --fork-session and --session-id new", argv)
+	}
+	if argv := Args(Request{RunDir: "/run", SessionID: "new", MaxTurns: 3, Schema: "{}"}); slices.Contains(argv, "--resume") || slices.Contains(argv, "--fork-session") {
+		t.Fatalf("argv resumes without ResumeFrom: %v", argv)
+	}
+}
+
+func TestSessionNotFound(t *testing.T) {
+	f, err := os.Open(filepath.Join("testdata", "no-session.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	res := &Result{}
+	if err := Parse(f, res); err != nil {
+		t.Fatal(err)
+	}
+	if !SessionNotFound(res) {
+		t.Fatalf("SessionNotFound(%+v) = false", res)
+	}
+	for name, other := range map[string]*Result{
+		"success":          {HasResult: true, Subtype: "success", NumTurns: 0},
+		"later error":      {HasResult: true, IsError: true, NumTurns: 2, Errors: []string{"No conversation found with session ID: x"}},
+		"other error":      {HasResult: true, IsError: true, NumTurns: 0, Errors: []string{"something else"}},
+		"no result at all": {},
+	} {
+		if SessionNotFound(other) {
+			t.Errorf("%s: SessionNotFound = true", name)
+		}
+	}
+}

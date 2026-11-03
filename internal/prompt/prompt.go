@@ -47,7 +47,14 @@ type Input struct {
 	// Resumed says the previous run on the issue stopped partway on a usage limit of the AI service, so this run
 	// goes on from what that run left in the worktree. Plan runs never set it.
 	Resumed bool
+	// Continued says the run forks from the session of the previous plan round, so that the prompt starts with
+	// ContinuedNote. The rest of the prompt is built as for a fresh session.
+	Continued bool
 }
+
+// ContinuedNote starts the prompt of a plan run that forks from the session of the previous round.
+const ContinuedNote = "This run continues your previous plan round on this issue. The issue as it stands now follows; " +
+	"the comments after your last post are new.\n\n"
 
 // ResumedNote is the line a run resumed after a usage limit gets before its task.
 const ResumedNote = "The previous run on this issue stopped partway because it hit a usage limit of the AI service. " +
@@ -64,6 +71,9 @@ const PlanTask = "Plan the work the issue asks for, following the rules in your 
 // Build returns the prompt.
 func Build(in Input) string {
 	var b strings.Builder
+	if in.Continued {
+		b.WriteString(ContinuedNote)
+	}
 	tag := func(name string) (string, string) {
 		t := name + "-" + in.Nonce
 		return "<" + t + ">", "</" + t + ">"
