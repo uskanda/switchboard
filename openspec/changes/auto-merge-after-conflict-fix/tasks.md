@@ -36,4 +36,4 @@
 
 ## 8. 全体の確認
 
-- [ ] 8.1 `make verify` を通し、`openspec validate auto-merge-after-conflict-fix --strict` を通す
+- [x] 8.1 `make verify` を通し、`openspec validate auto-merge-after-conflict-fix --strict` を通す
