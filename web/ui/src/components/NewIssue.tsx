@@ -42,7 +42,7 @@ function failure(err: unknown): string {
 
 /**
  * NewIssue is the button above the list that opens a dialog for a new issue in any configured project, with a start
- * label or none. The ready start says whether the chosen project starts with a plan. The issue is opened with the inbox
+ * label or none; the list puts it in its top row. The ready start says whether the chosen project starts with a plan. The issue is opened with the inbox
  * token, so the agent takes it up when it has a start label (ADR-040); one without waits until the person puts one on
  * it (ADR-049). Once it is opened the dialog closes and a success toast links to it on the forge. Until the agent
  * takes up an issue with a start label, the list shows a running row of it, marked as being processed
@@ -118,12 +118,10 @@ export function NewIssue() {
   const canSend = ready && title.trim() !== "" && !sending;
 
   return (
-    <div className="flex flex-col gap-sm">
-      <div className="flex justify-end">
-        <Button type="button" variant="secondary" onClick={open}>
-          新規issue
-        </Button>
-      </div>
+    <>
+      <Button type="button" variant="secondary" onClick={open}>
+        新規issue
+      </Button>
       <Dialog ref={dialog} aria-labelledby={`${id}-heading`}>
         <form onSubmit={submit} className="flex flex-col gap-md">
           <h2 id={`${id}-heading`} className="text-headline-md font-semibold">
@@ -196,6 +194,6 @@ export function NewIssue() {
           </div>
         </form>
       </Dialog>
-    </div>
+    </>
   );
 }

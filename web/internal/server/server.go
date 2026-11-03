@@ -259,7 +259,7 @@ func (s *Server) cancelAutoMerge(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// projectIcon passes a project's icon image on from the inbox service, which read it with the inbox token (ADR-053).
+// projectIcon passes a project's icon image on from the inbox service, which read it with the inbox token (ADR-055).
 // The page reads it from this origin, so the content security policy stays default-src 'self'; nosniff, set for
 // every answer, keeps the browser to the image type the inbox service checked.
 func (s *Server) projectIcon(w http.ResponseWriter, r *http.Request) {

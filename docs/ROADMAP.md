@@ -69,7 +69,7 @@
 | V9 | `--settings` のフック・権限・サンドボックス設定が `-p` で適用されるか | フックと権限は適用される。サンドボックスは、このコンテナに `bwrap` が無いため確かめられない。`-p` でも依存の不足を警告し、サンドボックスなしで続行した | 2026-10-29 |
 | V10 | 専用OSユーザーと `CLAUDE_CODE_OAUTH_TOKEN` でヘッドレス実行が回るか | 未確認。マスターの端末で確かめる | |
 | V11 | `permission_denials` の要素の形 | 要素は `tool_name`・`tool_use_id`・`tool_input` を持つ。Bashなら `tool_input.command` に拒否されたコマンドが入る | 2026-10-29 |
-| V12 | 利用上限に達したときの終了コード・`subtype`・出力の形 | 未確認。意図して再現する方法が無いため、Phase 1の運用中に記録する | |
+| V12 | 利用上限に達したときの終了コード・`subtype`・出力の形 | 運用中の実行ログ（`runs/*/stream.jsonl`）で確かめた。まず `rate_limit_event` が出る。`rate_limit_info.status` は `rejected`、`resetsAt` は解除時刻のUNIX秒、`rateLimitType` は `five_hour` である。続くresultは `subtype` が `success` のままで、`is_error: true`、`api_error_status: 429`、`api_error: usage_limit_reached`、`terminal_reason: api_error` を持ち、本文は「You've hit your 5-hour limit · resets 6:30pm (UTC)」だった。手前では `status` が `allowed_warning` のイベントも出る（ADR-053では使わない）。伏せ字にした出力を `internal/claudecode/testdata/limit.jsonl` に置いた。自動の再開を本番で確かめたら、ここに書き足す | 2026-11-03 |
 | V13 | `-p` 実行中にNotificationフックが発火するか | 発火しなかった。`dontAsk` と `default` の権限モードの両方で確かめた | 2026-10-29 |
 | V14 | GitHub GraphQL searchでissueと直近コメントを1リクエストで取れるか | 未確認。Phase 1の受信箱は、DESIGN.md 4.6節の想定と違い、RESTのSearch API（`/search/issues`）を1回呼び、待ちのissueごとにGraphQLでスレッドを取る。実物のGitHubで、この形で動くことはV20で確かめた。Search APIには30回/分の制限があるため、GraphQLの1リクエストで取る形に変えるかは、自動更新するPhase 5のWeb表示の前に決める | 2026-10-30 |
 | V15 | Workflows権限なしのfine-grained PATで、ワークフロー変更を含む `git push` が拒否されるか | 未確認。マスターの端末で、検証用リポジトリとPATを使って確かめる | |

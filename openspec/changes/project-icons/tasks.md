@@ -27,7 +27,7 @@
 
 ## 6. 文書
 
-- [x] 6.1 `docs/DECISIONS.md`にADR-053を足し、`docs/SECURITY.md`の4章に受信箱のトークンでアバターを読むことを書く
+- [x] 6.1 `docs/DECISIONS.md`にADR-055を足し、`docs/SECURITY.md`の4章に受信箱のトークンでアバターを読むことを書く
 - [x] 6.2 `DESIGN.md`の参照の項と`project-initial`、`docs/SPEC.md`、設定の例に`icon`を足す
 
 ## 7. 全体の確認

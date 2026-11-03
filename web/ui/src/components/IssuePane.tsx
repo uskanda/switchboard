@@ -25,6 +25,16 @@ import { nextWait } from "@/lib/waits";
 
 /** RETRY_TEXT is the reply that runs a failed run again: a trusted comment is all a wait on an error needs. */
 const RETRY_TEXT = "再実行してください。";
+/**
+ * CONFLICT_RETRY_TEXT is the reply that runs the fix of a conflict again. It names the conflict, so neither the agent
+ * nor a person reading the thread takes it for doing the first work over.
+ */
+const CONFLICT_RETRY_TEXT = "baseとの衝突を解消して、もう一度pushしてください。";
+
+/** retryTextOf is the fixed reply that "再実行する" sends on a wait with this reason. */
+function retryTextOf(reason: string): string {
+  return reason === "conflict" ? CONFLICT_RETRY_TEXT : RETRY_TEXT;
+}
 
 function failure(err: unknown): string {
   if (err instanceof ApiError) {
@@ -42,7 +52,8 @@ function failure(err: unknown): string {
  * PlanHint says how to answer a wait of the plan stage: the approval word approves a plan, and questions are answered
  * by choosing (answerable) or in words. It never offers the approval word for questions: after a plan, it would
  * approve that plan. For a CI that failed past the fix limit and a refused push, it says what a reply does and what
- * to check first. For a failed run (error), it offers running again in one click, or a reply that says how to fix it.
+ * to check first. For a failed run (error) and a conflict past the fix limit (conflict), it offers running again in one
+ * click, or a reply that says how to fix it; for a conflict, either counts the fixes over.
  */
 function PlanHint({ reason, word, answerable }: { reason: string; word: string; answerable: boolean }) {
   const code = <code className="font-mono text-mono-sm">{word}</code>;
@@ -79,7 +90,7 @@ function PlanHint({ reason, word, answerable }: { reason: string; word: string; 
   if (reason === "conflict") {
     return (
       <p className="text-label-md text-muted">
-        返信するとエージェントが実行を再開し、baseとの衝突を自動で直す回数を数え直します。
+        baseとの衝突を自動で直せませんでした。もう一度直させるなら「再実行する」を押してください。直し方を伝えるなら、返答の欄に書いて「返答を送る」を押してください。どちらでも、自動で直す回数を数え直します。
       </p>
     );
   }
@@ -133,7 +144,8 @@ const headerHeight = () => parseFloat(getComputedStyle(document.documentElement)
  * drawn first counts, and the read after it moves nothing. A later read that adds cards leaves the place as it is and
  * shows a notice at the bottom instead; pressing it scrolls to the card, and it goes once that card is scrolled into
  * view or another issue opens. Either scroll opens the folded round its card is in first, and another issue starts
- * with its rounds folded again. The way back, the reference, the title and the state stay pinned at the top; once
+ * with its rounds folded again. The way back, the reference, the title and the state stay pinned at the top, and so
+ * do the link to a done issue's PR/MR and its merge buttons, so the merge is at hand after reading a long thread; once
  * scrolled, the title is cut to two lines, with the whole of it in its title.
  */
 export function IssuePane({ issueRef }: { issueRef: string }) {
@@ -266,9 +278,9 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
   const word = detail?.approve_word || "/ok";
   // A wait on a plan is approved by its approval word alone, sent in one click while the reply is empty.
   const approving = detail?.reason === "plan" && !plan;
-  // A wait on a failed run is run again by a fixed reply alone, in the same way. Other failures are not: they need a
-  // check or a fix first.
-  const retrying = detail?.reason === "error" && !plan;
+  // A wait on a failed run, or on a conflict past the fix limit, is run again by a fixed reply alone, in the same way.
+  // Other failures are not: they need a check or a fix first.
+  const retrying = (detail?.reason === "error" || detail?.reason === "conflict") && !plan;
 
   // justSent is set by a send that worked, so the button to the next wait (or the words saying it was sent, when
   // no other wait is left) takes the focus from the form that goes.
@@ -402,6 +414,26 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
                 </span>
               )}
             </span>
+            {/* The change and its merge stay in the pinned head, in reach however far the thread is read. */}
+            {mergeable && detail.change_number && detail.change_sha && (
+              <div className="flex flex-wrap items-center gap-sm">
+                {detail.change_url && (
+                  <a href={detail.change_url} target="_blank" rel="noreferrer" className="inline-flex min-h-11 min-w-0 items-center break-all font-mono text-mono-sm text-muted underline">
+                    {changeName(detail.ref, detail.change_number)}
+                  </a>
+                )}
+                <MergeButton
+                  issueRef={detail.ref}
+                  number={detail.change_number}
+                  sha={detail.change_sha}
+                  url={detail.change_url}
+                  autoMerge={autoMerge}
+                  ask={askMerge}
+                  onClosed={() => params.get("action") === "merge" && forgetMerge()}
+                />
+                {autoMerge && <CancelAutoMergeButton issueRef={detail.ref} number={detail.change_number} />}
+              </div>
+            )}
           </>
         )}
       </div>
@@ -409,25 +441,6 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
       {!detail && reading && <Loading />}
       {detail && (
         <>
-          {finished && !gone && detail.change_number && detail.change_sha ? (
-            <div className="flex flex-wrap items-center gap-sm">
-              {detail.change_url && (
-                <a href={detail.change_url} target="_blank" rel="noreferrer" className="inline-flex min-h-11 min-w-0 items-center break-all font-mono text-mono-sm text-muted underline">
-                  {changeName(detail.ref, detail.change_number)}
-                </a>
-              )}
-              <MergeButton
-                issueRef={detail.ref}
-                number={detail.change_number}
-                sha={detail.change_sha}
-                url={detail.change_url}
-                autoMerge={autoMerge}
-                ask={askMerge}
-                onClosed={() => params.get("action") === "merge" && forgetMerge()}
-              />
-              {autoMerge && <CancelAutoMergeButton issueRef={detail.ref} number={detail.change_number} />}
-            </div>
-          ) : null}
           {gone && <p className="text-muted">このissueは、待ちでも実行中でもなくなりました。</p>}
           {detail.comments ? (
             <Thread
@@ -518,7 +531,7 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
                   <Button type="submit" variant="secondary" disabled={sending || !detail.waiting || text.trim() === ""}>
                     返答を送る
                   </Button>
-                  <Button type="button" disabled={sending || !detail.waiting || text.trim() !== ""} onClick={() => void send(RETRY_TEXT)}>
+                  <Button type="button" disabled={sending || !detail.waiting || text.trim() !== ""} onClick={() => void send(retryTextOf(detail.reason))}>
                     {sending ? "送っています" : "再実行する"}
                   </Button>
                 </div>

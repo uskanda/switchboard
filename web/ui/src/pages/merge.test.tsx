@@ -199,12 +199,15 @@ describe("merging a done issue's pull request", () => {
     expect(card).toHaveClass("border-primary");
   });
 
-  it("is offered in the issue's pane", async () => {
+  it("is offered once in the issue's pane, pinned in its head with the link to the change", async () => {
     answer({ "GET /api/inbox": listing, [detailPath]: detail });
     at("/issue/gh%3Ao%2Fr%2350");
     await screen.findByRole("heading", { level: 2, name: "Finished" });
     const article = screen.getByRole("article");
-    expect(within(article).getByRole("button", { name: "PR #9をマージ" })).toBeInTheDocument();
+    const head = article.querySelector<HTMLElement>("[data-pane-head]")!;
+    expect(within(head).getByRole("button", { name: "PR #9をマージ" })).toBeInTheDocument();
+    expect(within(head).getByRole("link", { name: "PR #9" })).toHaveAttribute("href", "https://github.test/o/r/pull/9");
+    expect(within(article).getAllByRole("button", { name: "PR #9をマージ" })).toHaveLength(1);
   });
 
   it("is not offered without the number and the commit of the change", async () => {
@@ -318,6 +321,9 @@ describe("merging a done issue's pull request", () => {
     const article = screen.getByRole("article");
     expect(within(article).getByText("自動マージ待ち", { selector: "[data-auto-merge]" })).toBeInTheDocument();
     expect(within(article).getByRole("button", { name: "PR #9は自動マージ待ち" })).toBeDisabled();
+    const head = article.querySelector<HTMLElement>("[data-pane-head]")!;
+    expect(within(head).getByRole("button", { name: "PR #9は自動マージ待ち" })).toBeInTheDocument();
+    expect(within(head).getByRole("button", { name: "自動マージを取り消す" })).toBeInTheDocument();
     const list = screen.getByRole("navigation", { name: /一覧/ });
     expect(within(list).getAllByText("自動マージ待ち", { selector: "[data-auto-merge]" })[0]).toBeInTheDocument();
 

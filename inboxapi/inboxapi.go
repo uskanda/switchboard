@@ -13,8 +13,8 @@ import (
 // Item is one waiting, done, running or queued issue, as switchboard inbox --json lists it. Waiting and done issues
 // have a row number (N), numbered in this order; an open done issue has DoneSince and ChangeURL, the pull or merge
 // request its done post names ("" without one); a running one has RunningSince and Progress, the last line of its
-// progress comment ("?" without one); a queued one has QueuedSince, and Reason names the limit reached (max-parallel
-// or project-max-parallel).
+// progress comment ("?" without one); a queued one has QueuedSince, and Reason names the limit reached (max-parallel,
+// project-max-parallel, or the pause of its host: limit or quota, with QueuedUntil).
 type Item struct {
 	N            int        `json:"n,omitempty"`
 	State        string     `json:"state"` // waiting, done, running or queued
@@ -30,8 +30,10 @@ type Item struct {
 	RunningSince *time.Time `json:"running_since,omitempty"`
 	Progress     string     `json:"progress,omitempty"`
 	QueuedSince  *time.Time `json:"queued_since,omitempty"`
-	DoneSince    *time.Time `json:"done_since,omitempty"`
-	ChangeURL    string     `json:"change_url,omitempty"`
+	// QueuedUntil, on an issue queued on a pause of its host (Reason limit or quota), is when the pause ends.
+	QueuedUntil *time.Time `json:"queued_until,omitempty"`
+	DoneSince   *time.Time `json:"done_since,omitempty"`
+	ChangeURL   string     `json:"change_url,omitempty"`
 	// ChangeNumber and ChangeSHA are the change request and the commit the marker of the latest done post names; a
 	// page offers the merge (POST /v1/merge) only with both.
 	ChangeNumber int    `json:"change_number,omitempty"`

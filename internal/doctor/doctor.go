@@ -62,6 +62,9 @@ func (d *Doctor) Run(ctx context.Context) int {
 	d.failures = 0
 	cfg := d.Config
 	d.ok("configuration: host %s, %d project(s), %d on this host", cfg.Host.Name, len(cfg.Projects), len(cfg.ProjectsFor(cfg.Host.Name)))
+	for _, w := range cfg.Warnings() {
+		d.warn("%s", w)
+	}
 	for _, kind := range []string{forge.GitHub, forge.GitLab} {
 		if uses(cfg, kind) {
 			d.forge(ctx, kind)

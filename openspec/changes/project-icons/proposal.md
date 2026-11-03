@@ -26,5 +26,5 @@ Webの受信箱は、プロジェクトを参照の文字（`o/r#12`）とフォ
 - `internal/forge`（`Avatars`、GitHubとGitLabのアダプタ）
 - `internal/inboxserve`、`inboxapi`、`internal/config`、`cmd/switchboard/inboxserve.go`
 - `web/internal/server`、`web/ui`の`IssueRef`と新しい`ProjectIcon`
-- `docs/DECISIONS.md`（ADR-053）、`docs/SECURITY.md`、`docs/SPEC.md`、`DESIGN.md`、`config/config.example.yaml`
+- `docs/DECISIONS.md`（ADR-055）、`docs/SECURITY.md`、`docs/SPEC.md`、`DESIGN.md`、`config/config.example.yaml`
 - 中継に流すものは変えない。受信箱のトークンに新しい権限は要らない
