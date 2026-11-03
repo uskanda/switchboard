@@ -357,7 +357,8 @@ func (f *Forge) FailNthSetLabels(n int, err error) {
 	f.failNth, f.failNthEr = n, err
 }
 
-// SetLabels implements forge.Forge. Labels it sets are attributed to the zero user.
+// SetLabels implements forge.Forge. The labels it adds are attributed to the user PostComment posts as ("agent" by
+// default, the zero user when not registered), as a forge attributes them to the token's owner.
 func (f *Forge) SetLabels(_ context.Context, ref forge.IssueRef, labels []string) error {
 	f.mu.Lock()
 	if err := f.FailSetLabels; err != nil {
@@ -373,6 +374,15 @@ func (f *Forge) SetLabels(_ context.Context, ref forge.IssueRef, labels []string
 		}
 	}
 	is := f.issue(ref)
+	as := f.PostAs
+	if as == "" {
+		as = "agent"
+	}
+	for _, l := range labels {
+		if !contains(is.data.Labels, l) {
+			is.labeled[l] = f.users[as] // as on the forges, the token's owner added the label
+		}
+	}
 	is.data.Labels = append([]string(nil), labels...)
 	is.data.UpdatedAt = f.now()
 	hook := f.AfterSetLabels

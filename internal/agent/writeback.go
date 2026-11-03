@@ -24,7 +24,7 @@ import (
 type outcome struct {
 	Run     string `json:"run"`
 	Session string `json:"session"`
-	State   string `json:"state"`  // waiting or done
+	State   string `json:"state"`  // waiting, done, or queued for a run that hit a usage limit
 	Reason  string `json:"reason"` // for waiting: question, permission, error, verify, push, ci, conflict
 	Ack     int64  `json:"ack"`
 	Body    string `json:"body"` // the comment without its marker
@@ -38,6 +38,8 @@ type outcome struct {
 	Shots      []string            `json:"shots,omitempty"`
 	Skipped    []workspace.Skipped `json:"skipped,omitempty"`
 	ShotsError string              `json:"shots_error,omitempty"`
+	// Until, for a run that hit a usage limit (queued, or a fix run's wait): when the host starts runs again.
+	Until time.Time `json:"until,omitempty"`
 
 	msg texts
 	// next, set instead of a state, hands the issue to a fix run of a refused push; such an outcome is not written.
@@ -59,6 +61,21 @@ func (o *outcome) set(state, reason, title string, parts ...string) *outcome {
 
 func (o *outcome) fail(why string) *outcome {
 	return o.set("waiting", "error", o.msg.errorTitle, why, o.msg.reply)
+}
+
+// limited puts the issue of a run that hit a usage limit back in the queue: its comment is the queued comment that
+// marks the issue to resume once the host's pause ends at until (ADR-053).
+func (o *outcome) limited(host string, until time.Time) *outcome {
+	o.Until = until
+	return o.set(marker.Queued, marker.QueuedLimit, o.msg.limitTitle, fmt.Sprintf(o.msg.limitQueued, host, o.msg.when(until)))
+}
+
+// limitedFix ends a fix run that hit a usage limit: it waits with reason error, and until keeps it out of the count
+// of fix runs.
+func (o *outcome) limitedFix(host string, until time.Time) *outcome {
+	o.fail(fmt.Sprintf(o.msg.limitFix, host, o.msg.when(until)))
+	o.Until = until
+	return o
 }
 
 func (o *outcome) verify(why string) *outcome {
@@ -139,7 +156,7 @@ func (a *Agent) writeOut(ctx context.Context, ref forge.IssueRef, o *outcome, se
 			a.Audit.Log("comment.withheld", map[string]any{"issue": ref.String(), "run": o.Run})
 		}
 		posting := body
-		m := marker.Marker{Host: a.Config.Host.Name, Session: o.Session, Run: o.Run, State: o.State, Reason: o.Reason, Ack: o.Ack, At: time.Now(), Q: o.Q, SHA: o.SHA, CR: o.CR}
+		m := marker.Marker{Host: a.Config.Host.Name, Session: o.Session, Run: o.Run, State: o.State, Reason: o.Reason, Ack: o.Ack, At: time.Now(), Q: o.Q, SHA: o.SHA, CR: o.CR, Until: o.Until}
 		if o.State == marker.Done {
 			m.Fix = o.Fix
 		}
@@ -152,15 +169,18 @@ func (a *Agent) writeOut(ctx context.Context, ref forge.IssueRef, o *outcome, se
 		a.Audit.Log("comment.posted", map[string]any{"issue": ref.String(), "run": o.Run, "comment": c.ID, "state": o.State, "reason": o.Reason})
 		// The recovery of a write-back finds this comment and posts nothing, so the notification goes out now,
 		// after the label, even when setting the label fails.
-		if setLabel {
+		if setLabel && o.State != marker.Queued { // a queue is never notified
 			defer a.notify(ctx, &is.IssueSummary, o, posting)
 		}
 	}
 	a.dropProgress(ctx, ref, o.Run, comments)
 	if setLabel {
 		to := a.Config.Labels.Waiting
-		if o.State == "done" {
+		switch o.State {
+		case "done":
 			to = a.Config.Labels.Done
+		case marker.Queued:
+			to = a.Config.Labels.Ready
 		}
 		if err := a.swapper(ref).Swap(ctx, ref, to); err != nil {
 			return err
@@ -382,7 +402,7 @@ func (a *Agent) retryWriteBack(ctx context.Context, ref forge.IssueRef, w *pendi
 		a.dropWriteBack(ref)
 		a.Audit.Log("writeback.retried", map[string]any{"issue": ref.String(), "run": w.o.Run, "state": w.o.State})
 		a.ended(w.project, ref, a.recordOf(ref, w.o.Run), w.o)
-		if w.o.State == "waiting" || w.o.State == "done" {
+		if w.o.State == "waiting" || w.o.State == "done" || w.o.State == marker.Queued {
 			a.resume(w.project, ref)
 		}
 		return

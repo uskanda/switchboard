@@ -18,6 +18,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/uskanda/switchboard/internal/usage"
 )
 
 // Settings is the per-run Claude Code settings file: what the run may and may not do without asking.
@@ -80,6 +82,10 @@ type Result struct {
 	TimedOut   bool // stopped because Timeout passed
 	Canceled   bool // stopped because the context was canceled
 	HasResult  bool // the output contained a result message
+	// Limit is set when the run ended in an error because the service refused it on a limit (V12).
+	Limit *usage.LimitHit
+	// CostUSD is what the run cost, as claude reported it (total_cost_usd).
+	CostUSD float64
 }
 
 // allowedEnv are the variables passed to claude. Forge tokens, the SSH agent, the parent Claude Code session and
@@ -262,15 +268,41 @@ func stop(pid int, done <-chan error, intGrace, termGrace time.Duration) error {
 }
 
 // Parse reads stream-json output and fills res from the last result message.
+//
+// A usage limit shows as a rate_limit_event with the status "rejected" and the reset time in resetsAt (Unix
+// seconds), followed by a result with is_error, api_error_status 429 and, for the usage limit, api_error
+// "usage_limit_reached"; the subtype stays "success" (V12). Only a result in error counts as a limit: a run that
+// went on and succeeded after a rejected event did not stop on it.
 func Parse(r io.Reader, res *Result) error {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), 64*1024*1024)
+	var rejected *time.Time // the reset time of the last rejected rate_limit_event
+	sawRejected := false
 	for sc.Scan() {
 		line := sc.Bytes()
 		var head struct {
 			Type string `json:"type"`
 		}
-		if json.Unmarshal(line, &head) != nil || head.Type != "result" {
+		if json.Unmarshal(line, &head) != nil {
+			continue
+		}
+		if head.Type == "rate_limit_event" {
+			var ev struct {
+				Info struct {
+					Status   string `json:"status"`
+					ResetsAt int64  `json:"resetsAt"`
+				} `json:"rate_limit_info"`
+			}
+			if json.Unmarshal(line, &ev) == nil && ev.Info.Status == "rejected" {
+				sawRejected, rejected = true, nil
+				if ev.Info.ResetsAt > 0 {
+					t := time.Unix(ev.Info.ResetsAt, 0)
+					rejected = &t
+				}
+			}
+			continue
+		}
+		if head.Type != "result" {
 			continue
 		}
 		var m struct {
@@ -282,6 +314,9 @@ func Parse(r io.Reader, res *Result) error {
 			StructuredOutput  json.RawMessage `json:"structured_output"`
 			PermissionDenials []Denial        `json:"permission_denials"`
 			Errors            []string        `json:"errors"`
+			TotalCostUSD      float64         `json:"total_cost_usd"`
+			APIErrorStatus    int             `json:"api_error_status"`
+			APIError          string          `json:"api_error"`
 		}
 		if err := json.Unmarshal(line, &m); err != nil {
 			return fmt.Errorf("decode result message: %w", err)
@@ -289,9 +324,18 @@ func Parse(r io.Reader, res *Result) error {
 		res.HasResult = true
 		res.Subtype, res.IsError, res.SessionID, res.NumTurns = m.Subtype, m.IsError, m.SessionID, m.NumTurns
 		res.Text, res.Denials, res.Errors = m.Result, m.PermissionDenials, m.Errors
+		res.CostUSD = m.TotalCostUSD
 		res.Structured = nil
 		if len(m.StructuredOutput) > 0 && string(m.StructuredOutput) != "null" {
 			res.Structured = m.StructuredOutput
+		}
+		res.Limit = nil
+		if m.IsError && (sawRejected || m.APIErrorStatus == 429) {
+			kind := usage.KindRate
+			if sawRejected || m.APIError == "usage_limit_reached" {
+				kind = usage.KindUsage
+			}
+			res.Limit = &usage.LimitHit{Kind: kind, ResetsAt: rejected, Message: m.Result}
 		}
 	}
 	return sc.Err()

@@ -4,7 +4,9 @@
 //
 // A claim made from a start label also carries mode=<plan|direct>, and a post of plan questions q=<last number>.
 // A done post that names a change request carries sha=<the commit pushed> and cr=<its number>; the done post of a fix
-// run also carries fix=<ci|push|conflict>, what it fixed.
+// run also carries fix=<ci|push|conflict>, what it fixed. A queued comment on a paused host, and the wait of a fix run
+// that hit a usage limit, carry until=<RFC3339>, when the host starts runs again; the queued comment of a run that hit
+// the limit also names that run (run=), which marks the issue to resume.
 // Unknown keys are ignored, so that a newer version's marker still parses.
 package marker
 
@@ -27,7 +29,7 @@ type Marker struct {
 	Session string
 	Run     string
 	State   string // running (the claim of a run), progress (its progress comment), queued, waiting, done, attachment
-	Reason  string // for waiting: question, permission, error, verify, limit, plan-questions, plan, push, ci, conflict; for queued: the limit; for running: fix on a fix run's claim
+	Reason  string // for waiting: question, permission, error, verify, limit, plan-questions, plan, push, ci, conflict; for queued: the limit or the pause; for running: fix on a fix run's claim
 	Ack     int64  // the last comment ID the run took in
 	At      time.Time
 	Mode    string // on a claim made from a start label: plan or direct
@@ -35,6 +37,8 @@ type Marker struct {
 	SHA     string // on a done post: the commit pushed, whose CI the agent watches
 	CR      int    // on a done post: the number of the change request
 	Fix     string // on the done post of a fix run: what it fixed (CI, Push or Conflict); empty on any other post
+	// Until, on a queued comment of a paused host or the wait of a fix run that hit a limit: when runs start again.
+	Until time.Time
 }
 
 // The modes a claim names, and the reasons of the waits in the plan stage.
@@ -46,6 +50,9 @@ const (
 	// The limits a queued issue waits on: agent.max_parallel, or its project's max_parallel.
 	QueuedHost    = "max-parallel"
 	QueuedProject = "project-max-parallel"
+	// The pauses of a host: it hit a usage limit of the AI service, or its API quota (ADR-053).
+	QueuedLimit = "limit"
+	QueuedQuota = "quota"
 	// Fix marks the claim of a fix run; Push, CI and Conflict the waits a rejected push, a CI failure and a change
 	// request conflicting with its base end in.
 	Fix      = "fix"
@@ -107,6 +114,9 @@ func (m Marker) Format() string {
 		fmt.Fprintf(&b, " cr=%d", m.CR)
 	}
 	add("fix", m.Fix)
+	if !m.Until.IsZero() {
+		fmt.Fprintf(&b, " until=%s", m.Until.UTC().Format(time.RFC3339))
+	}
 	b.WriteString(" -->")
 	return b.String()
 }
@@ -153,6 +163,8 @@ func Parse(body string) (*Marker, bool) {
 			m.CR, _ = strconv.Atoi(v)
 		case "fix":
 			m.Fix = v
+		case "until":
+			m.Until, _ = time.Parse(time.RFC3339, v)
 		}
 	}
 	if m.V < 1 {

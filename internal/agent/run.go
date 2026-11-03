@@ -273,7 +273,8 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) (o *outcome) {
 		}()
 	}
 	include := p.IncludeUntrusted && a.isPrivate(p.Ref)
-	in := prompt.Input{Ref: is.Ref, Title: is.Title, Body: is.Body, IncludeUntrusted: include, Nonce: newID()}
+	in := prompt.Input{Ref: is.Ref, Title: is.Title, Body: is.Body, IncludeUntrusted: include, Nonce: newID(),
+		Resumed: pl.resumeNote != 0 && pl.kind != planRun}
 	for i, c := range pl.comments {
 		var k prompt.Kind
 		switch pl.kinds[i] {
@@ -330,6 +331,7 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) (o *outcome) {
 	stopProgress := a.followProgress(ctx, is.Ref, rec, filepath.Join(a.runDir(rec.Run), "stream.jsonl"))
 	res, err := claudecode.Run(ctx, req)
 	stopProgress()
+	a.addCost(res)
 	discarded := false
 	if head != "" {
 		// A plan run changes nothing; whatever it changed anyway is thrown away, also when it failed.
@@ -348,6 +350,16 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) (o *outcome) {
 		return nil
 	case res.TimedOut:
 		return o.fail(fmt.Sprintf(a.msg.timeout, a.Config.Agent.Timeout))
+	case res.Limit != nil:
+		// The service refused the run on a limit: pause the host, and put the issue back in the queue to resume once
+		// the pause ends (ADR-053). A fix run cannot wait in the queue, so it waits for a reply.
+		until := a.pauseForLimit(res.Limit)
+		a.logf("%s: run %s hit a usage limit (%s): %s", is.Ref, rec.Run, res.Limit.Kind, res.Limit.Message)
+		a.Audit.Log("run.limited", map[string]any{"issue": is.Ref.String(), "run": rec.Run, "kind": res.Limit.Kind, "until": until.UTC().Format(time.RFC3339)})
+		if pl.kind == fixRun {
+			return o.limitedFix(a.Config.Host.Name, until)
+		}
+		return o.limited(a.Config.Host.Name, until)
 	}
 	if pl.kind == planRun {
 		return a.planOutcome(res, pl, o, discarded)
