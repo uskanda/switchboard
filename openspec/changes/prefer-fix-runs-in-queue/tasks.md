@@ -14,9 +14,9 @@
 
 ## 2. 文書
 
-- [ ] 2.1 `docs/DECISIONS.md`にADR-048を足し、textlintが通ることを確かめる
-- [ ] 2.2 `docs/DESIGN.md`のschedulerの節と、`README.md`の同時実行の節に、直す実行が順番待ちより先に始まることを足す。textlintが通ることを確かめる
+- [x] 2.1 `docs/DECISIONS.md`にADR-048を足し、textlintが通ることを確かめる
+- [x] 2.2 `docs/DESIGN.md`のschedulerの節と、`README.md`の同時実行の節に、直す実行が順番待ちより先に始まることを足す。textlintが通ることを確かめる
 
 ## 3. 全体の確認
 
-- [ ] 3.1 `make verify`と`openspec validate prefer-fix-runs-in-queue --strict`が通ることを確かめる
+- [x] 3.1 `make verify`と`openspec validate prefer-fix-runs-in-queue --strict`が通ることを確かめる
