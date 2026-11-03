@@ -133,7 +133,7 @@ GitHubには「XをYに置き換える」操作がない。書き込み系APIも
 
 1. detector：ポーリング（既定）または中継SSEで、更新の可能性があるissueを検出して次の段へ渡す。中継モードでも `reconcile_interval` ごとに全担当プロジェクトをポーリングして照合する。中継イベントはissue単位で3秒程度デバウンスする（ラベル変更とコメントは別イベントで届くため）
 2. evaluator：issueを **自分のトークンで** 取得し直し、6章の信頼判定と5.1の遷移表から「やること」を決める。担当外プロジェクト・非信頼入力は理由付きで監査ログに記録して捨てる
-3. scheduler：端末内の同時実行数（`agent.max_parallel`、既定1）とissue単位のファイルロックを管理する。プロジェクトごとの同時実行数（`projects[].max_parallel`）も、設定にあれば守る。空いたスロットは、順番待ちに入った順に渡す。`agent.prefer_plan` がオンなら、計画の実行を先に渡す（ADR-046）。サブスクリプションの利用上限に達した場合は、その端末の新規実行を解除時刻まで止める〔検証V12〕
+3. scheduler：端末内の同時実行数（`agent.max_parallel`、既定1）とissue単位のファイルロックを管理する。プロジェクトごとの同時実行数（`projects[].max_parallel`）も、設定にあれば守る。空いたスロットは、順番待ちに入った順に渡す。`agent.prefer_plan` がオンなら、計画の実行を先に渡す（ADR-046）。利用上限か、API利用のクオータ（`quota`）に達したら、その端末の新規実行を解除時刻まで止め、その間のissueは順番待ちとする（ADR-047）〔検証V12〕
 4. runner：worktreeを用意し `claude -p` を起動・監視する（4.4）
 5. finalizer：終了プロトコルを解釈し（5章）、出力検査 → push・PR → コメント → ラベルの順で書き戻す。書き戻しは冪等（同じrunの結果を二重投稿しない：コメント本文のマーカーに `run=` を入れ、投稿前に同じrunのマーカーがないか確認する）
 
@@ -268,7 +268,8 @@ ADR-007（公開方法）は、当面は公開しないと決めた。公開す�
 | running | 実行終了 | outcome = waiting | 質問をコメント（マーカー付き） | waiting |
 | running | 実行終了 | outcome = done / 出力検査 OK | push → PR 作成 → 結果コメント | done |
 | running | 実行終了 | outcome なし・異常終了・タイムアウト・max-turns・出力検査 NG | 理由をコメント | waiting（reason=error / verify） |
-| running | 実行終了 | 利用上限 | 解除予定をコメント、端末の scheduler を停止 | waiting（reason=limit） |
+| running | 実行終了 | 利用上限（直す実行を除く） | 端末の scheduler を解除時刻まで停止、解除予定を順番待ちのコメント（`reason=limit run=<実行> until=<時刻>`）で知らせる（ADR-047） | ready（順番待ち。解除後に同じ周期で再開） |
+| running | 実行終了 | 直す実行が利用上限 | 端末の scheduler を停止、理由と解除予定をコメント（`until` 付き、直す回数に数えない） | waiting（reason=error） |
 | running | 実行中 | close された / `agent:running` が外された | プロセス停止、キャンセルを記録（ラベルは触らない） | （人間の操作のまま） |
 | waiting | 新着コメント | `ack` より後に信頼済みコメントがある / 担当端末が自分 / worktree の Claude 設定ファイルがベースと一致（ADR-018） / ロック取得 | ラベル付け替え → resume または新規起動 | running |
 | running → waiting 直後 | — | 実行中に信頼済みコメントが届いていた（ADR-016） | 待たずに直ちに再実行 | running |
@@ -296,7 +297,7 @@ Claudeには最終出力として次のどちらかを返させる。
 1. 次のどれかに当たれば `waiting(reason=error)` とする〔確認済C24〕。
    - タイムアウト、exit code ≠ 0、`is_error`
    - `subtype` が `error_max_turns`・`error_during_execution`・`error_max_structured_output_retries` 等
-2. 利用上限の兆候 → `waiting(reason=limit)`〔検証V12〕
+2. アダプタが利用上限と判定した → 順番待ちに戻す（ADR-047。直す実行なら `waiting(reason=error)`）〔検証V12〕。1より先に判定する
 3. `structured_output` がない・スキーマ不一致 → `waiting(reason=error)`
 4. `status=waiting` のとき、resultの `permission_denials` が空でなければ `reason=permission` とする〔確認済C15、形はV11〕。空なら `reason=question` とする
 5. `status=done` → 6.3の出力検査へ。NGなら `waiting(reason=verify)`
@@ -375,7 +376,8 @@ CI設定の変更を止める理由：pushしただけでCIが走るため、CI�
 |---|---|---|
 | `host` `session` `state` `at` | 既存 | SPEC.md 5 章のとおり |
 | `run` | 追加 | 実行ID（ULID）。finalizer の二重投稿防止と監査ログとの突合 |
-| `reason` | 追加 | waiting の理由：`question` / `permission` / `error` / `verify` / `limit` |
+| `reason` | 追加 | waiting の理由：`question` / `permission` / `error` / `verify` ほか。queued の理由：`max-parallel` / `project-max-parallel` / `limit` / `quota`（ADR-047） |
+| `until` | 追加 | 端末が新しい実行を再び始める時刻。上限とクオータの順番待ちと、上限で止まった直す実行の待ちに付く（ADR-047） |
 | `ack` | 追加 | この実行が取り込んだ最後のコメントID（5.3） |
 
 未知のキーは無視し、`v` が大きい場合は表示のみ行う（前方互換）。
@@ -449,7 +451,7 @@ agent:
 | `claude -p` のハング | `agent.timeout` で、4.3 と同じ SIGINT → SIGTERM → SIGKILL の順にプロセスグループを停止 |
 | フォージ API の失敗 | ポーリングのたびに再試行する（`fix-agent-stuck-issues`）。書き戻しは run-dir の `outcome.json` から再開でき、同じ run のコメントは二度投稿しない。評価に失敗した issue は、`since` を止めて次のポーリングで評価し直す。やり直すものがある間は、中継につながっていてもポーリング間隔で回す |
 | 中継の停止・切断 | 自動でポーリング間隔に戻す（SPEC.md 7 章）。再接続時は `Last-Event-ID` で回収 |
-| 利用上限 | 端末の scheduler を一時停止。待ちは `reason=limit` として受信箱に出る |
+| 利用上限・クオータ | 端末の scheduler を解除時刻まで一時停止（`pause.json`、再起動しても引き継ぐ）。issueは `reason=limit` / `quota` の順番待ちとして、解除時刻と一緒に受信箱に出る（ADR-047） |
 | ラベルの不整合（agent:* が複数） | reconciler が正規化し、監査ログに残す |
 | 同じ issue を 2 端末が担当（設定ミス） | 担当は設定で固定されるが、念のため running マーカーの `host` が自分でない場合は実行しない |
 

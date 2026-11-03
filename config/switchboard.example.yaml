@@ -55,6 +55,11 @@ agent:
   max_parallel: 1                     # runs at once on this host; read again without a restart
   max_turns: 80
   max_fix_attempts: 2                 # fix runs an issue gets from CI failures and rejected pushes; 0 turns them off
+  limit_wait: 30m                     # how long to pause after a usage limit whose reset time is unknown
+
+# quota:                              # API cost caps of this host, in USD; used only with claude.auth: api_key
+#   daily_usd: 20                     # local day; no run starts after the day's costs reach it, until midnight
+#   monthly_usd: 300
 
 projects:
   - ref: gh:YOUR_GITHUB_USER/switchboard-sandbox

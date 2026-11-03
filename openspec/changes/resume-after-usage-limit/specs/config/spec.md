@@ -15,7 +15,7 @@
 ### Requirement: クオータの設定
 設定は、最上位の `quota` 節で、`<quota.daily_usd>` と `<quota.monthly_usd>` を受け付けなければならない（MUST）。書かれていない項目のクオータは無効とする。
 どちらかが負のとき、設定の読み込みは失敗しなければならない（MUST）。
-`<claude.auth>` が `subscription` で `quota` が書かれているとき、設定の検査（`switchboard doctor`）は、クオータを使わないという警告を出さなければならない（MUST）。
+`<claude.auth>` が `subscription` で `quota` が書かれているとき、`switchboard doctor` は、クオータを使わないという警告を出さなければならない（MUST）。
 
 #### Scenario: 日のクオータを書く
 - **WHEN** `quota: {daily_usd: 5}` と書いた設定を読む

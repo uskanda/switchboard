@@ -45,7 +45,7 @@ issueを順番待ちにしたとき、エージェントは、そのissueにマ�
 
 ### Requirement: 上限で止まった実行の順番待ちへの戻し
 実行が利用上限で終わったとき、エージェントは、そのissueを `agent:ready` に戻さなければならない（MUST）。
-実行が利用上限で終わったとき、エージェントは、結果のコメントの代わりに、マーカー `state=queued reason=limit` と再開の時刻を持つ順番待ちのコメントを投稿しなければならない（MUST）。
+実行が利用上限で終わったとき、エージェントは、結果のコメントの代わりに順番待ちのコメントを投稿しなければならない（MUST）。そのマーカーは `state=queued reason=limit` と再開の時刻を持つ。
 利用上限は、実行器のアダプタが実行の結果から検出する。Claude Codeでは、rejectedの `rate_limit_event` か、エラーのresultの `api_error_status=429` である。
 エージェントは、利用上限で終わった実行を通知してはならない（MUST NOT）。
 
@@ -67,7 +67,7 @@ issueを順番待ちにしたとき、エージェントは、そのissueにマ�
 - **THEN** 再開した実行は、承認された計画の実装として動き、計画の質問をやり直さない
 
 ### Requirement: 再開した実行のプロンプト
-上限からの再開で始まる実行のプロンプトに、エージェントは、前の実行が利用上限で途中で止まったことと、worktreeの変更から続けることを書かなければならない（MUST）。
+上限からの再開で始まる実行のプロンプトに、エージェントは、前の実行が利用上限に当たって途中で止まったことと、worktreeの変更から続けることを書かなければならない（MUST）。
 計画の実行のプロンプトには、この一文を足してはならない（MUST NOT）。
 
 #### Scenario: 実装の再開
@@ -99,7 +99,8 @@ issueを順番待ちにしたとき、エージェントは、そのissueにマ�
 
 ### Requirement: APIのクオータ
 `<claude.auth>` が `api_key` の間、実行が終わったとき、エージェントは、その実行の費用を端末の日と月の合計に足さなければならない（MUST）。日と月は端末のローカル時刻で数える。
-`<claude.auth>` が `api_key` の間、実行を始める前に、日の合計が `<quota.daily_usd>` 以上か、月の合計が `<quota.monthly_usd>` 以上のとき、エージェントはその実行を始めてはならない（MUST NOT）。そのissueは `reason=quota` の順番待ちにし、次の日（月の超過なら次の月）の0時に始める。
+`<claude.auth>` が `api_key` の間、日の合計が `<quota.daily_usd>` 以上のとき、エージェントは新しい実行を始めてはならない（MUST NOT）。そのissueは `reason=quota` の順番待ちにし、次の日の0時に始める。
+`<claude.auth>` が `api_key` の間、月の合計が `<quota.monthly_usd>` 以上のとき、エージェントは新しい実行を始めてはならない（MUST NOT）。そのissueは `reason=quota` の順番待ちにし、次の月の1日の0時に始める。
 実行の途中では、エージェントはクオータで実行を止めてはならない（MUST NOT）。
 `<claude.auth>` が `subscription` の間、エージェントは費用を数えてはならない（MUST NOT）。
 
@@ -108,5 +109,5 @@ issueを順番待ちにしたとき、エージェントは、そのissueにマ�
 - **THEN** そのissueは `reason=quota` の順番待ちになり、日付が変わると実行が始まる
 
 #### Scenario: サブスクリプションでは数えない
-- **WHEN** `<claude.auth>` が `subscription` で `<quota.daily_usd>` が1の端末で、費用1.2ドルの実行が終わる
-- **THEN** 次のissueは順番待ちにならずに始まる
+- **WHEN** `<claude.auth>` が `subscription`、`<quota.daily_usd>` が1の端末で、費用1.2ドルの実行が終わる
+- **THEN** 次のissueは、順番待ちを経ずに始まる
