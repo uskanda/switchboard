@@ -1,4 +1,4 @@
-import { approve, registerDevice } from "./api";
+import { approve, loginGitLab, registerDevice } from "./api";
 
 const origin = "http://192.168.0.10:8783";
 
@@ -35,5 +35,22 @@ describe("the app's POSTs", () => {
       throw new TypeError("Network request failed");
     });
     await expect(registerDevice(origin, "fcm-1", f)).resolves.toEqual({ ok: false, code: "unreachable", message: "Network request failed" });
+  });
+});
+
+describe("loginGitLab", () => {
+  it("gives the GitLab the WUI logs people in on", async () => {
+    const f = fakeFetch(200, { enabled: true, gitlab: "https://gl.example" });
+    await expect(loginGitLab(origin, f)).resolves.toBe("https://gl.example");
+    expect(f.mock.calls[0][0]).toBe("http://192.168.0.10:8783/api/auth");
+  });
+
+  it("gives nothing when the login is off or the WUI is older", async () => {
+    await expect(loginGitLab(origin, fakeFetch(200, { enabled: false }))).resolves.toBeNull();
+    await expect(loginGitLab(origin, fakeFetch(404, { code: "not_found" }))).resolves.toBeNull();
+    const down = jest.fn(async () => {
+      throw new TypeError("Network request failed");
+    });
+    await expect(loginGitLab(origin, down)).resolves.toBeNull();
   });
 });

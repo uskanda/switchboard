@@ -42,6 +42,10 @@ type Inbox interface {
 	Approve(ctx context.Context, ref string, since time.Time) error
 	MergeStatus(ctx context.Context, ref, sha string) (*inboxapi.MergeStatus, error)
 	Events(ctx context.Context, fn func(*inboxapi.Inbox)) error
+	AuthStatus(ctx context.Context) (*inboxapi.AuthStatus, error)
+	AuthStart(ctx context.Context, req inboxapi.AuthStartRequest) (*inboxapi.AuthStartResponse, error)
+	AuthCallback(ctx context.Context, req inboxapi.AuthCallbackRequest) (*inboxapi.AuthCallbackResponse, error)
+	Logout(ctx context.Context) error
 }
 
 // CodeUnavailable is the error code the web inbox answers with when the inbox service cannot be reached.
@@ -65,7 +69,17 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.Set("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Referrer-Policy", "no-referrer")
+	r = withSession(r)
 	switch {
+	case r.URL.Path == "/auth/login" && r.Method == http.MethodGet:
+		s.login(w, r)
+	case r.URL.Path == "/auth/callback" && r.Method == http.MethodGet:
+		s.callback(w, r)
+	case r.URL.Path == "/api/auth" && r.Method == http.MethodGet:
+		out, err := s.Inbox.AuthStatus(r.Context())
+		s.answer(w, out, err)
+	case r.URL.Path == "/api/logout" && r.Method == http.MethodPost:
+		s.logout(w, r)
 	case r.URL.Path == "/api/inbox" && r.Method == http.MethodGet:
 		out, err := s.Inbox.List(r.Context())
 		s.answer(w, out, err)
@@ -334,6 +348,13 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	if r.Context().Err() != nil {
 		return
 	}
+	if errors.Is(err, inboxapi.ErrUnauthenticated) {
+		// The page logs in again instead of reconnecting.
+		data, _ := json.Marshal(inboxapi.Error{Code: inboxapi.CodeUnauthenticated, Message: "log in to the web inbox first"})
+		fmt.Fprintf(w, "event: unauthenticated\ndata: %s\n\n", data)
+		fl.Flush()
+		return
+	}
 	msg := "the inbox service (switchboard inbox serve) is not reachable"
 	if err != nil && !errors.Is(err, inboxapi.ErrUnavailable) {
 		msg = err.Error()
@@ -361,6 +382,9 @@ var status = map[string]int{
 	inboxapi.CodePathTaken:      http.StatusConflict,
 	inboxapi.CodeConfigInvalid:  http.StatusUnprocessableEntity,
 	inboxapi.CodeConfigChanged:  http.StatusConflict,
+	// The login (issue #15).
+	inboxapi.CodeUnauthenticated: http.StatusUnauthorized,
+	inboxapi.CodeNotAllowed:      http.StatusForbidden,
 }
 
 func (s *Server) answer(w http.ResponseWriter, out any, err error) {

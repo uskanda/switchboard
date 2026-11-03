@@ -28,3 +28,18 @@ export const registerDevice = (origin: string, token: string, f: Fetch = fetch) 
 /** approve posts the approve word on an issue still waiting on the plan whose wait started at since. */
 export const approve = (origin: string, ref: string, since: string, f: Fetch = fetch) =>
   postJSON(origin, "/api/approve", { ref, since }, f);
+
+/**
+ * loginGitLab reads the WUI's GET /api/auth and gives the GitLab people log in on, or null when the login is off, the
+ * WUI predates it, or it cannot be reached.
+ */
+export async function loginGitLab(origin: string, f: Fetch = fetch): Promise<string | null> {
+  try {
+    const res = await f(origin + "/api/auth");
+    if (!res.ok) return null;
+    const s = (await res.json()) as { enabled?: boolean; gitlab?: string };
+    return s.enabled && s.gitlab ? s.gitlab : null;
+  } catch {
+    return null;
+  }
+}

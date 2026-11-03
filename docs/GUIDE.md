@@ -429,6 +429,35 @@ Web表示は、端末で受信ポートを開く唯一の部品である（ADR-0
 
 状態は `switchboard service status --inbox` と `--web` で見る。手で試すときは、`switchboard inbox serve` を動かしてから `switchboard-web serve` を動かす。このときソケットは `$XDG_RUNTIME_DIR/switchboard/inbox.sock` にでき、`web.yaml` の `socket` で場所を指定できる。
 
+#### GitLabでログインさせる
+
+`config.yaml` に `inbox.auth` を書くと、Web表示を開いた人にGitLabのログインを求める（ADR-059）。ログインできるのは、指定したGitLabのグループ（その下位のグループを含む）に属する人と、`owner` の1人だけである。書かなければ、今までどおりログインは求めない。
+
+1. GitLabで、アプリケーションを登録する。管理者なら `Admin > Applications`、そうでなければ利用者の設定の `Applications` で作る。confidentialにし、スコープは `openid`、`profile`、`api` を選ぶ。戻り先のURLは、`web.yaml` の `listen` を使って `http://192.168.0.82:8783/auth/callback` のように書く
+2. 表示されたsecretを、Secret Serviceに置く。secretは標準入力から読む
+
+   ```bash
+   secret-tool store --label='switchboard gitlab oidc' service switchboard/gitlab-oidc username token
+   ```
+
+3. 設定に `inbox.auth` を足し、`switchboard service install --inbox` で受信箱のサービスを置き直す。secretも、暗号化したクレデンシャルとしてサービスに渡る
+
+   ```yaml
+   inbox:
+     auth:
+       client_id: <アプリケーションのID>
+       client_secret_ref: switchboard/gitlab-oidc
+       member_groups: [team]
+       admin_groups: [team/leads]
+       owner: <あなたのGitLabのユーザー名>
+   ```
+
+ログインに使うのは、`forges.gitlab.base_url` のGitLabである。セッションは受信箱のサービスのメモリーにだけあり、受信箱のサービスを再起動すると、全員がログインし直す。セッションは、24時間使わないか、ログインから7日たつと終わる。グループから外された人は、トークンの更新（約2時間ごと）のときに締め出される。ヘッダには、ログインしたユーザー名とログアウトが出る。
+
+Web表示は当面HTTPで待つので、セッションのcookieは平文で流れる。同じLANで盗み見た人は、その利用者として操作できる。家の外から使うときと、信頼できない機器があるLANでは使わない（#155）。
+
+Androidのアプリでは、GitLabのログインの画面もアプリの中に開く。
+
 #### 中継のイベントで一覧をすぐ取り直す
 
 中継（[中継で返答にすぐ着手する](#中継で返答にすぐ着手する)）を置いた端末では、受信箱のサービスも中継につなげられる。webhookのイベントが届くと、`inbox.refresh_interval` を待たずに一覧を取り直す。続けて届いたイベントは、最初のイベントから2秒の間をまとめて1回にする。前回の取り直しから10秒たつまでは取り直さない。webhookの無いプロジェクト（GitHubのプロジェクトなど）の変化は、これまでどおり `inbox.refresh_interval` ごとの問い合わせで画面に出る。中継につないでいても、この間隔は延ばさない。

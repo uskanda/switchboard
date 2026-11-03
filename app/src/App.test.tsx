@@ -80,8 +80,9 @@ describe("the first start", () => {
 describe("the WUI", () => {
   it("registers the app's token with the WUI it shows", async () => {
     await opened();
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    const [url, init] = fetchMock.mock.calls[0];
+    // The WebView also asks the WUI's /api/auth for the GitLab of the login; the registration is a call of its own.
+    await waitFor(() => expect(fetchMock.mock.calls.some(([u]: [string]) => u === `${origin}/api/devices`)).toBe(true));
+    const [url, init] = fetchMock.mock.calls.find(([u]: [string]) => u === `${origin}/api/devices`);
     expect(url).toBe(`${origin}/api/devices`);
     expect(init.headers.Origin).toBe(origin);
   });

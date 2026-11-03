@@ -368,12 +368,17 @@ const (
 	CodePathTaken      = "path_taken"      // 409: another project is cloned at the path
 	CodeConfigInvalid  = "config_invalid"  // 422: the configuration would not validate
 	CodeConfigChanged  = "config_changed"  // 409: the file changed while the project was being added
+	// The refusals of the login (issue #15).
+	CodeUnauthenticated = "unauthenticated" // 401: inbox.auth is set and the request has no live session
+	CodeNotAllowed      = "not_allowed"     // 403: GitLab logged in someone who may not use the inbox
 )
 
 // Error is how the API answers a request it could not serve.
 type Error struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	// User is who GitLab logged in, on CodeNotAllowed.
+	User string `json:"user,omitempty"`
 }
 
 func (e *Error) Error() string { return e.Message }
@@ -413,6 +418,10 @@ func (e *Error) Is(target error) bool {
 		return e.Code == CodeConfigInvalid
 	case ErrConfigChanged:
 		return e.Code == CodeConfigChanged
+	case ErrUnauthenticated:
+		return e.Code == CodeUnauthenticated
+	case ErrNotAllowed:
+		return e.Code == CodeNotAllowed
 	}
 	return false
 }
@@ -438,6 +447,9 @@ var (
 	ErrPathTaken      = errors.New("another project is cloned at the path")
 	ErrConfigInvalid  = errors.New("the configuration would not be valid")
 	ErrConfigChanged  = errors.New("the configuration file was changed while adding")
+	// The refusals of the login.
+	ErrUnauthenticated = errors.New("not logged in")
+	ErrNotAllowed      = errors.New("the person may not use this inbox")
 	// ErrUnavailable is returned when the inbox service cannot be reached at all.
 	ErrUnavailable = errors.New("the inbox service is not reachable")
 )
