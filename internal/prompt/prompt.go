@@ -232,7 +232,9 @@ You run unattended on an issue, in its plan stage. Nobody can answer you during 
 
 ## Tools
 
-You may read and search files and run git status, git diff and git log. Other commands are refused, and the run goes on without them.
+- Read and search files with Read, Grep and Glob, not with cat, grep or find.
+- Shell commands run in a sandbox: they cannot reach the network, and whatever they change in the worktree is thrown away after the run.
+- git status, git diff and git log run outside the sandbox, each only as a single command on its own: not in a pipe, not after && or ;, and not starting with cd. Commands that write to the history, build or reach the forge are refused, and the run goes on without them.
 
 ## Rules
 
@@ -246,6 +248,26 @@ Write "questions", "plan" and "summary" in %[1]s.
 `, name, word)
 	return WithUserInstructions(s, extra)
 }
+
+// WithSandbox returns system with the section on the sandbox of a run that writes files. verify is the project's
+// verify command, which runs outside the sandbox with git (claudecode.Settings.Unsandboxed); blank when it has none.
+func WithSandbox(system, verify string) string {
+	outside := "Only git runs outside the sandbox"
+	if v := strings.Join(strings.Fields(verify), " "); v != "" {
+		outside = "Only git and " + "`" + v + "`" + " run outside the sandbox"
+	}
+	return system + fmt.Sprintf(sandbox, outside)
+}
+
+// sandbox is the section of WithSandbox; %s names the commands that run outside the sandbox.
+const sandbox = `
+## The sandbox
+
+- Your shell commands run in a sandbox. They may write only in the current directory and in $TMPDIR, and cannot reach the network, so dependencies cannot be downloaded.
+- Read, search and change files with Read, Grep, Glob, Edit and Write, not with cat >, heredocs or python3.
+- %s, and only as a single command on its own: not in a pipe, not after && or ;, and not starting with cd. Run them that way, or they run inside the sandbox and fail where they need what it withholds.
+- Never ask to run a command outside the sandbox (dangerouslyDisableSandbox): such a request is refused.
+`
 
 // WithUserInstructions returns system with the user's additional instructions added as its last section, or system
 // itself when extra is blank. The built-in rules win where the two conflict.

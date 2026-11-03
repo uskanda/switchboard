@@ -228,7 +228,7 @@ func TestLockedIssueIsNotStarted(t *testing.T) {
 func TestSecondAgentOnTheSameStateIsRefused(t *testing.T) {
 	x := newH(t, "", nil)
 	x.agent()
-	other := &Agent{Config: x.cfg, Forge: x.f, Judge: x.a.Judge, State: x.dir, Audit: x.audit}
+	other := &Agent{Config: x.cfg, Forge: x.f, Judge: x.a.Judge, State: x.dir, Audit: x.audit, CheckSandbox: noSandboxCheck}
 	if err := other.Start(x.ctx); err == nil {
 		other.Close()
 		t.Fatal("a second agent started on the same state directory")

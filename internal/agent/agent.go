@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/uskanda/switchboard/internal/claudecode"
 	"github.com/uskanda/switchboard/internal/config"
 	"github.com/uskanda/switchboard/internal/forge"
 	"github.com/uskanda/switchboard/internal/labels"
@@ -63,6 +64,9 @@ type Agent struct {
 	PushDelays []time.Duration
 	// Now is the clock of the CI watch; time.Now when nil.
 	Now func() time.Time
+	// CheckSandbox reports whether the sandbox of a run can work; it is called before every start of claude, and a
+	// run whose check fails ends in an error. claudecode.CheckSandbox with bwrap from PATH when nil.
+	CheckSandbox func(context.Context) error
 
 	ctx    context.Context // runs end when it does
 	unlock func()
@@ -1055,4 +1059,11 @@ func (a *Agent) claim(ctx context.Context, pl *plan, act *active) (bool, error) 
 	a.logf("%s: host %s claimed the issue first; this host does not run it", ref, firstHost)
 	a.Audit.Log("run.yielded", map[string]any{"issue": ref.String(), "run": act.run, "winner": firstHost, "comment": first.ID})
 	return false, nil
+}
+
+func (a *Agent) checkSandbox(ctx context.Context) error {
+	if a.CheckSandbox != nil {
+		return a.CheckSandbox(ctx)
+	}
+	return claudecode.CheckSandbox(ctx, "")
 }

@@ -151,6 +151,7 @@ claude -p \
   --session-id <新規UUID> \
   --output-format stream-json --verbose \
   --permission-mode dontAsk \
+  --setting-sources project,local \
   --settings <run-dir>/settings.json \
   --strict-mcp-config --mcp-config <run-dir>/mcp.json \
   --append-system-prompt-file <run-dir>/system.md \
@@ -166,8 +167,9 @@ claude -p \
 - `--permission-mode dontAsk` と明示allowで動かす。`-p` で事前許可のないツールは確認待ちにならず拒否され、最終resultの `permission_denials` に残る〔確認済C15、dontAskの厳密な挙動はV18〕
 - `--tools` で渡すツールを実行の種類ごとに固定する（ADR-052）。ファイルを書く実行は `Bash,Read,Edit,Write,Glob,Grep,WebSearch` に、`allow_tools_extra` の項目のツール名を足す。計画の実行は `Bash,Read,Glob,Grep,WebSearch` とする。`--model` と `--effort` は、`agent.model`、`agent.effort`、`agent.plan`、`agent.fix` の値があるときだけ付ける
 - `--strict-mcp-config` と空に近い `mcp.json` で、対象リポジトリの `.mcp.json` 由来のMCPサーバーを読み込ませない
-- `-p` は `--bare` を付けない限り、対象リポジトリの `.claude/settings.json` のフックと `.mcp.json` を信頼確認なしで読み込む〔確認済C19〕。`--bare` はサブスクリプションのOAuth認証を読まないため使えない〔確認済C19, C21〕。対策は次の3つ。(1) `--strict-mcp-config` でMCPを固定する。(2) `--setting-sources` は付けず、プロジェクト設定も読み込む（ADR-028。V17のとおり、外すと `CLAUDE.md` も読み込まれない）。(3) 実行前にworktreeの `.claude/`・`.mcp.json`・`CLAUDE.md` がベースブランチと一致するか確認し、一致しなければ実行しない（ADR-018）
-- `settings.json` はrunごとにエージェントが生成する（許可ツール・拒否ルール・フック・サンドボックス設定）。フックはこの設定経由でのみ登録するので、マスターが手で開く対話セッションには影響しない
+- `-p` は `--bare` を付けない限り、対象リポジトリの `.claude/settings.json` のフックと `.mcp.json` を信頼確認なしで読み込む〔確認済C19〕。`--bare` はサブスクリプションのOAuth認証を読まないため使えない〔確認済C19, C21〕。対策は次の3つ。(1) `--strict-mcp-config` でMCPを固定する。(2) `--setting-sources project,local` で、ユーザーの全体設定を外してプロジェクト設定を読み込む（ADR-028、ADR-057）。V17のとおり、プロジェクト設定を外すと `CLAUDE.md` も読み込まれない。(3) 実行前にworktreeの `.claude/`・`.mcp.json`・`CLAUDE.md` がベースブランチと一致するか確認し、一致しなければ実行しない（ADR-018）
+- `settings.json` はrunごとにエージェントが生成する（許可ツール・拒否ルール・フック・サンドボックス設定）。sandboxは常に有効にする（ADR-057）。`failIfUnavailable` を有効にし、`allowUnsandboxedCommands` を無効にする。sandboxの中のBashは許可の規則なしで動き、拒否の規則だけが働く。`excludedCommands` は、`git` と検証コマンドの全体とする。`filesystem.denyRead` には、資格情報の置き場所、設定ファイルのディレクトリ、状態のディレクトリの項目を入れる。状態のディレクトリの `worktrees` と、実在しないパスは入れない。フックはこの設定経由でのみ登録するので、マスターが手で開く対話セッションには影響しない
+- Linuxでは、claudeを起動する前に `bwrap --ro-bind / / --dev /dev --unshare-all true` を実行する。名前空間を作れなければ、実行を誤りにする（V51）
 - 作業ディレクトリは、issueごとに固定したパスのworktreeとする。パスは `<data>/worktrees/<forge>/<project>/issue-<n>`。ブランチは `switchboard/issue-<n>`。`--resume` は作業ディレクトリに縛られず、IDで全プロジェクトから探す〔確認済C17〕。それでもファイルの文脈を揃えるため、パスは固定する
 - transcript（`~/.claude/projects/…/<session-id>.jsonl`）の形式は内部仕様でバージョンごとに変わる〔確認済C22〕ので解析しない。必要な情報はstream-jsonとStopフックの `last_assistant_message` から取る
 
@@ -366,7 +368,7 @@ CI設定の変更を止める理由：pushしただけでCIが走るため、CI�
 
 サンドボックスを使う場合は、次の点に注意する〔すべて確認済C20〕。
 
-- 既定で無効。起動できない環境では **既定でサンドボックスなしのまま続行する** ので、`sandbox.failIfUnavailable: true` を必須にする
+- 既定で無効。起動できない環境では **既定でサンドボックスなしのまま続行する** ので、`sandbox.failIfUnavailable: true` を必須にする。この設定は、bwrapはあるが名前空間を作れない環境を検出しない（V51）。そのため、エージェントが起動前に確かめる（ADR-057）
 - 覆うのはシェルコマンドとその子プロセスだけ。ファイル系ツール・MCPサーバー・フックはサンドボックスの外で動く
 - `sandbox.filesystem.denyRead` はReadツールを止めず、`sandbox.network.allowedDomains` はWebFetchを制限しない。権限ルール側の `Read(~/.ssh/**)` 等のdenyとWebFetchのdenyを必ず併用する
 

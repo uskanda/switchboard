@@ -199,6 +199,7 @@ func (x *h) agentWith(edit func(*Agent)) *Agent {
 		Config: x.cfg, Forge: x.f, Judge: j, State: x.dir, Audit: x.audit,
 		Env:      append(os.Environ(), x.envExtra...),
 		IntGrace: 200 * time.Millisecond, TermGrace: 200 * time.Millisecond,
+		CheckSandbox: noSandboxCheck,
 	}
 	if edit != nil {
 		edit(x.a)
@@ -375,3 +376,6 @@ func (x *h) originHas(branch string) bool {
 	cmd.Stdout = &out
 	return cmd.Run() == nil
 }
+
+// noSandboxCheck passes the sandbox check, so that the tests run where bwrap cannot create namespaces.
+func noSandboxCheck(context.Context) error { return nil }

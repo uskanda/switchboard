@@ -219,3 +219,31 @@ func TestWithScreenshotsAddsThePlaceOfTheImages(t *testing.T) {
 		}
 	}
 }
+
+func TestWithSandboxSaysHowToWorkInTheSandbox(t *testing.T) {
+	sys := System("en", "main")
+	s := WithSandbox(sys, "make verify")
+	if !strings.HasPrefix(s, sys) {
+		t.Fatalf("WithSandbox changed the rules:\n%s", s)
+	}
+	for _, want := range []string{"## The sandbox", "$TMPDIR", "network", "Read, Grep, Glob, Edit and Write", "`make verify`", "on its own", "&&", "cd", "dangerouslyDisableSandbox"} {
+		if !strings.Contains(s[len(sys):], want) {
+			t.Errorf("the section lacks %q:\n%s", want, s[len(sys):])
+		}
+	}
+	if none := WithSandbox(sys, " "); strings.Contains(none, "``") || !strings.Contains(none, "Only git runs outside") {
+		t.Errorf("without a verify command:\n%s", none[len(sys):])
+	}
+}
+
+func TestPlanSystemPromptSaysCommandsRunInTheSandbox(t *testing.T) {
+	s := PlanSystem("en", "/ok", "")
+	for _, want := range []string{"sandbox", "Read, Grep and Glob", "thrown away", "on its own"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("plan system prompt lacks %q", want)
+		}
+	}
+	if strings.Contains(s, "Other commands are refused") {
+		t.Error("the plan system prompt still says every other command is refused")
+	}
+}

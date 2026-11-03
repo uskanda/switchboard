@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -22,10 +23,16 @@ import (
 	"github.com/uskanda/switchboard/internal/usage"
 )
 
-// Settings is the per-run Claude Code settings file: what the run may and may not do without asking.
+// Settings is the per-run Claude Code settings file: what the run may and may not do without asking, and what its
+// sandbox lets commands reach. The sandbox is always on: commands may write only to the working directory and
+// $TMPDIR, reach no network, and run without an allow rule unless a deny rule matches (V51).
 type Settings struct {
 	Allow []string
 	Deny  []string
+	// Unsandboxed are the commands that run outside the sandbox (excludedCommands). They still need an allow rule.
+	Unsandboxed []string
+	// DenyRead are the paths commands in the sandbox may not read. Each should exist (V52).
+	DenyRead []string
 }
 
 // Request describes one run.
@@ -41,7 +48,7 @@ type Request struct {
 	Schema       string // JSON schema of the final structured output
 	// Tools are the built-in tools the session gets (--tools); nil leaves the CLI's default set.
 	Tools []string
-	// Model and Effort pick the model and the effort level; empty leaves them to the CLI and the user's settings.
+	// Model and Effort pick the model and the effort level; empty leaves them to the CLI.
 	Model, Effort string
 	Auth          string // "subscription" or "api_key"
 	Timeout       time.Duration
@@ -121,6 +128,8 @@ func Args(req Request) []string {
 		"--session-id", req.SessionID,
 		"--output-format", "stream-json", "--verbose",
 		"--permission-mode", "dontAsk",
+		// The user's own settings (their sandbox, hooks, plugins and allow rules) stay out of the run.
+		"--setting-sources", "project,local",
 		"--settings", filepath.Join(req.RunDir, "settings.json"),
 		"--strict-mcp-config", "--mcp-config", filepath.Join(req.RunDir, "mcp.json"),
 		"--append-system-prompt-file", filepath.Join(req.RunDir, "system.md"),
@@ -143,14 +152,26 @@ func writeFiles(req Request) error {
 	if err := os.MkdirAll(req.RunDir, 0o700); err != nil {
 		return err
 	}
-	allow, deny := req.Settings.Allow, req.Settings.Deny
-	if allow == nil {
-		allow = []string{}
+	list := func(xs []string) []string {
+		if xs == nil {
+			return []string{}
+		}
+		return xs
 	}
-	if deny == nil {
-		deny = []string{}
-	}
-	settings, err := json.MarshalIndent(map[string]any{"permissions": map[string]any{"allow": allow, "deny": deny}}, "", "  ")
+	s := req.Settings
+	settings, err := json.MarshalIndent(map[string]any{
+		"permissions": map[string]any{"allow": list(s.Allow), "deny": list(s.Deny)},
+		"sandbox": map[string]any{
+			"enabled":           true,
+			"failIfUnavailable": true,
+			// No retry outside the sandbox (dangerouslyDisableSandbox).
+			"allowUnsandboxedCommands": false,
+			// The CLI's default, written out so that a change of default does not change what runs unasked.
+			"autoAllowBashIfSandboxed": true,
+			"excludedCommands":         list(s.Unsandboxed),
+			"filesystem":               map[string]any{"denyRead": list(s.DenyRead)},
+		},
+	}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -339,6 +360,31 @@ func Parse(r io.Reader, res *Result) error {
 		}
 	}
 	return sc.Err()
+}
+
+// CheckSandbox reports whether the sandbox can run on this machine. On Linux it starts bwrap (the given binary,
+// or "bwrap" from PATH when empty) in fresh namespaces: claude refuses to start without bwrap, but where bwrap
+// is present and cannot create namespaces (inside another sandbox) claude starts and every command fails (V51).
+// Elsewhere the sandbox is part of the OS, and the check passes.
+func CheckSandbox(ctx context.Context, bwrap string) error {
+	if runtime.GOOS != "linux" {
+		return nil
+	}
+	if bwrap == "" {
+		bwrap = "bwrap"
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	var stderr strings.Builder
+	cmd := exec.CommandContext(ctx, bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--unshare-all", "true")
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			return errors.New(msg)
+		}
+		return fmt.Errorf("%s: %w", bwrap, err)
+	}
+	return nil
 }
 
 // CheckedVersion is the claude version the flags and output formats above were checked against.

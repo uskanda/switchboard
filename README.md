@@ -232,6 +232,16 @@ switchboard instructions edit gh:o/switchboard  # 1つのプロジェクトの�
 
 受信箱のWeb表示の「設定」の画面からも編集できる。保存は32 KiBまでで、秘密を含むように見えるものは拒まれる。保存のたびに、監査ログに内容のSHA-256が残る。ファイルは端末ごとにある。Web表示が変えるのは、Web表示の端末のファイルだけである。エージェントが別の端末で動くときは、その端末で編集するか、設定ファイルと一緒に同期する。
 
+### 実行のsandbox
+
+実行の中のシェルのコマンドは、実行ごとのsandboxの中で動く。書き込めるのはworktreeと `$TMPDIR` だけで、ネットワークには接続できない。資格情報の置き場所（`~/.ssh`、`~/.config/gh` など）と、switchboardの設定と状態のディレクトリは読めない。sandboxの中のコマンドは、許可の規則が無くても動く。拒否する操作（`git push`、`git rebase`、`gh` など）は、sandboxの中でも拒否される。
+
+sandboxの外で動くのは、`git` と、プロジェクトの検証コマンドの全体（`make verify` など）だけである。この2つは、許可の規則で決まる。同じ道具のほかのコマンド（`make deploy` など）は、sandboxの中で動く。
+
+実行は、Claude Codeの利用者の全体設定（`~/.claude/settings.json` のsandbox、フック、プラグイン、許可の規則）を使わない。対象リポジトリのプロジェクト設定は読み込む。
+
+Linuxの端末には、`bubblewrap` と `socat` が要る。エージェントは実行のたびに、claudeを起動する前に、bwrapで名前空間を作れるかを確かめる。作れないとき（別のsandboxやコンテナの中など）は、claudeを起動せず、実行を誤りにして理由をコメントに書く。
+
 ### 実装の実行に足す許可と指示
 
 ファイルを書く実行（直接の実装、承認のあとの実装、CIとpushの失敗を直す実行、baseとの衝突を直す実行）には、許可するツールと利用者の追加の指示を足せる。手作業で使っているスキルやCLIを、自動の実行でも使わせるためのものである。計画の実行には、どちらも足さない。
@@ -246,13 +256,13 @@ projects:
     allow_tools_extra: ["Bash(openspec *)"]
 ```
 
-`allow_tools_extra` の各項目のツール名（`Skill`、`Bash(openspec *)` なら `Bash`）は、実行に渡すツールにも足される。実行に渡すツールは、ファイルを書く実行では `Bash`、`Read`、`Edit`、`Write`、`Glob`、`Grep`、`WebSearch` だけである。計画の実行には、`Bash`、`Read`、`Glob`、`Grep`、`WebSearch` を渡す。
+sandboxの中のコマンドは規則なしで動くので、`Bash(openspec *)` のような `Bash` の項目は、ほとんどの場合要らない。ネットワークやsandboxの外の書き込みが要るコマンドは、項目を足しても動かない。`allow_tools_extra` の各項目のツール名（`Skill`、`Bash(openspec *)` なら `Bash`）は、実行に渡すツールにも足される。実行に渡すツールは、ファイルを書く実行では `Bash`、`Read`、`Edit`、`Write`、`Glob`、`Grep`、`WebSearch` だけである。計画の実行には、`Bash`、`Read`、`Glob`、`Grep`、`WebSearch` を渡す。
 
 設定を読むときに、空の項目、制限の無い `Bash` と `Bash(*)`、どの実行でも拒否する操作（`git push`、`git rebase`、`gh`、`WebFetch`）を名指しする項目は誤りになる。`Bash(git *)` のような広い項目は通るが、拒否する操作は拒否されたままである。プロジェクトの `allow_tools_extra` は再起動せずに反映され、`agent.allow_tools_extra` は再起動で反映される。許可は設定ファイルにだけ書け、受信箱のWeb表示からは変えられない。
 
 ### 実行のモデルとeffort
 
-`agent.model` と `agent.effort` で、実行のモデルとeffortを選べる。計画の実行は `agent.plan`、直す実行（CIとpushの失敗、baseとの衝突）は `agent.fix` で上書きできる。値が空のときは、Claude Codeの既定とユーザーの設定が使われる。effortは `low`、`medium`、`high`、`xhigh`、`max` のどれかで、それ以外は設定の誤りになる。どちらも再起動で反映される。
+`agent.model` と `agent.effort` で、実行のモデルとeffortを選べる。計画の実行は `agent.plan`、直す実行（CIとpushの失敗、baseとの衝突）は `agent.fix` で上書きできる。値が空のときは、Claude Codeの既定が使われる。利用者の全体設定のモデルとeffortは使われない。effortは `low`、`medium`、`high`、`xhigh`、`max` のどれかで、それ以外は設定の誤りになる。どちらも再起動で反映される。
 
 ```yaml
 agent:

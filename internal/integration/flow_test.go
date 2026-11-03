@@ -132,7 +132,7 @@ projects:
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := &agent.Agent{Config: cfg, Forge: agentForge, Judge: j, State: dir, Audit: audit}
+	a := &agent.Agent{Config: cfg, Forge: agentForge, Judge: j, State: dir, Audit: audit, CheckSandbox: noSandboxCheck}
 	if err := a.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -209,3 +209,6 @@ projects:
 		t.Fatalf("inbox after close = %+v, %v", items, err)
 	}
 }
+
+// noSandboxCheck passes the sandbox check, so that the tests run where bwrap cannot create namespaces.
+func noSandboxCheck(context.Context) error { return nil }
