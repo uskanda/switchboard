@@ -3,6 +3,7 @@ import { cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
 import { forgetDrafts } from "@/lib/drafts";
 import { forgetIssues } from "@/lib/issueCache";
+import { forgetProjectIcons } from "@/lib/projectIcons";
 import { dismiss } from "@/lib/toast";
 import { installObservers, resetObservers } from "@/test-observers";
 
@@ -29,6 +30,7 @@ if (typeof Element.prototype.setPointerCapture !== "function") {
 afterEach(() => {
   cleanup();
   forgetIssues();
+  forgetProjectIcons();
   forgetDrafts();
   resetObservers();
   dismiss();

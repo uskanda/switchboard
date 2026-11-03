@@ -220,6 +220,12 @@ export const merge = (ref: string, sha: string) =>
     body: JSON.stringify({ ref, sha }),
   });
 
+/**
+ * getProjectIcons reads the emoji icons of the configuration, by project reference. The other projects' icons are
+ * images at /api/project-icon?ref=, which answers 404 when a project has none.
+ */
+export const getProjectIcons = () => call<Record<string, string>>("/api/project-icons");
+
 /** issuePath is the page of one issue; the ref is one path segment. */
 export const issuePath = (ref: string) => `/issue/${encodeURIComponent(ref)}`;
 
