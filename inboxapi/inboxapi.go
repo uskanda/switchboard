@@ -181,10 +181,12 @@ const (
 	StartGo    = "go"
 )
 
-// IssueTarget is a project an issue can be opened in, with Host, the machine that runs it.
+// IssueTarget is a project an issue can be opened in, with Host, the machine that runs it, and PlanFirst, whether its
+// ready label starts with a plan. An older inbox service leaves PlanFirst out.
 type IssueTarget struct {
-	Ref  string `json:"ref"`
-	Host string `json:"host"`
+	Ref       string `json:"ref"`
+	Host      string `json:"host"`
+	PlanFirst bool   `json:"plan_first"`
 }
 
 // IssueStart is a kind of start label (StartReady, StartPlan, StartGo) and the label it stands for.
@@ -226,6 +228,18 @@ type CreateIssueResponse struct {
 type MergeRequest struct {
 	Ref string `json:"ref"`
 	SHA string `json:"sha"`
+}
+
+// RegisterDeviceRequest is the body of POST /v1/devices: the FCM token of an app that wants the push notifications.
+type RegisterDeviceRequest struct {
+	Token string `json:"token"`
+}
+
+// ApproveRequest is the body of POST /v1/approve: the issue, and the start of the wait the notification reported
+// (its waiting_since). The inbox service posts the approve word only while the issue still waits on that plan.
+type ApproveRequest struct {
+	Ref   string    `json:"ref"`
+	Since time.Time `json:"since"`
 }
 
 // The codes of Error.
