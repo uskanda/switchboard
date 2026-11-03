@@ -49,7 +49,7 @@ func withIssues(t *testing.T) *issuesWorld {
 		Host:   config.Host{Name: "here"},
 		Labels: config.Labels{Ready: "agent:ready", Plan: "agent:plan", Go: "agent:go", Running: "agent:running", Waiting: "agent:waiting", Done: "agent:done"},
 		Projects: []config.Project{
-			{Ref: "gh:o/r", Forge: "gh", Owner: "o", Repo: "r", Host: "here"},
+			{Ref: "gh:o/r", Forge: "gh", Owner: "o", Repo: "r", Host: "here", PlanFirst: true},
 			{Ref: "gl:nas/sb", Forge: "gl", Owner: "nas", Repo: "sb", Host: "nas"},
 			{Ref: "gh:o/far", Forge: "gh", Owner: "o", Repo: "far", Host: "elsewhere"},
 		},
@@ -92,7 +92,7 @@ func TestIssueTargetsListsEveryProjectWithItsMachine(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); rec.Code != http.StatusOK || err != nil {
 		t.Fatalf("GET = %d %s", rec.Code, rec.Body)
 	}
-	wantItems := []inboxapi.IssueTarget{{Ref: "gh:o/r", Host: "here"}, {Ref: "gl:nas/sb", Host: "nas"}, {Ref: "gh:o/far", Host: "elsewhere"}}
+	wantItems := []inboxapi.IssueTarget{{Ref: "gh:o/r", Host: "here", PlanFirst: true}, {Ref: "gl:nas/sb", Host: "nas"}, {Ref: "gh:o/far", Host: "elsewhere"}}
 	if !slices.Equal(got.Items, wantItems) {
 		t.Errorf("items = %+v, want %+v", got.Items, wantItems)
 	}

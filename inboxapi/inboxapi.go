@@ -181,10 +181,12 @@ const (
 	StartGo    = "go"
 )
 
-// IssueTarget is a project an issue can be opened in, with Host, the machine that runs it.
+// IssueTarget is a project an issue can be opened in, with Host, the machine that runs it, and PlanFirst, whether its
+// ready label starts with a plan. An older inbox service leaves PlanFirst out.
 type IssueTarget struct {
-	Ref  string `json:"ref"`
-	Host string `json:"host"`
+	Ref       string `json:"ref"`
+	Host      string `json:"host"`
+	PlanFirst bool   `json:"plan_first"`
 }
 
 // IssueStart is a kind of start label (StartReady, StartPlan, StartGo) and the label it stands for.

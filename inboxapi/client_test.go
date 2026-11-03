@@ -257,10 +257,10 @@ func TestIssueTargets(t *testing.T) {
 		if r.Method != http.MethodGet || r.URL.Path != "/v1/issue-targets" {
 			t.Errorf("%s %s", r.Method, r.URL)
 		}
-		reply(w, 200, IssueTargets{Items: []IssueTarget{{Ref: "gh:o/r", Host: "nas"}}, Starts: []IssueStart{{Kind: StartReady, Label: "agent:ready"}}})
+		reply(w, 200, IssueTargets{Items: []IssueTarget{{Ref: "gh:o/r", Host: "nas", PlanFirst: true}}, Starts: []IssueStart{{Kind: StartReady, Label: "agent:ready"}}})
 	})
 	got, err := c.IssueTargets(ctx)
-	if err != nil || len(got.Items) != 1 || got.Items[0].Host != "nas" || len(got.Starts) != 1 || got.Starts[0].Label != "agent:ready" {
+	if err != nil || len(got.Items) != 1 || got.Items[0].Host != "nas" || !got.Items[0].PlanFirst || len(got.Starts) != 1 || got.Starts[0].Label != "agent:ready" {
 		t.Fatalf("IssueTargets = %+v, %v", got, err)
 	}
 }
