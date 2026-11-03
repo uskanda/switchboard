@@ -51,6 +51,10 @@ type Forge struct {
 	// FailHead, when set, is returned by every ChangeRequestHead call.
 	FailHead error
 	changes  map[string]*Change // change requests by changeKey, for MergeChangeRequest
+	// FailAttach, when set, is returned by every AttachComment call.
+	FailAttach error
+	// Attached are the files of each AttachComment call that posted, by base name.
+	Attached [][]string
 }
 
 type repo struct {

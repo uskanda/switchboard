@@ -118,7 +118,7 @@ func (c *Client) ChangeRequestHead(ctx context.Context, owner, repo string, numb
 	}
 	// mergeable is null while GitHub computes it; dirty is the one mergeable_state that means a conflict.
 	conflict := pr.Mergeable != nil && !*pr.Mergeable && pr.MergeableState == "dirty"
-	st := &forge.ChangeRequestState{State: forge.CROpen, Head: pr.Head.SHA, Conflict: conflict}
+	st := &forge.ChangeRequestState{State: forge.CROpen, Head: pr.Head.SHA, Conflict: conflict, Computing: pr.Mergeable == nil && !pr.Merged && pr.State == "open"}
 	switch {
 	case pr.Merged:
 		st.State = forge.CRMerged

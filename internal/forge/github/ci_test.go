@@ -98,12 +98,13 @@ func TestChangeRequestConflict(t *testing.T) {
 		mergeable any
 		state     string
 		want      bool
+		computing bool
 	}{
-		50: {false, "dirty", true},
-		51: {nil, "unknown", false},
-		52: {true, "behind", false},
-		53: {false, "blocked", false},
-		54: {true, "clean", false},
+		50: {false, "dirty", true, false},
+		51: {nil, "unknown", false, true},
+		52: {true, "behind", false, false},
+		53: {false, "blocked", false, false},
+		54: {true, "clean", false, false},
 	}
 	for n, tc := range cases {
 		s.on(fmt.Sprintf("GET /repos/o/r/pulls/%d", n), jsonReply(map[string]any{
@@ -112,8 +113,8 @@ func TestChangeRequestConflict(t *testing.T) {
 	}
 	for n, tc := range cases {
 		st, err := c.ChangeRequestHead(ctx, "o", "r", n)
-		if err != nil || st.Conflict != tc.want {
-			t.Errorf("ChangeRequestHead(%d) with mergeable %v, %s = %+v, %v, want Conflict %v", n, tc.mergeable, tc.state, st, err, tc.want)
+		if err != nil || st.Conflict != tc.want || st.Computing != tc.computing {
+			t.Errorf("ChangeRequestHead(%d) with mergeable %v, %s = %+v, %v, want Conflict %v, Computing %v", n, tc.mergeable, tc.state, st, err, tc.want, tc.computing)
 		}
 	}
 }

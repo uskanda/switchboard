@@ -38,6 +38,7 @@ type Inbox interface {
 	CancelAutoMerge(ctx context.Context, ref string) error
 	RegisterDevice(ctx context.Context, token string) error
 	Approve(ctx context.Context, ref string, since time.Time) error
+	MergeStatus(ctx context.Context, ref, sha string) (*inboxapi.MergeStatus, error)
 	Events(ctx context.Context, fn func(*inboxapi.Inbox)) error
 }
 
@@ -90,6 +91,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.createIssue(w, r)
 	case r.URL.Path == "/api/merge" && r.Method == http.MethodPost:
 		s.merge(w, r)
+	case r.URL.Path == "/api/merge-status" && r.Method == http.MethodGet:
+		// It only reads, as /api/issue does; the merge itself is a POST with the checks of a reply.
+		q := r.URL.Query()
+		out, err := s.Inbox.MergeStatus(r.Context(), q.Get("ref"), q.Get("sha"))
+		s.answer(w, out, err)
 	case r.URL.Path == "/api/automerge/cancel" && r.Method == http.MethodPost:
 		s.cancelAutoMerge(w, r)
 	case r.URL.Path == "/api/devices" && r.Method == http.MethodPost:

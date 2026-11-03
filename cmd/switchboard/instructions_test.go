@@ -119,3 +119,33 @@ func TestInstructionsEditRunSavesTheRunFile(t *testing.T) {
 		t.Fatalf("global run.md = %q", b)
 	}
 }
+
+func TestInstructionsEditImplementSavesTheImplementFile(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	cfg := writeConfig(t)
+	fakeEditor(t, "Take screenshots of the changed pages.")
+	var out, errb bytes.Buffer
+	if code := cli.Run([]string{"instructions", "edit", "--implement", "gh:o/r", "--config", cfg}, &out, &errb); code != 0 {
+		t.Fatalf("exit %d: %s", code, errb.String())
+	}
+	dir := filepath.Join(filepath.Dir(cfg), "instructions", "gh", "o", "r")
+	if b, err := os.ReadFile(filepath.Join(dir, "implement.md")); err != nil || string(b) != "Take screenshots of the changed pages." {
+		t.Fatalf("implement.md = %q, %v", b, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "run.md")); !os.IsNotExist(err) {
+		t.Fatalf("run.md was touched: %v", err)
+	}
+}
+
+func TestInstructionsEditRefusesRunWithImplement(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	cfg := writeConfig(t)
+	opened := fakeEditor(t, "x")
+	var out, errb bytes.Buffer
+	if code := cli.Run([]string{"instructions", "edit", "--run", "--implement", "--config", cfg}, &out, &errb); code != 2 {
+		t.Fatalf("exit %d: %s", code, errb.String())
+	}
+	if _, err := os.Stat(opened); err == nil {
+		t.Fatal("the editor was opened")
+	}
+}

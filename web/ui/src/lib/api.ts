@@ -158,9 +158,10 @@ export const watchKey = (it: Item) =>
 
 /**
  * One file of the additional instructions; target "" is the one for every project. kind "plan" is for the plan runs,
- * "run" for the runs that write files; an inbox service older than kinds leaves it out, which means "plan".
+ * "run" for the runs that write files, "implement" for the direct runs and the runs of an approved plan only; an inbox
+ * service older than kinds leaves it out, which means "plan".
  */
-export type InstructionKind = "plan" | "run";
+export type InstructionKind = "plan" | "run" | "implement";
 export type Instruction = { target: string; kind?: InstructionKind; content: string };
 
 /** Instructions are read on host, the machine of the inbox service. */
@@ -284,6 +285,26 @@ export const cancelAutoMerge = (ref: string) =>
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ref }),
   });
+
+/** CheckStatus is one CI check of the commit. name is the forge's data: show it as text only. */
+export type CheckStatus = { name: string; status: "success" | "failure" | "running" | "other"; url: string };
+
+/**
+ * MergeStatus is where the change request of a done issue stands before the merge (ADR-050): its state on the forge,
+ * whether its head moved from the commit the page showed, whether it conflicts (computing while the forge works it
+ * out), and the checks of that commit. ci is "forbidden" when the inbox token may not read CI, "none" without checks.
+ */
+export type MergeStatus = {
+  state: "open" | "closed" | "merged";
+  head_moved: boolean;
+  mergeable: "clean" | "conflict" | "computing";
+  ci: "ok" | "none" | "forbidden";
+  checks: CheckStatus[];
+};
+
+/** mergeStatus reads the status of the change request of a done issue at sha, for the merge dialog. */
+export const mergeStatus = (ref: string, sha: string) =>
+  call<MergeStatus>(`/api/merge-status?ref=${encodeURIComponent(ref)}&sha=${encodeURIComponent(sha)}`);
 
 /** issuePath is the page of one issue; the ref is one path segment. */
 export const issuePath = (ref: string) => `/issue/${encodeURIComponent(ref)}`;
