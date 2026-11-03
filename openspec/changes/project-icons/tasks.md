@@ -18,7 +18,7 @@
 
 ## 4. switchboard-web
 
-- [x] 4.1 `/api/project-icon`と`/api/project-icons`を足す。転送、`Content-Type`、CSPが今のままであることを`server_test.go`で確かめる
+- [x] 4.1 `/api/project-icon`と`/api/project-icons`を足す。転送、`Content-Type`、CSPが今のままであることをswitchboard-webのサーバーのテストで確かめる
 
 ## 5. Webの画面
 
