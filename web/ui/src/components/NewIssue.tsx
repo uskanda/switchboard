@@ -1,10 +1,11 @@
-import { useId, useRef, useState, type FormEvent } from "react";
+import { useCallback, useId, useRef, useState, type FormEvent } from "react";
 import { IssueRef } from "@/components/IssueRef";
 import { Loading } from "@/components/Loading";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiError, createIssue, getIssueTargets, type IssueTargets, type StartKind } from "@/lib/api";
 import { useInbox } from "@/lib/inbox";
@@ -50,7 +51,13 @@ function failure(err: unknown): string {
  */
 export function NewIssue() {
   const { markPending } = useInbox();
-  const dialog = useRef<HTMLDialogElement>(null);
+  const dialog = useRef<HTMLDialogElement | null>(null);
+  // The list of projects is put into the dialog, which a modal dialog needs (components/ui/select.tsx).
+  const [dialogEl, setDialogEl] = useState<HTMLDialogElement | null>(null);
+  const dialogRef = useCallback((el: HTMLDialogElement | null) => {
+    dialog.current = el;
+    setDialogEl(el);
+  }, []);
   const id = useId();
   const [targets, setTargets] = useState<IssueTargets | null>(null);
   const [project, setProject] = useState("");
@@ -122,29 +129,28 @@ export function NewIssue() {
       <Button type="button" variant="secondary" onClick={open}>
         新規issue
       </Button>
-      <Dialog ref={dialog} aria-labelledby={`${id}-heading`}>
+      <Dialog ref={dialogRef} aria-labelledby={`${id}-heading`}>
         <form onSubmit={submit} className="flex flex-col gap-md">
           <h2 id={`${id}-heading`} className="text-headline-md font-semibold">
             新規issue
           </h2>
           {!targets && !error && <Loading />}
           <div className="flex flex-col gap-xs">
-            <label htmlFor={`${id}-project`} className="text-label-md font-medium">
+            <label id={`${id}-project-label`} htmlFor={`${id}-project`} className="text-label-md font-medium">
               プロジェクト
             </label>
-            <select
-              id={`${id}-project`}
-              value={project}
-              onChange={(e) => setProject(e.target.value)}
-              disabled={sending || !targets}
-              className="h-11 w-full min-w-0 rounded-md border border-field-outline bg-surface-raised px-md font-mono text-mono-sm focus-visible:outline-2 focus-visible:outline-primary"
-            >
-              {targets?.items.map((it) => (
-                <option key={it.ref} value={it.ref}>
-                  {refText(it.ref)}（担当：{it.host}）
-                </option>
-              ))}
-            </select>
+            <Select value={project} onValueChange={setProject} disabled={sending || !targets}>
+              <SelectTrigger id={`${id}-project`} aria-labelledby={`${id}-project-label`}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent container={dialogEl}>
+                {targets?.items.map((it) => (
+                  <SelectItem key={it.ref} value={it.ref} aria-label={`${refText(it.ref)}（担当：${it.host}）`}>
+                    <IssueRef value={it.ref} />（担当：{it.host}）
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="flex flex-col gap-xs">
             <label htmlFor={`${id}-title`} className="text-label-md font-medium">
