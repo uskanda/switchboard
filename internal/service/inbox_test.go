@@ -31,6 +31,18 @@ func TestInboxCredentialsIncludeTheRelayToken(t *testing.T) {
 	}
 }
 
+// With inbox.notify.fcm, the inbox service also loads the Firebase service account key; the agent's service does not.
+func TestInboxCredentialsIncludeTheFCMKey(t *testing.T) {
+	c := cfg()
+	c.Inbox.Notify.FCM = &config.FCM{ProjectID: "p", CredentialsRef: "switchboard/fcm"}
+	if got := refsOf(InboxCredentials(c)); got != "switchboard/github-inbox switchboard/gitlab-inbox switchboard/fcm" {
+		t.Fatalf("credentials = %s", got)
+	}
+	if got := refsOf(Credentials(c)); strings.Contains(got, "switchboard/fcm") {
+		t.Fatalf("the agent's credentials hold the FCM key: %s", got)
+	}
+}
+
 // The agent's service loads the Telegram bot token when it notifies; the inbox tokens stay out.
 func TestAgentCredentialsIncludeTheTelegramToken(t *testing.T) {
 	c := cfg()

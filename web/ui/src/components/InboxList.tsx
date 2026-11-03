@@ -1,21 +1,24 @@
+import { useRef } from "react";
 import { Link } from "react-router";
 import { IssueRef } from "@/components/IssueRef";
 import { Loading } from "@/components/Loading";
 import { MergeButton, changeName } from "@/components/MergeButton";
 import { NewIssue } from "@/components/NewIssue";
 import { ReasonBadge } from "@/components/ReasonBadge";
-import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
+import { Spinner } from "@/components/ui/spinner";
 import { Table, TableCell, TableHead } from "@/components/ui/table";
-import { age, elapsed, isDone, isQueued, isRunning, isWaiting, issuePath, plainText, progressText, queueText, type Item } from "@/lib/api";
+import { age, elapsed, isDone, isQueued, isRunning, isWaiting, issuePath, plainText, progressText, queueText, timeText } from "@/lib/api";
+import { useFlip } from "@/lib/flip";
 import { useInbox } from "@/lib/inbox";
+import type { ViewItem } from "@/lib/pending";
 import { cn } from "@/lib/utils";
 
 /**
  * ChangeLink is the pull or merge request of a done issue, a link of its own beside the issue's, named by its number
  * when the done post gives one, with the button that merges it when the done post names its number and commit. Both stay outside the row's link to the issue.
  */
-function ChangeLink({ it }: { it: Item }) {
+function ChangeLink({ it }: { it: ViewItem }) {
   if (!isDone(it)) return null;
   const mergeable = !!it.change_number && !!it.change_sha;
   if (!it.change_url && !mergeable) return null;
@@ -32,15 +35,33 @@ function ChangeLink({ it }: { it: Item }) {
 }
 
 /**
- * What a row shows: a waiting issue its reason, question and wait; a running one its progress and how long it ran; a
- * queued one the limit it waits on and since when; a done one since when it is done.
+ * What a row shows: a waiting issue its reason, question and wait; a running one what it is doing and how long it ran;
+ * a queued one the limit it waits on and since when; a done one since when it is done. time is for the table, whose
+ * column head says what it is; timeWords, for a card, says it in its own words ("5分前から待ち"). A row this tab asked
+ * something of (lib/pending.ts) shows a turning ring and slowly pulsing words that it is being processed, said to a
+ * screen reader as a status; index.css stops both under prefers-reduced-motion, and the words stay readable.
  */
-function cells(it: Item) {
+function cells(it: ViewItem) {
+  if (it.pending) {
+    const merging = it.pending === "merge";
+    return {
+      tag: (
+        <span role="status" className="inline-flex items-center gap-xs text-label-md font-medium">
+          <Spinner />
+          <span className="pending-pulse">{merging ? "マージ処理中" : "処理中"}</span>
+        </span>
+      ),
+      line: merging ? "closeされると一覧から消えます" : "実行の開始を待っています",
+      time: merging ? age(it.done_since ?? null) : elapsed(it.running_since),
+      timeWords: merging ? timeText("done", it.done_since) : timeText("running", it.running_since),
+    };
+  }
   if (isDone(it)) {
     return {
       tag: <span className="text-label-md font-medium">完了</span>,
       line: "closeすると一覧から消えます。コメントすると作業を再開します",
       time: age(it.done_since ?? null),
+      timeWords: timeText("done", it.done_since),
     };
   }
   if (isQueued(it)) {
@@ -48,6 +69,7 @@ function cells(it: Item) {
       tag: <span className="text-label-md font-medium">順番待ち</span>,
       line: queueText(it.reason),
       time: age(it.queued_since ?? null),
+      timeWords: timeText("queued", it.queued_since),
     };
   }
   if (isRunning(it)) {
@@ -55,16 +77,22 @@ function cells(it: Item) {
       tag: <span className="text-label-md font-medium">実行中</span>,
       line: progressText(it.progress),
       time: elapsed(it.running_since),
+      timeWords: timeText("running", it.running_since),
     };
   }
-  return { tag: <ReasonBadge reason={it.reason} />, line: plainText(it.question), time: age(it.waiting_since) };
+  return {
+    tag: <ReasonBadge reason={it.reason} />,
+    line: plainText(it.question),
+    time: age(it.waiting_since),
+    timeWords: timeText("waiting", it.waiting_since),
+  };
 }
 
 /**
  * Items lists issues. On the list's own page, a screen from 640px gets a table; the pane next to an issue (from
  * 1024px) and a narrow screen get the same items as cards. The selected issue is marked.
  */
-function Items({ items, timeHead, selected }: { items: Item[]; timeHead: string; selected?: string }) {
+function Items({ items, timeHead, selected }: { items: ViewItem[]; timeHead: string; selected?: string }) {
   return (
     <>
       <Table className="hidden sm:table lg:hidden">
@@ -80,7 +108,7 @@ function Items({ items, timeHead, selected }: { items: Item[]; timeHead: string;
           {items.map((it) => {
             const c = cells(it);
             return (
-              <tr key={it.ref}>
+              <tr key={it.ref} data-flip-key={it.ref}>
                 <TableCell className="max-w-0 w-full">
                   <Link
                     to={issuePath(it.ref)}
@@ -106,19 +134,21 @@ function Items({ items, timeHead, selected }: { items: Item[]; timeHead: string;
           const c = cells(it);
           const current = it.ref === selected;
           return (
-            <li key={it.ref}>
+            <li key={it.ref} data-flip-key={it.ref}>
               <Link
                 to={issuePath(it.ref)}
                 aria-current={current ? "page" : undefined}
-                className="block rounded-md focus-visible:outline-2 focus-visible:outline-primary"
+                className="block rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
               >
                 <Card className={cn("flex flex-col gap-xs", current && "border-2 border-primary")}>
                   <IssueRef value={it.ref} className="self-start" />
-                  <span className="font-medium break-words">{it.title}</span>
+                  <span className="line-clamp-2 font-medium break-words" title={it.title}>
+                    {it.title}
+                  </span>
                   <span className="flex flex-wrap items-center gap-sm text-label-md text-muted">
                     {c.tag}
                     <span>{it.host}</span>
-                    <span>{c.time}</span>
+                    <span>{c.timeWords}</span>
                   </span>
                   <span className="text-label-md text-muted break-words">{c.line}</span>
                 </Card>
@@ -134,24 +164,23 @@ function Items({ items, timeHead, selected }: { items: Item[]; timeHead: string;
 
 /**
  * InboxList is the button for a new issue, then the waiting, the running, the queued and the done issues (open,
- * waiting to be closed), each under its own heading. Until the first listing arrives it says that it is loading.
+ * waiting to be closed), each under its own heading. Until the first listing arrives it says that it is loading. What
+ * the listing could not read is not here: InboxErrors shows it above the panes.
+ * The rows are the listing with what this tab asked of the issues laid over it (lib/pending.ts). A row that changes
+ * places on an update moves there, and a new one fades in (lib/flip.ts).
  */
 export function InboxList({ selected }: { selected?: string }) {
-  const { inbox, error } = useInbox();
-  const waiting = inbox?.items.filter(isWaiting) ?? [];
-  const running = inbox?.items.filter(isRunning) ?? [];
-  const queued = inbox?.items.filter(isQueued) ?? [];
-  const done = inbox?.items.filter(isDone) ?? [];
+  const { inbox, view, error } = useInbox();
+  const root = useRef<HTMLDivElement>(null);
+  useFlip(root, view !== null);
+  const waiting = view?.filter(isWaiting) ?? [];
+  const running = view?.filter(isRunning) ?? [];
+  const queued = view?.filter(isQueued) ?? [];
+  const done = view?.filter(isDone) ?? [];
   return (
-    <div className="flex flex-col gap-lg">
+    <div ref={root} className="flex flex-col gap-lg">
       <h2 className="sr-only">一覧</h2>
       <NewIssue />
-      {error && <Alert>{error}</Alert>}
-      {inbox?.errors.map((e) => (
-        <Alert key={e.forge}>
-          {e.forge}を読めませんでした：{e.message}
-        </Alert>
-      ))}
       {!inbox && !error && <Loading />}
       {inbox && (
         <section className="flex flex-col gap-sm">

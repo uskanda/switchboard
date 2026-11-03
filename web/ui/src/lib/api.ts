@@ -38,12 +38,15 @@ export const isDone = (it: Item) => it.state === "done";
 export const isWaiting = (it: Item) => !isRunning(it) && !isQueued(it) && !isDone(it);
 
 /**
- * progressText is the progress line of a run as shown, without the "?" that stands for a part not there yet: the
- * whole line when there is no progress comment, the agent's last words after the separator when it has said none.
+ * progressText is what a run is doing as shown on the list: the agent's last words, after the first separator ("｜"
+ * or "|") of the progress line, without the time and the tools before it. Without words yet ("?", nothing after the
+ * separator, no separator or no progress comment at all), it says the run is working.
  */
 export function progressText(progress: string | undefined): string {
-  const line = (progress ?? "").replace(/\s*｜\s*\?$/, "").trim();
-  return line && line !== "?" ? line : "進捗はまだありません";
+  const line = progress ?? "";
+  const at = line.search(/[｜|]/);
+  const words = at < 0 ? "" : line.slice(at + 1).trim();
+  return words && words !== "?" ? words : "作業しています";
 }
 
 /** plainText is the start of a question as one plain line: the bold and code marks of its Markdown left out. */
@@ -190,7 +193,8 @@ export type StartKind = "ready" | "plan" | "go";
  * configuration names.
  */
 export type IssueTargets = {
-  items: { ref: string; host: string }[];
+  /** plan_first is whether the project's ready label starts with a plan; an older inbox service leaves it out. */
+  items: { ref: string; host: string; plan_first?: boolean }[];
   starts: { kind: StartKind; label: string }[];
 };
 
@@ -247,6 +251,35 @@ export function elapsed(since: string | null | undefined, now: Date = new Date()
   if (min < 1) return "1分未満";
   if (min < 60) return `${min}分`;
   return `${Math.floor(min / 60)}時間${min % 60}分`;
+}
+
+/** TimeState is a state whose time is shown: since when it runs, waits, queues or is done. */
+export type TimeState = "running" | "waiting" | "queued" | "done";
+
+/**
+ * timeText is the time of a state in words that say what it is: "2分経過", "5分前から待ち", "3分前から順番待ち",
+ * "1時間前に完了". A time under a minute says how long the state has lasted ("待ちになって1分未満"); without a time it
+ * is "?".
+ */
+export function timeText(state: TimeState, since: string | null | undefined, now: Date = new Date()): string {
+  if (!since) return "?";
+  const under = Math.floor((now.getTime() - new Date(since).getTime()) / 60000) < 1;
+  switch (state) {
+    case "running":
+      return under ? "始めて1分未満" : `${elapsed(since, now)}経過`;
+    case "waiting":
+      return under ? "待ちになって1分未満" : `${age(since, now)}から待ち`;
+    case "queued":
+      return under ? "順番待ちになって1分未満" : `${age(since, now)}から順番待ち`;
+    case "done":
+      return under ? "完了して1分未満" : `${age(since, now)}に完了`;
+  }
+}
+
+/** oldestWaiting is the waiting item that started waiting first; one without a time comes last. */
+export function oldestWaiting(items: Item[]): Item | undefined {
+  const time = (it: Item) => (it.waiting_since ? new Date(it.waiting_since).getTime() : Infinity);
+  return items.filter(isWaiting).reduce<Item | undefined>((best, it) => (!best || time(it) < time(best) ? it : best), undefined);
 }
 
 /** attention tells the reasons that wait on a decision from the ones that report a failure. */

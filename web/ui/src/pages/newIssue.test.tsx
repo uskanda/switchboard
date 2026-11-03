@@ -87,7 +87,8 @@ describe("a new issue", () => {
     await userEvent.click(within(dialog).getByRole("radio", { name: /agent:plan/ }));
     await userEvent.click(within(dialog).getByRole("button", { name: "作成する" }));
 
-    const status = await screen.findByRole("status");
+    // The toast, not the new row's own status that the issue is being processed.
+    const status = (await screen.findByText(/を作りました/)).closest<HTMLElement>("[role=status]")!;
     expect(status).toHaveTextContent("nas/sb#7 GitLab を作りました");
     expect(within(status).getByText("nas/sb#7").nextElementSibling).toHaveTextContent("GitLab");
     const toast = status.closest<HTMLElement>("[data-sonner-toast]")!;
@@ -106,7 +107,7 @@ describe("a new issue", () => {
     expect(within(pane).queryByText(/を作りました/)).toBeNull();
 
     await userEvent.click(within(toast).getByRole("button", { name: "閉じる" }));
-    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+    await waitFor(() => expect(screen.queryByText(/を作りました/)).toBeNull());
   });
 
   it("keeps what was written and shows why it was refused", async () => {

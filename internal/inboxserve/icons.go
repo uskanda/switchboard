@@ -31,7 +31,7 @@ const IconFetchTimeout = 15 * time.Second
 var errNoIcon = errors.New("the icon is an emoji, not an image")
 
 // Icons serves /v1/project-icon (a project's icon as an image) and /v1/project-icons (the emoji icons). An icon is the
-// project's icon in the configuration, else the forge's avatar read with the inbox token (ADR-047).
+// project's icon in the configuration, else the forge's avatar read with the inbox token (ADR-048).
 type Icons struct {
 	// Config is the configuration in use; Server.Reload replaces it.
 	Config *config.Config

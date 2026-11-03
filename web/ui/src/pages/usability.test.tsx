@@ -81,7 +81,8 @@ describe("the reply", () => {
     await waitFor(() => expect(calls.some((c) => c.key === "POST /api/reply")).toBe(true));
   });
 
-  it("moves the focus to what says it was sent", async () => {
+  // With another wait on the list, the focus goes to the button to it instead (waitNav.test.tsx).
+  it("moves the focus to what says it was sent when no other wait is left", async () => {
     answer({
       "GET /api/inbox": listing(item()),
       "GET /api/issue?ref=gh%3Ao%2Fr%2312": detail(),
@@ -109,7 +110,7 @@ describe("the list", () => {
     expect(await screen.findByRole("heading", { level: 2, name: "返答待ち" })).toBeInTheDocument();
   });
 
-  it("says a run has no progress yet instead of a question mark", async () => {
+  it("says a run is working while it has no words yet, instead of a question mark", async () => {
     answer({
       "GET /api/inbox": listing(
         item({ state: "running", running_since: t0, progress: "?" }),
@@ -117,8 +118,9 @@ describe("the list", () => {
       ),
     });
     at("/");
-    expect((await screen.findAllByText("進捗はまだありません"))[0]).toBeInTheDocument();
-    expect(screen.getAllByText("14:24 2分 Bash 1")[0]).toBeInTheDocument();
+    // A table row and a card of each of the two.
+    expect(await screen.findAllByText("作業しています")).toHaveLength(4);
+    expect(screen.queryByText(/Bash 1/)).toBeNull();
     expect(screen.queryByText("?")).toBeNull();
   });
 
@@ -139,6 +141,13 @@ describe("the list", () => {
     answer({ "GET /api/inbox": listing(done) });
     at("/");
     expect((await screen.findAllByRole("link", { name: "PR #9" }))[0]).toHaveAttribute("href", "https://github.test/o/r/pull/9");
+  });
+
+  it("draws a card's focus apart from the card, so it differs from the frame of the chosen one", async () => {
+    answer({ "GET /api/inbox": listing(item()) });
+    at("/");
+    const card = within(await screen.findByRole("list")).getAllByRole("link")[0];
+    expect(card).toHaveClass("focus-visible:outline-offset-2");
   });
 });
 

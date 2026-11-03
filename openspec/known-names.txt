@@ -21,3 +21,16 @@ outcome.PR
 inbox.Excerpt
 index.html
 http.ResponseController
+google-services.json
+expo-notifications
+react-native-webview
+expo-build-properties
+usesCleartextTraffic
+ACCESS_LOCAL_NETWORK
+assembleRelease
+expo prebuild
+oauth2.googleapis.com
+exp.host
+expo-task-manager
+react-native-safe-area-context
+expo-system-ui
