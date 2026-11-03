@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, 
 import { Link, useNavigate } from "react-router";
 import { IssueRef } from "@/components/IssueRef";
 import { Loading } from "@/components/Loading";
-import { MergeButton, changeName } from "@/components/MergeButton";
+import { AutoMergeBadge, CancelAutoMergeButton, MergeButton, changeName } from "@/components/MergeButton";
 import { PlanQuestions } from "@/components/PlanQuestions";
 import { ReasonBadge } from "@/components/ReasonBadge";
 import { Thread } from "@/components/Thread";
@@ -315,6 +315,9 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
   // An open done issue takes a reply too: a comment resumes the work until the issue is closed.
   const replyable = !!detail && (detail.waiting || !!detail.done);
   const finished = !!detail?.done && !running && !queued;
+  // A merge waiting for the fix of a conflict starts and ends without the issue changing on the forge, so the detail
+  // is not read again: the listing says whether one waits, and the detail only until the first listing arrives.
+  const autoMerge = !!(item ? item.auto_merge : !inbox && detail?.auto_merge);
   const now = detail && markOf(detail);
   // The reply stays said to be sent only while the issue is still in the wait (or the done state) it answered.
   const sent = !!sentAt && !!detail && !!now && !gone && replyable && !running && !queued && now.since === sentAt.since && now.waitKey === sentAt.waitKey;
@@ -360,7 +363,10 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
               ) : queued ? (
                 <span className="font-medium">順番待ち</span>
               ) : finished ? (
-                <span className="font-medium">完了</span>
+                <>
+                  <span className="font-medium">完了</span>
+                  {autoMerge && <AutoMergeBadge />}
+                </>
               ) : (
                 <ReasonBadge reason={detail.reason} />
               )}
@@ -391,7 +397,14 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
                   {changeName(detail.ref, detail.change_number)}
                 </a>
               )}
-              <MergeButton issueRef={detail.ref} number={detail.change_number} sha={detail.change_sha} url={detail.change_url} />
+              <MergeButton
+                issueRef={detail.ref}
+                number={detail.change_number}
+                sha={detail.change_sha}
+                url={detail.change_url}
+                autoMerge={autoMerge}
+              />
+              {autoMerge && <CancelAutoMergeButton issueRef={detail.ref} number={detail.change_number} />}
             </div>
           ) : null}
           {gone && <p className="text-muted">このissueは、待ちでも実行中でもなくなりました。</p>}

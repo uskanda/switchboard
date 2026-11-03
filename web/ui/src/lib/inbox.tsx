@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { IssueRef } from "@/components/IssueRef";
 import { ApiError, getInbox, type Inbox } from "@/lib/api";
+import { useAutoMergeResults } from "@/lib/autoMergeResults";
 import { baseOf, loadMarks, overlay, pendingTimeout, saveMarks, settle, type Draft, type Mark, type PendingKind, type ViewItem } from "@/lib/pending";
 import { toast } from "@/lib/toast";
 
@@ -84,6 +85,7 @@ export function InboxProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const pending = usePending(state.inbox);
+  useAutoMergeResults(state.inbox);
   const value = useMemo(() => ({ ...state, ...pending }), [state, pending]);
   return <InboxContext.Provider value={value}>{children}</InboxContext.Provider>;
 }

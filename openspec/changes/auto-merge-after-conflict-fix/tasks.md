@@ -26,8 +26,8 @@
 
 ## 6. WUI
 
-- [ ] 6.1 `merge.test.tsx` に、202のトーストと印、取り消し、結果のトーストのテストを足し、落ちることを確かめる
-- [ ] 6.2 `lib/api.ts`、`MergeButton`、`InboxList`、`IssuePane`、結果のトーストを実装し、テストを通す
+- [x] 6.1 `merge.test.tsx` に、202のトーストと印、取り消し、結果のトーストのテストを足し、落ちることを確かめる
+- [x] 6.2 `lib/api.ts`、`MergeButton`、`InboxList`、`IssuePane`、結果のトーストを実装し、テストを通す
 
 ## 7. 文書
 
