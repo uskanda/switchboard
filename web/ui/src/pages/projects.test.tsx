@@ -46,12 +46,12 @@ describe("the projects of the settings", () => {
     expect(section.compareDocumentPosition(instructions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const rows = within(section).getAllByRole("listitem");
     expect(rows).toHaveLength(2);
-    expect(rows[0]).not.toHaveTextContent("gh:o/r");
-    expect(within(rows[0]).getByText("o/r").nextElementSibling).toHaveTextContent("GitHub");
-    expect(rows[0]).toHaveTextContent("クローン済み");
-    expect(rows[0]).toHaveTextContent("状態ラベルはそろっています");
-    expect(rows[1]).toHaveTextContent("計画から始める");
-    expect(rows[1]).toHaveTextContent("agent:ready、agent:plan");
+    // The one with a problem comes first, as a card; the one with none is a line.
+    expect(rows[0]).toHaveTextContent("計画から始める");
+    expect(rows[0]).toHaveTextContent("agent:ready、agent:plan");
+    expect(rows[1]).not.toHaveTextContent("gh:o/r");
+    expect(within(rows[1]).getByText("o/r").nextElementSibling).toHaveTextContent("GitHub");
+    expect(rows[1]).toHaveTextContent("すぐに実装する");
   });
 
   it("say to check the agent's token when a project has no clone", async () => {
