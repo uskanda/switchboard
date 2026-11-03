@@ -117,6 +117,17 @@ func TestMissingInboxTokenRefWarns(t *testing.T) {
 	w.expect(t, "warn", "merging from the web inbox")
 }
 
+func TestQuotaWithSubscriptionWarns(t *testing.T) {
+	w := newWorld(t)
+	five := 5.0
+	w.cfg.Claude.Auth = "subscription"
+	w.cfg.Quota.DailyUSD = &five
+	if n := w.run(t); n != 0 {
+		t.Fatalf("%d failures:\n%s", n, w.out.String())
+	}
+	w.expect(t, "warn", "quota is set but claude.auth is subscription")
+}
+
 func TestInboxTokenNamesThePermissionsOfAMerge(t *testing.T) {
 	w := newWorld(t)
 	if n := w.run(t); n != 0 {

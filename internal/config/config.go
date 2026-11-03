@@ -31,6 +31,7 @@ type Config struct {
 	Notify         Notify         `yaml:"notify"`
 	Plan           Plan           `yaml:"plan"`
 	Inbox          Inbox          `yaml:"inbox"`
+	Quota          Quota          `yaml:"quota"`
 
 	// Path is the file the configuration was loaded from.
 	Path string `yaml:"-"`
@@ -115,7 +116,19 @@ type Agent struct {
 	// AllowToolsExtra are Claude Code permission rules added to the allow rules of every run that writes files, in
 	// every project.
 	AllowToolsExtra []string `yaml:"allow_tools_extra"`
+	// LimitWait is how long the host waits after a run hit a usage limit whose reset time is unknown; 30m when unset.
+	LimitWait time.Duration `yaml:"limit_wait"`
 }
+
+// Quota caps what the runs of this host may cost a day and a month (local time), in US dollars, when claude uses an
+// API key. A nil cap is no cap. The caps are checked before a run starts; a run is never stopped for them.
+type Quota struct {
+	DailyUSD   *float64 `yaml:"daily_usd"`
+	MonthlyUSD *float64 `yaml:"monthly_usd"`
+}
+
+// Set reports whether a cap is configured.
+func (q Quota) Set() bool { return q.DailyUSD != nil || q.MonthlyUSD != nil }
 
 // DefaultFixAttempts is agent.max_fix_attempts when unset.
 const DefaultFixAttempts = 2
@@ -391,6 +404,9 @@ func (c *Config) applyDefaults(approveWritten bool) {
 	if c.Agent.MaxTurns == 0 {
 		c.Agent.MaxTurns = 80
 	}
+	if c.Agent.LimitWait == 0 {
+		c.Agent.LimitWait = 30 * time.Minute
+	}
 	set(&c.Relay.WebhookListen, "127.0.0.1:8781")
 	set(&c.Relay.SSEListen, "127.0.0.1:8782")
 	set(&c.Relay.WebhookURL, "http://"+c.Relay.WebhookListen)
@@ -406,6 +422,18 @@ func expandHome(p string) string {
 		return filepath.Join(os.Getenv("HOME"), strings.TrimPrefix(p, "~"))
 	}
 	return p
+}
+
+// Warnings are what the configuration sets to no effect. They do not stop the agent; switchboard doctor shows them.
+func (c *Config) Warnings() []string {
+	var w []string
+	if auth := c.Claude.Auth; c.Quota.Set() && auth != "api_key" {
+		if auth == "" {
+			auth = "subscription"
+		}
+		w = append(w, fmt.Sprintf("quota is set but claude.auth is %s: the quota counts only the runs that use an API key, so it is not used", auth))
+	}
+	return w
 }
 
 func (c *Config) validate() error {
@@ -443,6 +471,17 @@ func (c *Config) validate() error {
 	}
 	if n := c.Agent.MaxFixAttempts; n != nil && *n < 0 {
 		errs = append(errs, fmt.Errorf("agent.max_fix_attempts must be at least 0, got %d", *n))
+	}
+	if c.Agent.LimitWait < 0 {
+		errs = append(errs, fmt.Errorf("agent.limit_wait must not be negative, got %v", c.Agent.LimitWait))
+	}
+	for _, q := range []struct {
+		key string
+		v   *float64
+	}{{"quota.daily_usd", c.Quota.DailyUSD}, {"quota.monthly_usd", c.Quota.MonthlyUSD}} {
+		if q.v != nil && *q.v < 0 {
+			errs = append(errs, fmt.Errorf("%s must not be negative, got %v", q.key, *q.v))
+		}
 	}
 	errs = append(errs, checkAllowTools("agent.allow_tools_extra", c.Agent.AllowToolsExtra)...)
 	if len(c.Projects) == 0 {

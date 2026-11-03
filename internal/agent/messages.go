@@ -1,6 +1,9 @@
 package agent
 
-import "strings"
+import (
+	"strings"
+	"time"
+)
 
 // texts are the fixed parts of what the agent posts, in one language (comments.language).
 type texts struct {
@@ -25,8 +28,12 @@ type texts struct {
 	// The wait after the change request kept conflicting with its base: the title and the lead, as for the CI.
 	conflictTitle, conflictFailed, conflictNoFixes string
 
-	// The queued comment: on the host's limit (host name, value) or on the project's (value).
-	queuedHost, queuedProject string
+	// The queued comment: on the host's limit (host name, value) or on the project's (value), and on a pause of the
+	// host for a usage limit or the API quota (host name, when it ends).
+	queuedHost, queuedProject, queuedLimit, queuedQuota string
+	// A run that hit a usage limit: the title and the text of its queued comment (host name, when the pause ends),
+	// and the reason of a fix run's wait on it (host name, when).
+	limitTitle, limitQueued, limitFix string
 
 	// The comments of the plan stage: the titles, the hints on how to answer, and the note on discarded changes.
 	planQuestionsTitle, planTitle, planQuestionsHint, planHint, planDiscarded string
@@ -70,6 +77,11 @@ var english = texts{
 	claim:          "Started on host %s.",
 	queuedHost:     "Queued: host %s runs as many issues at once as it may (%d). This issue starts when a run ends.",
 	queuedProject:  "Queued: this project runs as many issues at once as it may (%d). This issue starts when one of its runs ends.",
+	queuedLimit:    "Queued: host %s hit a usage limit of the AI service, so it starts no new run until %s. This issue starts after that.",
+	queuedQuota:    "Queued: the runs of host %s reached the API quota, so it starts no new run until %s. This issue starts after that.",
+	limitTitle:     "The run hit a usage limit",
+	limitQueued:    "The run stopped partway because it hit a usage limit of the AI service, and the issue is back in the queue. Host %s starts no new run until %s; after that, the agent resumes this issue from the changes in its worktree.",
+	limitFix:       "The fix run stopped partway because it hit a usage limit of the AI service. Host %s starts no new run until %s.",
 	multipleStarts: "More than one start label is on the issue (%s), so the agent cannot tell which run was asked for. Put exactly one of them on the issue to start again.",
 
 	planQuestionsTitle: "The agent has questions for the plan",
@@ -150,6 +162,11 @@ var japanese = texts{
 	claim:          "端末%sで実行を始めます。",
 	queuedHost:     "順番待ちにしました。端末%sで同時に動かせる実行の上限（%d）に達しています。実行が1つ終わると始めます。",
 	queuedProject:  "順番待ちにしました。このプロジェクトで同時に動かせる実行の上限（%d）に達しています。このプロジェクトの実行が1つ終わると始めます。",
+	queuedLimit:    "順番待ちにしました。端末%sはAIサービスの利用上限に当たったため、%sまで新しい実行を始めません。その時刻を過ぎたら始めます。",
+	queuedQuota:    "順番待ちにしました。端末%sの実行の費用がAPIのクオータに達したため、%sまで新しい実行を始めません。その時刻を過ぎたら始めます。",
+	limitTitle:     "利用上限で止まりました",
+	limitQueued:    "実行は、AIサービスの利用上限に当たって途中で止まりました。issueは順番待ちに戻しました。端末%sは%sまで新しい実行を始めません。その時刻を過ぎたら、worktreeの変更を引き継いで、このissueを自動で再開します。",
+	limitFix:       "直す実行は、AIサービスの利用上限に当たって途中で止まりました。端末%sは%sまで新しい実行を始めません。",
 	multipleStarts: "始めるラベルが2つ以上付いているため（%s）、どの実行を求められたのか分かりません。どれか1つだけを付け直すと、もう一度始めます。",
 
 	planQuestionsTitle: "計画についての質問",
@@ -195,6 +212,9 @@ var japanese = texts{
 	hours:            "%d時間%d分",
 	minutes:          "%d分",
 }
+
+// when is the time t as the agent's comments name it: local time, to the minute, with the zone.
+func (texts) when(t time.Time) string { return t.Local().Format("2006-01-02 15:04 MST") }
 
 func textsFor(lang string) texts {
 	if lang == "ja" {

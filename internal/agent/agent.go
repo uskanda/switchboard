@@ -100,7 +100,15 @@ type Agent struct {
 	unwatched map[forge.IssueRef]time.Time
 	scanned   time.Time       // when the done issues were last searched for watches
 	forbidden map[string]bool // by project ref: the CI could not be read, already logged
-	wg        sync.WaitGroup
+	// paused, when set, is the pause of this host on a usage limit or its API quota (ADR-047); pauseTimer takes the
+	// queue up again when it ends. cost is what the runs cost today and this month.
+	paused     *pause
+	pauseTimer *time.Timer
+	cost       costs
+	// resumes marks the queued issues whose queued comment is the resume mark of a run that hit a usage limit: the
+	// comment stays over a restart, and goes when the issue starts or leaves the queue.
+	resumes map[forge.IssueRef]bool
+	wg      sync.WaitGroup
 
 	pollMu     sync.Mutex // one poll or relay refresh at a time
 	rmu        sync.Mutex
@@ -228,6 +236,8 @@ func (a *Agent) Start(ctx context.Context) error {
 	a.watches = map[forge.IssueRef]*watch{}
 	a.unwatched = map[forge.IssueRef]time.Time{}
 	a.forbidden = map[string]bool{}
+	a.resumes = map[forge.IssueRef]bool{}
+	a.paused, a.cost = nil, costs{}
 	a.scanned = time.Time{}
 	a.wake = make(chan struct{}, 1)
 	a.tune = make(chan struct{}, 1)
@@ -253,6 +263,7 @@ func (a *Agent) Start(ctx context.Context) error {
 		a.projects = append(a.projects, p)
 		a.pmu.Unlock()
 	}
+	a.loadLimits()
 	a.clearQueued(ctx)
 	if err := a.recover(ctx); err != nil {
 		return err
@@ -263,6 +274,7 @@ func (a *Agent) Start(ctx context.Context) error {
 
 // Close releases the agent lock. Call it after Wait.
 func (a *Agent) Close() {
+	a.stopPauseTimer()
 	if a.unlock != nil {
 		_ = os.Remove(filepath.Join(a.State.Path, "agent.json"))
 		a.unlock()
@@ -570,8 +582,9 @@ type plan struct {
 	comments []forge.Comment
 	kinds    []trust.Kind
 
-	start        string   // the start label the run starts from, or "" when it resumes on a reply
+	start        string   // the start label the run starts from, or "" when it resumes on a reply or after a limit
 	mode         string   // with start: the mode its claim records
+	resumeNote   int64    // the queued comment that marks the run to resume after a usage limit, or 0
 	kind         runKind  // set by classify
 	planID, okID int64    // for approvedRun: the plan and the comment that approved it
 	qNext        int      // for planRun: the number of its first question
@@ -599,6 +612,7 @@ func (a *Agent) decide(ctx context.Context, p config.Project, ref forge.IssueRef
 		return nil, nil
 	}
 	st := labels.StateOf(is.Labels, n)
+	byAgent := false // the agent put the start label back after a run hit a usage limit
 	switch {
 	case labels.IsStart(st, n):
 		actor, err := a.forgeOf(ref).LabelActor(ctx, ref, st)
@@ -607,7 +621,8 @@ func (a *Agent) decide(ctx context.Context, p config.Project, ref forge.IssueRef
 		} else if err != nil {
 			return nil, err
 		}
-		if !j.ReadyLabel(ref, actor) {
+		byAgent = actor != nil && actor.ID == j.AgentIDOf(ref)
+		if !byAgent && !j.ReadyLabel(ref, actor) {
 			return nil, nil
 		}
 	case st == n.Waiting, st == n.Done:
@@ -617,6 +632,18 @@ func (a *Agent) decide(ctx context.Context, p config.Project, ref forge.IssueRef
 	pl := &plan{project: p, issue: is, comments: comments}
 	for _, c := range comments {
 		pl.kinds = append(pl.kinds, j.Comment(ref, c))
+	}
+	if byAgent {
+		// Only the agent's own resume mark lets a start label it put start a run. The run goes on with the cycle the
+		// limited run was in, as a resume on a reply does (ADR-047).
+		if pl.resumeNote = pl.limitResume(); pl.resumeNote == 0 {
+			return nil, nil
+		}
+		pl.classify(a.Config.Plan.ApproveWord)
+		if !j.Body(is) {
+			return nil, nil
+		}
+		return pl, nil
 	}
 	if labels.IsStart(st, n) {
 		if labels.MultipleStarts(is.Labels, n) {
@@ -639,6 +666,11 @@ func (a *Agent) decide(ctx context.Context, p config.Project, ref forge.IssueRef
 		}
 	}
 	pl.classify(a.Config.Plan.ApproveWord)
+	if labels.IsStart(st, n) {
+		// A person put a start label on an issue a limit put back in the queue: a new cycle, which still takes the
+		// limited run's worktree on and removes its resume mark.
+		pl.resumeNote = pl.limitResume()
+	}
 	if (st == n.Waiting || st == n.Done) && !pl.hasReply() {
 		return nil, nil
 	}
@@ -704,7 +736,12 @@ func (a *Agent) launch(ctx context.Context, pl *plan) error {
 		q.project, q.plan = pl.project, pl.kind == planRun
 		a.pending[ref] = q
 		_, noted := a.queued[ref]
-		if !noted {
+		switch {
+		case !noted && pl.resumeNote != 0:
+			// The resume mark of a run that hit a limit serves as the queued comment.
+			a.queued[ref], a.resumes[ref], noted = pl.resumeNote, true, true
+			a.saveQueued()
+		case !noted:
 			a.queued[ref] = 0
 		}
 		a.mu.Unlock()
@@ -738,6 +775,9 @@ func (a *Agent) launch(ctx context.Context, pl *plan) error {
 	}
 	if a.unqueue(ctx, ref) {
 		a.logf("%s: taken up from the queue", ref)
+		pl.dropQueued()
+	} else if pl.resumeNote != 0 {
+		a.removeQueued(ctx, ref, pl.resumeNote)
 		pl.dropQueued()
 	}
 	// Claim first: a host that loses to another one leaves without touching the labels.
@@ -775,7 +815,7 @@ func (a *Agent) launch(ctx context.Context, pl *plan) error {
 func (a *Agent) afterRun(p config.Project, ref forge.IssueRef, state string) {
 	a.pollMu.Lock()
 	defer a.pollMu.Unlock()
-	if state == "waiting" || state == "done" {
+	if state == "waiting" || state == "done" || state == marker.Queued {
 		a.resume(p, ref)
 	}
 	a.drain(a.ctx)
@@ -875,10 +915,14 @@ func (a *Agent) keepPlace(ref forge.IssueRef, since time.Time) {
 	}
 }
 
-// hasSlot reports whether a run of ref may start now: the agent is under agent.max_parallel, and the issue's project
-// under limit, its own limit (0: none). Without a slot it names the limit reached (marker.QueuedHost or
-// marker.QueuedProject) and its value. Call it with mu held.
+// hasSlot reports whether a run of ref may start now: the host is not paused, the agent is under agent.max_parallel,
+// and the issue's project under limit, its own limit (0: none). Without a slot it names the pause
+// (marker.QueuedLimit or marker.QueuedQuota) or the limit reached (marker.QueuedHost or marker.QueuedProject) and its
+// value. Call it with mu held.
 func (a *Agent) hasSlot(ref forge.IssueRef, limit int) (bool, string, int) {
+	if reason, _ := a.pausedLocked(); reason != "" {
+		return false, reason, 0
+	}
 	if len(a.active) >= a.maxParallel {
 		return false, marker.QueuedHost, a.maxParallel
 	}
