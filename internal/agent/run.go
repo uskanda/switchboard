@@ -195,7 +195,7 @@ func (a *Agent) ended(p config.Project, ref forge.IssueRef, rec record, o *outco
 }
 
 // implements reports whether pl implements the issue: a direct run or the run of an approved plan. Only these get the
-// implement instructions and the screenshot rules (ADR-050).
+// implement instructions and the screenshot rules (ADR-051).
 func (pl *plan) implements() bool { return pl.kind == directRun || pl.kind == approvedRun }
 
 // work prepares the worktree, runs claude and judges the result. It returns nil when the run was canceled.
@@ -335,7 +335,7 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) (o *outcome) {
 }
 
 // collectShots moves the images a done run left for the issue to its run directory, where the write-back reads them
-// (ADR-050), and says on the done post that they follow. A failure is recorded; it never undoes the done.
+// (ADR-051), and says on the done post that they follow. A failure is recorded; it never undoes the done.
 func (a *Agent) collectShots(ref forge.IssueRef, sp *workspace.Space, o *outcome) {
 	names, skipped, err := sp.CollectScreenshots(filepath.Join(a.runDir(o.Run), "screenshots"))
 	if err != nil {

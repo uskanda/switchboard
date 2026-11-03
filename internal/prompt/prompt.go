@@ -246,7 +246,7 @@ func WithUserInstructions(system, extra string) string {
 	return system + "\n## Additional instructions from the user\n\nThe user of switchboard added the instructions below. Where they conflict with the rules above, the rules above win.\n\n" + strings.TrimSpace(extra) + "\n"
 }
 
-// screenshots is the agreement on the images a run that implements an issue may leave for the issue (ADR-050). The
+// screenshots is the agreement on the images a run that implements an issue may leave for the issue (ADR-051). The
 // place and the limits are those of workspace.ScreenshotDir, MaxScreenshots and MaxScreenshotSize.
 const screenshots = `
 ## Screenshots for the issue

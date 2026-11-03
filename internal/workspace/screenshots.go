@@ -11,7 +11,7 @@ import (
 )
 
 // ScreenshotDir is where a run that implements an issue puts the images to attach to the issue, relative to the
-// worktree (ADR-050). git ignores it through info/exclude; a commit of a file under it blocks the push.
+// worktree (ADR-051). git ignores it through info/exclude; a commit of a file under it blocks the push.
 const ScreenshotDir = ".switchboard/screenshots"
 
 // The limits of the images of one run.

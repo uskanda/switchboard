@@ -35,7 +35,7 @@ type texts struct {
 	progressTitle, toolSep, purposeSep, noTools, progressWithheld string
 	hours, minutes                                                string // elapsed-time formats
 
-	// The images of a done run (ADR-050): the line of the done post, the title of the comment that attaches them, the
+	// The images of a done run (ADR-051): the line of the done post, the title of the comment that attaches them, the
 	// heading of the files left out and why each was, and the lines of an attachment that failed.
 	shotsNext, shotsTitle, shotsSkipped, shotsTooLarge, shotsTooMany, shotsNotImage, shotsFailed, shotsNoAttach string
 }

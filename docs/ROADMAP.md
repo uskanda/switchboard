@@ -103,8 +103,9 @@
 | V43 | 受信箱のサービスが送るdataだけのFCMのメッセージ（`title`、`message`、`body`、`categoryId`、`channelId`）を、`expo-notifications` がカテゴリのボタン付きで表示するか。アプリが裏にいるとき、終了しているときの両方で確かめる。出なければ、バックグラウンドのタスクで受けてローカルの通知として出す（design D5） | 未確認（`add-android-app` の実装の時点。実機のAndroidで確かめる） | |
 | V44 | 終了しているアプリで、計画の承認待ちの通知の「承認」を押すと、`registerTaskAsync` のタスクが動き、承認の語が投稿されるか。動かなければ、「承認」をアプリを開く形に変える（design D6） | 未確認（`add-android-app` の実装の時点。実機のAndroidで確かめる） | |
 | V45 | GitHubで、衝突のあるPRのマージが405で断られた直後に、`GET /repos/:owner/:repo/pulls/:number` が `mergeable=false` と `mergeable_state=dirty` を返すか（`null` で計算中のままにならないか）。GitLabで、衝突のあるMRのマージの拒否のあとに `has_conflicts=true` が返るか | 未確認（issue #119の実装の時点。switchboardの実行からはフォージに届かない。計算中で衝突と分からないときは、今までどおり `not_mergeable` を返し、人が押し直す） | |
-| V46 | エージェントのfine-grained PAT（Contents: Read/Write、Issues: Read/Write）を `GH_TOKEN` で渡し、空の `GH_CONFIG_DIR` で `gh issue comment -R owner/repo --attach` を実行すると、画像が `user-attachments` のURLで付くか。付いた画像が本文のどこに入るか | 未確認（issue #94の実装の時点。無人の実行からはフォージに届かないため）。`SWITCHBOARD_GH_TOKEN=... SWITCHBOARD_GH_ISSUE=owner/repo#n go test -tags realgh -run RealGH -v ./internal/forge/github/` で確かめる。通らなくても、doneは保たれ、理由のコメントが付く | |
-| V47 | GitLabの `POST /projects/:id/uploads` が返す `markdown` をissueのノートに入れると、画像として表示されるか | 未確認（issue #94の実装の時点）。`gl:` のsandboxのプロジェクトで、画像を置く実行をdoneまで進めて確かめる | |
+| V46 | Claude Codeのsandboxは、書き込みを拒否するパスに何を置くか。コマンドが強制終了したとき、それは残るか | 0バイトで権限0444の通常のファイルを置く。worktreeでは `.claude/settings.json` や `.mcp.json`、`.bashrc` など、クローンでは `.git/config.lock` に置く。実行中にエージェントが止まると消されずに残り、worktreeの作成と設定の検査が失敗した（issue #128。usknasのエージェントの実行で観察） | 2026-11-03 |
+| V47 | エージェントのfine-grained PAT（Contents: Read/Write、Issues: Read/Write）を `GH_TOKEN` で渡し、空の `GH_CONFIG_DIR` で `gh issue comment -R owner/repo --attach` を実行すると、画像が `user-attachments` のURLで付くか。付いた画像が本文のどこに入るか | 未確認（issue #94の実装の時点。無人の実行からはフォージに届かないため）。`SWITCHBOARD_GH_TOKEN=... SWITCHBOARD_GH_ISSUE=owner/repo#n go test -tags realgh -run RealGH -v ./internal/forge/github/` で確かめる。通らなくても、doneは保たれ、理由のコメントが付く | |
+| V48 | GitLabの `POST /projects/:id/uploads` が返す `markdown` をissueのノートに入れると、画像として表示されるか | 未確認（issue #94の実装の時点）。`gl:` のsandboxのプロジェクトで、画像を置く実行をdoneまで進めて確かめる | |
 
 ### 検証で分かった、設計に関わる点
 

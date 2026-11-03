@@ -31,7 +31,7 @@ var (
 )
 
 // Kind tells the instructions of the plan runs from those of the runs that write files, and from those of the runs
-// that implement an issue (ADR-050).
+// that implement an issue (ADR-051).
 type Kind string
 
 const (

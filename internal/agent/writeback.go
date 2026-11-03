@@ -34,7 +34,7 @@ type outcome struct {
 	CR      int    `json:"cr,omitempty"`  // for done: the number of the change request
 	Fix     string `json:"fix,omitempty"` // for done of a fix run: what it fixed (marker.CI, marker.Push or marker.Conflict)
 	// For done: the images kept in the run directory's screenshots/ to attach, the files left out, and why the
-	// images could not be collected (ADR-050).
+	// images could not be collected (ADR-051).
 	Shots      []string            `json:"shots,omitempty"`
 	Skipped    []workspace.Skipped `json:"skipped,omitempty"`
 	ShotsError string              `json:"shots_error,omitempty"`
@@ -169,7 +169,7 @@ func (a *Agent) writeOut(ctx context.Context, ref forge.IssueRef, o *outcome, se
 	return a.attach(ctx, ref, o, comments)
 }
 
-// attach posts the comment with the images of a done run, after its done post and its label (ADR-050), unless
+// attach posts the comment with the images of a done run, after its done post and its label (ADR-051), unless
 // comments hold one of the same run. When the images cannot be attached, the comment says why instead; the done
 // stays. Only a failure to post that comment fails the write-back, which is then tried again.
 func (a *Agent) attach(ctx context.Context, ref forge.IssueRef, o *outcome, comments []forge.Comment) error {

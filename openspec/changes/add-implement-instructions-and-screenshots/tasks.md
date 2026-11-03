@@ -26,9 +26,9 @@
 
 ## 4. 文書
 
-- [x] 4.1 ADR-050を`docs/DECISIONS.md`に足し、`docs/SPEC.md`とREADMEの指示の節を更新する。`make verify`が通ることで確かめる
+- [x] 4.1 ADR-051を`docs/DECISIONS.md`に足し、`docs/SPEC.md`とREADMEの指示の節を更新する。`make verify`が通ることで確かめる
 - [x] 4.2 `docs/examples/screenshots.md`に`implement.md`の文面と`allow_tools_extra`の例を書く
-- [x] 4.3 V46・V47を`docs/ROADMAP.md`の検証項目に足す。V46はタグ`realgh`のテストで再現できるようにする
+- [x] 4.3 V47・V48を`docs/ROADMAP.md`の検証項目に足す。V47はタグ`realgh`のテストで再現できるようにする
 
 ## 5. 全体の確認
 

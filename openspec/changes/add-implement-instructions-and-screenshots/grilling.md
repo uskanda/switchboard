@@ -11,7 +11,7 @@ issue `gh:uskanda/switchboard`#94の計画の段階で、switchboardの計画の
 | 画像をissueに付ける手段 | 当初は画像をissueのブランチにコミットし、SHAで固定したURLを埋め込むとした（A）。のちに Q7 で置き換わった | 第1ラウンド Q3 |
 | 画像の検査と上限 | 置き場所の直下の `.png`・`.jpg`・`.webp` だけを扱う。1枚5MB、1回の実行で10枚までとし、超えたものは付けずにその旨を書く。pushは止めない | 第1ラウンド Q4 |
 | どの実行で撮るか | 直接の実装（`agent:ready`・`agent:go`）と、承認のあとの実装だけで撮る。UIを変えたときだけ撮り、撮れないときは理由をsummaryに書く。直す実行（CI・push・衝突）と計画の実行では頼まない | 第1ラウンド Q5 |
-| ADR | 新しいADRを足し、SPEC.mdと設定の例も更新する。mainでADR-045〜049と検証項目V41〜V45が使われたので、番号はADR-050、検証項目はV46から振る | 第1ラウンド Q6 |
+| ADR | 新しいADRを足し、SPEC.mdと設定の例も更新する。mainでADR-045〜050と検証項目V41〜V46が使われたので、番号はADR-051、検証項目はV47から振る | 第1ラウンド Q6 |
 | `gh --attach` の調査と添付の手段（Q3の見直し） | switchboard自身が、doneを書き戻したあとに画像だけのコメントを1件付ける。GitHubは `gh issue comment --attach`（`GH_TOKEN` にエージェントのトークン、空の `GH_CONFIG_DIR`）、GitLabは uploads API。画像はコミットせず、置き場所は `.git/info/exclude` に入れる。添付に失敗したら理由をコメントに書き、doneは保つ | 第2ラウンド Q7 |
 | 画像のコメントの置き方 | doneの投稿のあとに、画像だけのコメントをissueに1件足す。このコメントにもマーカーを付け、次の実行では自分の以前の投稿として扱う。doneの投稿には「スクリーンショットは次のコメント」と1行書く。PR/MRには付けない | 第2ラウンド Q8 |
 | `screenshot_commands` を `allow_tools_extra` で置き換えるか | 置き換える。撮影のコマンドは `projects[].allow_tools_extra` に書き、例を `docs/examples/screenshots.md` に置く | 第3ラウンド Q9 |
@@ -22,7 +22,7 @@ issue `gh:uskanda/switchboard`#94の計画の段階で、switchboardの計画の
 
 - GitHub CLIはv2.99.0から `--attach` に対応する。対象は `gh issue comment` などで、画像は `user-attachments` のURLとして本文に入る。1回のコマンドで50件まで。リポジトリへのpushの権限が要る。GHESには対応しない
 - 中で使うアップロードの仕組みは、公開されたREST APIではない
-- エージェントのトークン（fine-grained PAT）で通るかは確かめていない。検証項目V46として残す
+- エージェントのトークン（fine-grained PAT）で通るかは確かめていない。検証項目V47として残す
 
 ## 後回しにしたもの
 

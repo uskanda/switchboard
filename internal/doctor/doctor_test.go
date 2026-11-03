@@ -157,6 +157,25 @@ func TestInboxTokenNamesThePermissionsOfAMerge(t *testing.T) {
 	}
 	w.expect(t, "ok", "inbox token (inbox_token_ref")
 	w.expect(t, "ok", "Pull requests and Contents write")
+	w.expect(t, "ok", "Actions and Commit statuses read")
+	w.expect(t, "ok", "gh:o/r: the inbox token can read the CI")
+}
+
+func TestInboxTokenThatCannotReadCIWarns(t *testing.T) {
+	w := newWorld(t)
+	inbox := fake.New(nil)
+	inbox.FailCI = forge.ErrForbidden
+	w.d.Forge = func(_, token string) forge.Forge {
+		if token == "i" {
+			return inbox
+		}
+		return w.f
+	}
+	if n := w.run(t); n != 0 {
+		t.Fatalf("%d failures:\n%s", n, w.out.String())
+	}
+	w.expect(t, "warn", "gh:o/r: the inbox token cannot read the CI, so the merge dialog of the web inbox shows none")
+	w.expect(t, "ok", "gh:o/r: the agent token can read the CI")
 }
 
 func TestOldClaudeWarns(t *testing.T) {
