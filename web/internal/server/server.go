@@ -34,7 +34,8 @@ type Inbox interface {
 	AddProject(ctx context.Context, req inboxapi.AddProjectRequest) (*inboxapi.AddProjectResponse, error)
 	IssueTargets(ctx context.Context) (*inboxapi.IssueTargets, error)
 	CreateIssue(ctx context.Context, req inboxapi.CreateIssueRequest) (*inboxapi.CreateIssueResponse, error)
-	Merge(ctx context.Context, ref, sha string) error
+	Merge(ctx context.Context, ref, sha string) (*inboxapi.MergeResult, error)
+	CancelAutoMerge(ctx context.Context, ref string) error
 	Events(ctx context.Context, fn func(*inboxapi.Inbox)) error
 }
 
@@ -87,6 +88,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.createIssue(w, r)
 	case r.URL.Path == "/api/merge" && r.Method == http.MethodPost:
 		s.merge(w, r)
+	case r.URL.Path == "/api/automerge/cancel" && r.Method == http.MethodPost:
+		s.cancelAutoMerge(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/"):
 		send(w, http.StatusNotFound, inboxapi.Error{Code: inboxapi.CodeNotFound, Message: "no such endpoint"})
 	case r.Method == http.MethodGet || r.Method == http.MethodHead:
@@ -203,7 +206,33 @@ func (s *Server) merge(w http.ResponseWriter, r *http.Request) {
 		send(w, http.StatusBadRequest, inboxapi.Error{Code: inboxapi.CodeInvalid, Message: "the body is not a merge"})
 		return
 	}
-	if err := s.Inbox.Merge(r.Context(), req.Ref, req.SHA); err != nil {
+	res, err := s.Inbox.Merge(r.Context(), req.Ref, req.SHA)
+	if err != nil {
+		s.answer(w, nil, err)
+		return
+	}
+	if res.AutoMerge {
+		// The forge refused it for a conflict: the inbox service merges it once the agent has fixed it (ADR-047).
+		send(w, http.StatusAccepted, inboxapi.MergeAnswer{Code: inboxapi.CodeAutoMergePending,
+			Message: "the change request conflicts with its base; it is merged once the agent has fixed the conflict"})
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// cancelAutoMerge passes the cancel of a merge waiting for the fix of a conflict on, from the web inbox's own page
+// only: it gets the same checks as a merge.
+func (s *Server) cancelAutoMerge(w http.ResponseWriter, r *http.Request) {
+	if code, why := s.sameOrigin(r); code != 0 {
+		send(w, code, inboxapi.Error{Code: inboxapi.CodeInvalid, Message: why})
+		return
+	}
+	var req inboxapi.CancelAutoMergeRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
+		send(w, http.StatusBadRequest, inboxapi.Error{Code: inboxapi.CodeInvalid, Message: "the body is not a cancel of an automatic merge"})
+		return
+	}
+	if err := s.Inbox.CancelAutoMerge(r.Context(), req.Ref); err != nil {
 		s.answer(w, nil, err)
 		return
 	}

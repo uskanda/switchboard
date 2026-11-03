@@ -25,7 +25,10 @@ type fakeInbox struct {
 	added   []inboxapi.AddProjectRequest
 	created []inboxapi.CreateIssueRequest
 	merged  []inboxapi.MergeRequest
-	err     error
+	// later makes a merge wait for the fix of a conflict; cancelled lists the cancels of such merges.
+	later     bool
+	cancelled []string
+	err       error
 }
 
 func (f *fakeInbox) List(context.Context) (*inboxapi.Inbox, error) {

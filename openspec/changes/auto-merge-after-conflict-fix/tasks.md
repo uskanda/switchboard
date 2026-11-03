@@ -22,7 +22,7 @@
 
 ## 5. WUIの裏側
 
-- [ ] 5.1 `web/internal/server` に `/api/automerge/cancel` を足し、`/api/merge` の202を返す。検査（`Origin` の違い、JSONでない本文）のテストを先に書く
+- [x] 5.1 `web/internal/server` に `/api/automerge/cancel` を足し、`/api/merge` の202を返す。検査（`Origin` の違い、JSONでない本文）のテストを先に書く
 
 ## 6. WUI
 
