@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { IssueRef } from "@/components/IssueRef";
 import { ApiError, getInbox, type Inbox } from "@/lib/api";
+import { useAutoMergeResults } from "@/lib/autoMergeResults";
 import { baseOf, loadMarks, overlay, pendingTimeout, saveMarks, settle, type Draft, type Mark, type PendingKind, type ViewItem } from "@/lib/pending";
 import { toast } from "@/lib/toast";
 
@@ -16,6 +17,11 @@ export type InboxState = {
   /** Why the first listing could not be read, if it could not. */
   error: string | null;
   live: Live;
+  /**
+   * When the updates last stopped being live (ISO 8601), null while they never were. Up to then the list was known to
+   * be current, though fetched_at says only when it last changed (lib/freshness.ts).
+   */
+  liveUntil: string | null;
   /** The rows to show: the listing with what this tab asked of its issues laid over it (lib/pending.ts), null until the first listing. */
   view: ViewItem[] | null;
   /**
@@ -26,9 +32,12 @@ export type InboxState = {
   markPending: (ref: string, kind: PendingKind, draft?: Draft) => void;
 };
 
-type Feed = { inbox: Inbox | null; error: string | null; live: Live };
+type Feed = { inbox: Inbox | null; error: string | null; live: Live; liveUntil: string | null };
 
-const InboxContext = createContext<InboxState>({ inbox: null, error: null, live: "off", view: null, markPending: () => {} });
+const InboxContext = createContext<InboxState>({ inbox: null, error: null, live: "off", liveUntil: null, view: null, markPending: () => {} });
+
+/** leave moves the feed to another state of the updates, noting the time when it leaves live. */
+const leave = (s: Feed, live: Live): Feed => ({ ...s, live, liveUntil: s.live === "live" ? new Date().toISOString() : s.liveUntil });
 
 function failure(err: unknown): string {
   if (err instanceof ApiError && err.code === "unavailable") {
@@ -41,11 +50,12 @@ function failure(err: unknown): string {
  * InboxProvider reads the listing once, then follows /api/events: each listing the stream sends replaces the one
  * shown. EventSource reconnects by itself after an error or an unavailable event; the state says so meanwhile.
  * While the page is hidden the stream is closed, so a tab left in the background keeps the inbox service from asking
- * the forges; when it shows again a new stream opens, and its first event is the listing of that moment.
+ * the forges; when it shows again a new stream opens, and its first event is the listing of that moment. Each time
+ * the updates stop being live the time is kept (liveUntil), so the header can say how old the list is meanwhile.
  * What this tab asked of the issues is laid over the listing (usePending).
  */
 export function InboxProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<Feed>({ inbox: null, error: null, live: "off" });
+  const [state, setState] = useState<Feed>({ inbox: null, error: null, live: "off", liveUntil: null });
 
   useEffect(() => {
     let closed = false;
@@ -60,19 +70,25 @@ export function InboxProvider({ children }: { children: ReactNode }) {
       if (es) return;
       const source = new EventSource("/api/events");
       es = source;
-      setState((s) => ({ ...s, live: "connecting" }));
+      setState((s) => leave(s, "connecting"));
       source.addEventListener("inbox", (e) => {
         const inbox = JSON.parse((e as MessageEvent).data) as Inbox;
-        setState({ inbox, error: null, live: "live" });
+        setState((s) => ({ ...s, inbox, error: null, live: "live" }));
       });
-      source.addEventListener("unavailable", () => setState((s) => ({ ...s, live: "reconnecting" })));
-      source.onerror = () => setState((s) => ({ ...s, live: "reconnecting" }));
+      source.addEventListener("unavailable", () => setState((s) => leave(s, "reconnecting")));
+      source.onerror = () => setState((s) => leave(s, "reconnecting"));
     };
     const close = () => {
       es?.close();
       es = null;
     };
-    const follow = () => (document.visibilityState === "hidden" ? close() : open());
+    // A stream closed while hidden is no longer live: the list is as of this moment until the next stream's first
+    // listing, which the page waits for once it shows again.
+    const hide = () => {
+      if (es) setState((s) => leave(s, "connecting"));
+      close();
+    };
+    const follow = () => (document.visibilityState === "hidden" ? hide() : open());
 
     follow();
     document.addEventListener("visibilitychange", follow);
@@ -84,6 +100,7 @@ export function InboxProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const pending = usePending(state.inbox);
+  useAutoMergeResults(state.inbox);
   const value = useMemo(() => ({ ...state, ...pending }), [state, pending]);
   return <InboxContext.Provider value={value}>{children}</InboxContext.Provider>;
 }

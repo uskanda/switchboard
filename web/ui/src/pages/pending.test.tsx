@@ -93,7 +93,7 @@ describe("a reply", () => {
     // The same wait listed again keeps the mark; the run taking the issue up ends it.
     stream(waiting);
     expect(within(section("実行中")).getAllByText("実行の開始を待っています").length).toBeGreaterThan(0);
-    stream({ ...waiting, state: "running", running_since: "2026-10-31T10:05:00Z", progress: "テストを書いています" });
+    stream({ ...waiting, state: "running", running_since: "2026-10-31T10:05:00Z", progress: "10:06 1分 Edit 1 ｜ テストを書いています" });
     expect(within(section("実行中")).queryByText("実行の開始を待っています")).toBeNull();
     expect(within(section("実行中")).getAllByText("テストを書いています").length).toBeGreaterThan(0);
     await waitFor(() => expect(sessionStorage.getItem(storageKey)).toBeNull());
@@ -147,7 +147,7 @@ describe("a new issue", () => {
     expect(within(running).getAllByText("実行の開始を待っています").length).toBeGreaterThan(0);
     expect(within(running).getAllByRole("link", { name: /Add a flag/ })[0]).toHaveAttribute("href", "/issue/gl%3Anas%2Fsb%237");
 
-    const real = { ...waiting, ref: "gl:nas/sb#7", project: "nas/sb", number: 7, state: "running" as const, running_since: t0, progress: "読んでいます" };
+    const real = { ...waiting, ref: "gl:nas/sb#7", project: "nas/sb", number: 7, state: "running" as const, running_since: t0, progress: "10:06 1分 Read 2 ｜ 読んでいます" };
     stream(real);
     expect(within(section("実行中")).queryByText("実行の開始を待っています")).toBeNull();
     expect(within(section("実行中")).getAllByText("読んでいます").length).toBeGreaterThan(0);

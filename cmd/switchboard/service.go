@@ -46,6 +46,9 @@ func setup(cfg *config.Config, cfgPath string, kind service.Kind) (service.Setup
 	if bin, err = filepath.EvalSymlinks(bin); err != nil {
 		return service.Setup{}, err
 	}
+	if service.GoRunBinary(bin, goCache()) {
+		return service.Setup{}, fmt.Errorf("%s was built by go run and goes stale or disappears with the build cache: install switchboard (make install) and run that one", bin)
+	}
 	abs, err := filepath.Abs(cfgPath)
 	if err != nil {
 		return service.Setup{}, err
@@ -72,6 +75,19 @@ func setup(cfg *config.Config, cfgPath string, kind service.Kind) (service.Setup
 		s.Binary, s.Config = web, filepath.Join(filepath.Dir(abs), "web.yaml")
 	}
 	return s, nil
+}
+
+// goCache is the go command's build cache: $GOCACHE, else go-build in the user's cache directory. A GOCACHE set
+// only through go env -w is not seen.
+func goCache() string {
+	if c := os.Getenv("GOCACHE"); c != "" && c != "off" {
+		return c
+	}
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(dir, "go-build")
 }
 
 // kindFlags adds --relay, --inbox and --web, which choose a service other than the agent's.
