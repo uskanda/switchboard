@@ -86,6 +86,14 @@ func (c *Client) Approve(ctx context.Context, ref string, since time.Time) error
 	return c.do(ctx, http.MethodPost, "/v1/approve", ApproveRequest{Ref: ref, Since: since}, nil)
 }
 
+// MergeStatus reads where the change request of a done issue stands, for the merge dialog: its state, whether its
+// head moved from sha, whether it conflicts, and the checks of sha. It is refused with ErrStale as Merge is.
+func (c *Client) MergeStatus(ctx context.Context, ref, sha string) (*MergeStatus, error) {
+	var out MergeStatus
+	q := url.Values{"ref": {ref}, "sha": {sha}}
+	return &out, c.do(ctx, http.MethodGet, "/v1/merge-status?"+q.Encode(), nil, &out)
+}
+
 // Instructions returns the additional instructions of both kinds, as the inbox service's machine has them.
 func (c *Client) Instructions(ctx context.Context) (*Instructions, error) {
 	var out Instructions

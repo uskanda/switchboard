@@ -43,6 +43,9 @@ const instructions = {
     { target: "gh:o/r", kind: "run", content: "Record an OpenSpec change." },
     { target: "gl:nas/sb", kind: "plan", content: "" },
     { target: "gl:nas/sb", kind: "run", content: "" },
+    { target: "", kind: "implement", content: "" },
+    { target: "gh:o/r", kind: "implement", content: "Take screenshots." },
+    { target: "gl:nas/sb", kind: "implement", content: "" },
   ],
 };
 
@@ -51,6 +54,7 @@ const section = async (heading: string) =>
   (await screen.findByRole("heading", { name: heading })).closest("section[data-kind]") as HTMLElement;
 const planSection = () => section("計画の実行への追加の指示");
 const runSection = () => section("実装の実行への追加の指示");
+const implementSection = () => section("実装の実行だけへの追加の指示");
 
 describe("the settings", () => {
   it("are linked from the header of the inbox", async () => {
@@ -117,6 +121,21 @@ describe("the settings", () => {
     const post = calls.find((c) => c.key === "POST /api/instructions");
     expect(JSON.parse(String(post?.init?.body))).toEqual({ target: "gh:o/r", kind: "run", content: "Record an OpenSpec change. Tick the tasks." });
     expect(within(await planSection()).getByRole("textbox", { name: "o/r GitHub" })).toHaveValue("Mind the API names.");
+  });
+
+  it("save an implement field as the implement kind and leave the run field alone", async () => {
+    const calls = answer({ "GET /api/instructions": { status: 200, body: instructions }, "POST /api/instructions": { status: 204 } });
+    at("/settings");
+    const implement = within(await implementSection());
+    expect(implement.getByText(/switchboard instructions edit --implement/)).toBeInTheDocument();
+    const field = await implement.findByRole("textbox", { name: "o/r GitHub" });
+    expect(field).toHaveValue("Take screenshots.");
+    await userEvent.type(field, " Use Playwright.");
+    await userEvent.click(within(field.closest("section") as HTMLElement).getByRole("button", { name: "保存する" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("o/r GitHubの実装だけの指示を保存しました");
+    const post = calls.find((c) => c.key === "POST /api/instructions");
+    expect(JSON.parse(String(post?.init?.body))).toEqual({ target: "gh:o/r", kind: "implement", content: "Take screenshots. Use Playwright." });
+    expect(within(await runSection()).getByRole("textbox", { name: "o/r GitHub" })).toHaveValue("Record an OpenSpec change.");
   });
 
   it("treat items without a kind as plan instructions", async () => {

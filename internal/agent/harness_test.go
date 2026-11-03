@@ -86,6 +86,7 @@ for a in "$@"; do
   [ "$prev" = "--settings" ] && cp "$a" "$ctl/settings-$n.json"
   prev=$a
 done
+printf '%s\n' "$@" > "$ctl/argv-$n"
 cat > "$ctl/prompt-$n.md"
 env > "$ctl/env-$n"
 step="$ctl/step-$n.sh"

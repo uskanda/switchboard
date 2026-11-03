@@ -17,9 +17,10 @@ type Change struct {
 	// Refuse, when set, is the reason the forge refuses to merge it.
 	Refuse string
 	// Conflict is whether it conflicts with its base, which the forge refuses to merge; Closed whether it was closed
-	// without a merge.
-	Conflict bool
-	Closed   bool
+	// without a merge; Computing whether the forge still computes the conflict, which ChangeRequestHead reports.
+	Conflict  bool
+	Closed    bool
+	Computing bool
 }
 
 func changeKey(owner, repo string, number int) string {
@@ -80,7 +81,7 @@ func (f *Forge) changeHead(owner, repo string, number int) *forge.ChangeRequestS
 	if !ok {
 		return nil
 	}
-	st := &forge.ChangeRequestState{State: forge.CROpen, Head: c.Head, Conflict: c.Conflict}
+	st := &forge.ChangeRequestState{State: forge.CROpen, Head: c.Head, Conflict: c.Conflict, Computing: c.Computing}
 	switch {
 	case c.Merged:
 		st.State = forge.CRMerged

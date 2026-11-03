@@ -40,6 +40,7 @@ type Inbox interface {
 	ProjectIcons(ctx context.Context) (inboxapi.ProjectIcons, error)
 	RegisterDevice(ctx context.Context, token string) error
 	Approve(ctx context.Context, ref string, since time.Time) error
+	MergeStatus(ctx context.Context, ref, sha string) (*inboxapi.MergeStatus, error)
 	Events(ctx context.Context, fn func(*inboxapi.Inbox)) error
 }
 
@@ -96,6 +97,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.projectIcon(w, r)
 	case r.URL.Path == "/api/project-icons" && r.Method == http.MethodGet:
 		out, err := s.Inbox.ProjectIcons(r.Context())
+		s.answer(w, out, err)
+	case r.URL.Path == "/api/merge-status" && r.Method == http.MethodGet:
+		// It only reads, as /api/issue does; the merge itself is a POST with the checks of a reply.
+		q := r.URL.Query()
+		out, err := s.Inbox.MergeStatus(r.Context(), q.Get("ref"), q.Get("sha"))
 		s.answer(w, out, err)
 	case r.URL.Path == "/api/automerge/cancel" && r.Method == http.MethodPost:
 		s.cancelAutoMerge(w, r)
@@ -253,7 +259,7 @@ func (s *Server) cancelAutoMerge(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// projectIcon passes a project's icon image on from the inbox service, which read it with the inbox token (ADR-049).
+// projectIcon passes a project's icon image on from the inbox service, which read it with the inbox token (ADR-053).
 // The page reads it from this origin, so the content security policy stays default-src 'self'; nosniff, set for
 // every answer, keeps the browser to the image type the inbox service checked.
 func (s *Server) projectIcon(w http.ResponseWriter, r *http.Request) {

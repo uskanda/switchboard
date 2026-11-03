@@ -252,6 +252,12 @@ func (a *Agent) Start(ctx context.Context) error {
 		a.private[p.Ref] = private
 		a.projects = append(a.projects, p)
 		a.pmu.Unlock()
+		// No run goes yet, so a sandbox placeholder for the clone's config.lock is one a killed run left (#128).
+		if removed, err := workspace.ClearConfigLock(ctx, p.Path); err != nil {
+			a.logf("%s: check the config.lock of %s: %v", p.FullName(), p.Path, err)
+		} else if removed {
+			a.logf("%s: removed the sandbox placeholder config.lock that a killed run left in %s", p.FullName(), p.Path)
+		}
 	}
 	a.clearQueued(ctx)
 	if err := a.recover(ctx); err != nil {

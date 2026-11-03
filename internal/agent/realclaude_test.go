@@ -39,7 +39,7 @@ func TestRealClaudePlanSettingsRefuseWrites(t *testing.T) {
 		Binary: bin, Dir: dir, RunDir: runDir, SessionID: newUUID(),
 		Prompt: "First, use the Write tool to create probe.txt containing the word probe. " +
 			"Then end with status \"plan\" and a one-line plan that says whether the file was written.",
-		SystemPrompt: "Answer with the structured output.", Settings: planSettings(), MaxTurns: 8,
+		SystemPrompt: "Answer with the structured output.", Settings: planSettings(), Tools: planTools, MaxTurns: 8,
 		Schema: PlanSchema, Auth: "subscription", Timeout: 5 * time.Minute,
 	})
 	if err != nil {
@@ -168,5 +168,51 @@ func TestRealClaudeDenyWinsOverAllow(t *testing.T) {
 	}
 	if !slices.ContainsFunc(res.Denials, func(d claudecode.Denial) bool { return strings.Contains(d.Command(), "git push") }) {
 		t.Fatal("git push was not recorded as refused")
+	}
+}
+
+// A run that writes files is offered its tools, the tools of the extra allows and the structured output, and nothing
+// else (V49).
+func TestRealClaudeRunGetsOnlyItsTools(t *testing.T) {
+	bin := os.Getenv("SWITCHBOARD_CLAUDE")
+	if bin == "" {
+		bin = "claude"
+	}
+	dir := t.TempDir()
+	run(t, dir, "git", "init", "-q", "-b", "main")
+	runDir := filepath.Join(t.TempDir(), "run")
+	extra := []string{"Skill"}
+	res, err := claudecode.Run(context.Background(), claudecode.Request{
+		Binary: bin, Dir: dir, RunDir: runDir, SessionID: newUUID(),
+		Prompt:       "Change nothing. End with status \"done\" and the summary \"ok\".",
+		SystemPrompt: "Answer with the structured output.", Settings: settings("", extra), Tools: tools(runTools, extra),
+		MaxTurns: 4, Schema: Schema, Auth: "subscription", Timeout: 5 * time.Minute, Effort: "low",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := os.ReadFile(filepath.Join(runDir, "stream.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var offered []string
+	for _, line := range strings.Split(string(stream), "\n") {
+		var m struct {
+			Subtype string   `json:"subtype"`
+			Tools   []string `json:"tools"`
+		}
+		if json.Unmarshal([]byte(line), &m) == nil && m.Subtype == "init" {
+			offered = m.Tools
+		}
+	}
+	t.Logf("tools offered: %v; result: %s %s", offered, res.Subtype, res.Structured)
+	want := append(tools(runTools, extra), "StructuredOutput")
+	slices.Sort(offered)
+	slices.Sort(want)
+	if !slices.Equal(offered, want) {
+		t.Fatalf("tools offered = %v, want %v", offered, want)
+	}
+	if res.Structured == nil {
+		t.Fatalf("no structured output: %+v", res)
 	}
 }

@@ -158,9 +158,10 @@ export const watchKey = (it: Item) =>
 
 /**
  * One file of the additional instructions; target "" is the one for every project. kind "plan" is for the plan runs,
- * "run" for the runs that write files; an inbox service older than kinds leaves it out, which means "plan".
+ * "run" for the runs that write files, "implement" for the direct runs and the runs of an approved plan only; an inbox
+ * service older than kinds leaves it out, which means "plan".
  */
-export type InstructionKind = "plan" | "run";
+export type InstructionKind = "plan" | "run" | "implement";
 export type Instruction = { target: string; kind?: InstructionKind; content: string };
 
 /** Instructions are read on host, the machine of the inbox service. */
@@ -232,12 +233,15 @@ export const addProject = (ref: string, planFirst: boolean) =>
     body: JSON.stringify({ ref, plan_first: planFirst }),
   });
 
-/** The kinds of start label a new issue can carry: the configuration's labels.ready, labels.plan and labels.go. */
-export type StartKind = "ready" | "plan" | "go";
+/**
+ * The kinds of start label a new issue can carry: the configuration's labels.ready, labels.plan and labels.go, and
+ * none, no label, whose label is empty.
+ */
+export type StartKind = "ready" | "plan" | "go" | "none";
 
 /**
  * IssueTargets are every configured project, each with host, the machine that runs it, and the start labels the
- * configuration names.
+ * configuration names, then none.
  */
 export type IssueTargets = {
   /** plan_first is whether the project's ready label starts with a plan; an older inbox service leaves it out. */
@@ -245,7 +249,7 @@ export type IssueTargets = {
   starts: { kind: StartKind; label: string }[];
 };
 
-/** NewIssue is what a new issue is opened with; the inbox service turns start into the label. */
+/** NewIssue is what a new issue is opened with; the inbox service turns start into the label, or none. */
 export type NewIssue = { ref: string; title: string; body: string; start: StartKind };
 
 /** CreatedIssue is the issue opened: its reference and its page on the forge. */
@@ -287,6 +291,26 @@ export const cancelAutoMerge = (ref: string) =>
  * images at /api/project-icon?ref=, which answers 404 when a project has none.
  */
 export const getProjectIcons = () => call<Record<string, string>>("/api/project-icons");
+
+/** CheckStatus is one CI check of the commit. name is the forge's data: show it as text only. */
+export type CheckStatus = { name: string; status: "success" | "failure" | "running" | "other"; url: string };
+
+/**
+ * MergeStatus is where the change request of a done issue stands before the merge (ADR-050): its state on the forge,
+ * whether its head moved from the commit the page showed, whether it conflicts (computing while the forge works it
+ * out), and the checks of that commit. ci is "forbidden" when the inbox token may not read CI, "none" without checks.
+ */
+export type MergeStatus = {
+  state: "open" | "closed" | "merged";
+  head_moved: boolean;
+  mergeable: "clean" | "conflict" | "computing";
+  ci: "ok" | "none" | "forbidden";
+  checks: CheckStatus[];
+};
+
+/** mergeStatus reads the status of the change request of a done issue at sha, for the merge dialog. */
+export const mergeStatus = (ref: string, sha: string) =>
+  call<MergeStatus>(`/api/merge-status?ref=${encodeURIComponent(ref)}&sha=${encodeURIComponent(sha)}`);
 
 /** issuePath is the page of one issue; the ref is one path segment. */
 export const issuePath = (ref: string) => `/issue/${encodeURIComponent(ref)}`;

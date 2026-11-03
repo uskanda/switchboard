@@ -10,7 +10,7 @@ import (
 )
 
 // Avatars reads the image a forge shows for a project. It is kept apart from Forge: only the inbox service reads
-// avatars, with the inbox token, for the web inbox (ADR-049).
+// avatars, with the inbox token, for the web inbox (ADR-053).
 type Avatars interface {
 	// ProjectAvatar returns the project's avatar image, checked by ImageType; ErrNotFound when it has none.
 	ProjectAvatar(ctx context.Context, owner, repo string) ([]byte, error)
