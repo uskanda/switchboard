@@ -18,8 +18,27 @@ type Telegram struct {
 	TokenRef string `yaml:"token_ref"`
 }
 
+// InboxNotify is where the inbox service sends push notifications of its own. Without FCM nothing is sent.
+type InboxNotify struct {
+	FCM *FCM `yaml:"fcm"`
+}
+
+// FCM names the Firebase project and the token_ref-style name of its service account key in the Secret Service.
+type FCM struct {
+	ProjectID      string `yaml:"project_id"`
+	CredentialsRef string `yaml:"credentials_ref"`
+}
+
 func (c *Config) validateNotify() []error {
 	var errs []error
+	if f := c.Inbox.Notify.FCM; f != nil {
+		if f.ProjectID == "" {
+			errs = append(errs, fmt.Errorf("inbox.notify.fcm.project_id is required"))
+		}
+		if f.CredentialsRef == "" {
+			errs = append(errs, fmt.Errorf("inbox.notify.fcm.credentials_ref is required"))
+		}
+	}
 	if t := c.Notify.Telegram; t != nil && (t.ChatID == "" || t.TokenRef == "") {
 		errs = append(errs, fmt.Errorf("notify.telegram needs both chat_id and token_ref"))
 	}

@@ -100,8 +100,10 @@
 | V40 | usknasの常駐のサービスのWUIから、`gh:uskanda/switchboard-sandbox` のdraftのPRをマージすると、PRの `Closes` でissueが閉じ、受信箱から消えるか | 未確認（issue #69の実装の時点。受信箱のトークンにREADMEの手順で権限を足してから確かめる） | |
 | V41 | `--permission-mode dontAsk` の `claude -p` で、allowに `Skill` が無いときにSkillツールを呼べるか | スキルによる。`allowed-tools` の無いスキルは、allowに `Skill` が無くても呼べた。`allowed-tools` を持つスキルは拒否され、`permission_denials` に `Skill` が残った。allowに `Skill` を足すと呼べた。claude 2.1.316で確かめた。`go test -tags realclaude -run RealClaudeSkillAllow ./internal/agent/` で再現できる | 2026-11-02 |
 | V42 | allowの `Bash(git *)` とdenyの `Bash(git push *)` が重なるとき、`git push` が拒否されるか | 拒否される。denyがallowより優先され、`permission_denials` に記録された。リモートには何も届かなかった。ただし、denyは境界にならない（V5）。`go test -tags realclaude -run RealClaudeDenyWinsOverAllow ./internal/agent/` で再現できる | 2026-11-02 |
-| V43 | エージェントのfine-grained PAT（Contents: Read/Write、Issues: Read/Write）を `GH_TOKEN` で渡し、空の `GH_CONFIG_DIR` で `gh issue comment -R owner/repo --attach` を実行すると、画像が `user-attachments` のURLで付くか。付いた画像が本文のどこに入るか | 未確認（issue #94の実装の時点。無人の実行からはフォージに届かないため）。`SWITCHBOARD_GH_TOKEN=... SWITCHBOARD_GH_ISSUE=owner/repo#n go test -tags realgh -run RealGH -v ./internal/forge/github/` で確かめる。通らなくても、doneは保たれ、理由のコメントが付く | |
-| V44 | GitLabの `POST /projects/:id/uploads` が返す `markdown` をissueのノートに入れると、画像として表示されるか | 未確認（issue #94の実装の時点）。`gl:` のsandboxのプロジェクトで、画像を置く実行をdoneまで進めて確かめる | |
+| V43 | 受信箱のサービスが送るdataだけのFCMのメッセージ（`title`、`message`、`body`、`categoryId`、`channelId`）を、`expo-notifications` がカテゴリのボタン付きで表示するか。アプリが裏にいるとき、終了しているときの両方で確かめる。出なければ、バックグラウンドのタスクで受けてローカルの通知として出す（design D5） | 未確認（`add-android-app` の実装の時点。実機のAndroidで確かめる） | |
+| V44 | 終了しているアプリで、計画の承認待ちの通知の「承認」を押すと、`registerTaskAsync` のタスクが動き、承認の語が投稿されるか。動かなければ、「承認」をアプリを開く形に変える（design D6） | 未確認（`add-android-app` の実装の時点。実機のAndroidで確かめる） | |
+| V45 | エージェントのfine-grained PAT（Contents: Read/Write、Issues: Read/Write）を `GH_TOKEN` で渡し、空の `GH_CONFIG_DIR` で `gh issue comment -R owner/repo --attach` を実行すると、画像が `user-attachments` のURLで付くか。付いた画像が本文のどこに入るか | 未確認（issue #94の実装の時点。無人の実行からはフォージに届かないため）。`SWITCHBOARD_GH_TOKEN=... SWITCHBOARD_GH_ISSUE=owner/repo#n go test -tags realgh -run RealGH -v ./internal/forge/github/` で確かめる。通らなくても、doneは保たれ、理由のコメントが付く | |
+| V46 | GitLabの `POST /projects/:id/uploads` が返す `markdown` をissueのノートに入れると、画像として表示されるか | 未確認（issue #94の実装の時点）。`gl:` のsandboxのプロジェクトで、画像を置く実行をdoneまで進めて確かめる | |
 
 ### 検証で分かった、設計に関わる点
 

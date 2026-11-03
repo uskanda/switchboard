@@ -17,7 +17,7 @@ var ErrNotFound = errors.New("not found")
 var ErrForbidden = errors.New("forbidden")
 
 // Attacher is a forge client that can post a comment with image files attached, as a person attaches them in the
-// forge's web page (ADR-047). The comment ends with the last line of body, so that a marker there still parses.
+// forge's web page (ADR-048). The comment ends with the last line of body, so that a marker there still parses.
 type Attacher interface {
 	AttachComment(ctx context.Context, ref IssueRef, body string, files []string) (*Comment, error)
 }

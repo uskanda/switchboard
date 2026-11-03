@@ -59,7 +59,7 @@ const (
 	Queued   = "queued" // the comment of an issue waiting for a free slot
 	Waiting  = "waiting"
 	Done     = "done"
-	// Attachment marks the comment that attaches the images of a done run, posted after its done post (ADR-047).
+	// Attachment marks the comment that attaches the images of a done run, posted after its done post (ADR-048).
 	Attachment = "attachment"
 )
 

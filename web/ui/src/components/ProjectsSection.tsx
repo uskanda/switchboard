@@ -34,8 +34,23 @@ function failure(err: unknown): string {
   return `失敗しました：${err instanceof Error ? err.message : String(err)}`;
 }
 
-/** Row is one project and what it still needs before the agent runs it: a clone and the state labels. */
+/** ready is a project with no problem: cloned, with its state labels read and none missing. */
+const ready = (p: Project) => p.cloned && !p.labels_error && p.missing_labels.length === 0;
+
+/**
+ * Row is one project. One with a problem is a card that says what it still needs before the agent runs it: a clone
+ * and the state labels. One with no problem is a line of its reference and its start, with its clone's place in its
+ * title.
+ */
 function Row({ project }: { project: Project }) {
+  if (ready(project)) {
+    return (
+      <li className="flex flex-wrap items-center gap-x-sm gap-y-xs px-lg" title={project.path}>
+        <IssueRef value={project.ref} />
+        <span className="text-label-md text-muted">・{project.plan_first ? "計画から始める" : "すぐに実装する"}</span>
+      </li>
+    );
+  }
   return (
     <li>
       <Card className="flex flex-col gap-xs">
@@ -139,7 +154,7 @@ export function ProjectsSection({ onAdded }: { onAdded?: () => void }) {
   return (
     <section aria-labelledby="projects-heading" className="flex flex-col gap-sm">
       <div className="flex flex-col gap-xs">
-        <h2 id="projects-heading" className="text-headline-md font-semibold">
+        <h2 id="projects-heading" className="text-body-md font-semibold">
           プロジェクト
         </h2>
         {data && (
@@ -152,7 +167,7 @@ export function ProjectsSection({ onAdded }: { onAdded?: () => void }) {
       {!data && !error && <Loading />}
       {data && (
         <ul className="flex flex-col gap-sm">
-          {data.items.map((p) => (
+          {[...data.items.filter((p) => !ready(p)), ...data.items.filter(ready)].map((p) => (
             <Row key={p.ref} project={p} />
           ))}
         </ul>

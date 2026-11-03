@@ -15,7 +15,7 @@ import (
 )
 
 // GitHub has no public API that attaches a file to a comment; the GitHub CLI does, from v2.99.0, through the upload
-// the web page uses (ADR-047, V43). This file is the only place switchboard runs gh.
+// the web page uses (ADR-048, V45). This file is the only place switchboard runs gh.
 
 // GHMinVersion is the first gh version with --attach.
 const GHMinVersion = "2.99.0"

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { IssueRef } from "@/components/IssueRef";
 import { Loading } from "@/components/Loading";
 import { MergeButton, changeName } from "@/components/MergeButton";
@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
-import { ApiError, age, elapsed, getIssue, isWaiting, issuePath, postReply, queueText, watchKey, type Detail } from "@/lib/api";
+import { ApiError, getIssue, isWaiting, issuePath, postReply, queueText, timeText, watchKey, type Detail } from "@/lib/api";
 import { draftOf, keepDraft } from "@/lib/drafts";
 import { useInbox } from "@/lib/inbox";
 import { useHeightVar } from "@/lib/height";
@@ -19,6 +19,7 @@ import { cachedIssue, rememberIssue } from "@/lib/issueCache";
 import { composeReply, defaultAnswers, parsePlanQuestions, type Answer } from "@/lib/planQuestions";
 import { addedCards, cardsOf, targetOf, type Card as ThreadCard } from "@/lib/scrollTarget";
 import { markSent } from "@/lib/sent";
+import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { nextWait } from "@/lib/waits";
 
@@ -318,6 +319,28 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
   const now = detail && markOf(detail);
   // The reply stays said to be sent only while the issue is still in the wait (or the done state) it answered.
   const sent = !!sentAt && !!detail && !!now && !gone && replyable && !running && !queued && now.since === sentAt.since && now.waitKey === sentAt.waitKey;
+  // ?action=merge (the app's merge button) opens the merge dialog once this issue's own read has arrived; an issue
+  // that offers no merge says so instead. Either way the address loses the query, so the dialog opens once.
+  const [params, setParams] = useSearchParams();
+  const mergeable = finished && !gone && !!detail?.change_number && !!detail?.change_sha;
+  const askMerge = params.get("action") === "merge" && fresh && !reading;
+  const forgetMerge = () =>
+    setParams(
+      (p) => {
+        p.delete("action");
+        return p;
+      },
+      { replace: true },
+    );
+  useEffect(() => {
+    if (!askMerge || mergeable) return;
+    toast.error("このissueは、ここからはマージできません。", {
+      description: "マージできるのは、openで完了のissueのうち、PR/MRの番号とコミットが分かるものだけです。",
+    });
+    forgetMerge();
+    // forgetMerge changes with every render; the query is what is answered.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [askMerge, mergeable]);
   // Once out of that wait, the mark goes, so coming back to it later does not say sent again.
   useEffect(() => {
     if (sentAt && !sent) setSentAt(null);
@@ -366,7 +389,7 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
               )}
               {queued && <span>{queueText(detail.reason)}</span>}
               <span>{detail.host}</span>
-              <span>{running ? elapsed(detail.since) : age(detail.since)}</span>
+              <span>{timeText(running ? "running" : queued ? "queued" : finished ? "done" : "waiting", detail.since)}</span>
               <a href={detail.url} className="inline-flex min-h-11 items-center underline" target="_blank" rel="noreferrer">
                 フォージで開く（新しいタブ）
               </a>
@@ -391,7 +414,14 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
                   {changeName(detail.ref, detail.change_number)}
                 </a>
               )}
-              <MergeButton issueRef={detail.ref} number={detail.change_number} sha={detail.change_sha} url={detail.change_url} />
+              <MergeButton
+                issueRef={detail.ref}
+                number={detail.change_number}
+                sha={detail.change_sha}
+                url={detail.change_url}
+                ask={askMerge}
+                onClosed={() => params.get("action") === "merge" && forgetMerge()}
+              />
             </div>
           ) : null}
           {gone && <p className="text-muted">このissueは、待ちでも実行中でもなくなりました。</p>}

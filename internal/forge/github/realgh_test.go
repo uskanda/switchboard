@@ -2,7 +2,7 @@
 
 package github
 
-// This test runs the real gh CLI against a real issue (V43): it posts a comment with an image. It runs only with the
+// This test runs the real gh CLI against a real issue (V45): it posts a comment with an image. It runs only with the
 // realgh build tag, and needs the agent's token and a sandbox issue:
 //
 //	SWITCHBOARD_GH_TOKEN=... SWITCHBOARD_GH_ISSUE=owner/repo#1 go test -tags realgh -run RealGH -v ./internal/forge/github/
@@ -43,7 +43,7 @@ func TestRealGHAttachesAnImageWithTheAgentToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	const last = "<!-- switchboard v=1 state=attachment -->"
-	c, err := New(token).AttachComment(t.Context(), ref, "### V43 probe\n\n"+last+"\n", []string{p})
+	c, err := New(token).AttachComment(t.Context(), ref, "### V45 probe\n\n"+last+"\n", []string{p})
 	if err != nil {
 		t.Fatal(err)
 	}

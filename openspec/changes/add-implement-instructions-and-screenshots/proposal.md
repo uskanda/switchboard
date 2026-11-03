@@ -12,7 +12,7 @@ UIを変えた実装では、変わった画面をissueの上で確かめたい�
 - 実行の前に、置き場所を `.git/info/exclude` に入れ、前の実行の残りを消す。doneで終わったら、条件に合う画像をrunのディレクトリへ移す
 - doneを書き戻したあと、switchboard自身が画像だけのコメントを1件足す。GitHubは `gh issue comment --attach`、GitLabはuploads APIで付ける。失敗したら理由だけのコメントを付け、doneは保つ
 - `switchboard doctor` で、GitHubのプロジェクトがあるときに `gh` の有無と版を確かめる
-- ADR-047を足し、SPEC.md、README、`docs/examples/screenshots.md` を更新する
+- ADR-048を足し、SPEC.md、README、`docs/examples/screenshots.md` を更新する
 
 ## Capabilities
 
@@ -35,6 +35,6 @@ UIを変えた実装では、変わった画面をissueの上で確かめたい�
   - `internal/marker`：添付のコメントの状態
   - `cmd/switchboard`：`instructions edit --implement`、`doctor`
   - `internal/inboxserve`、`inboxapi`、`web/`：指示の種類
-- 文書：`docs/DECISIONS.md`（ADR-047）、`docs/SPEC.md`、`docs/ROADMAP.md`（V43、V44）を更新する。README、`docs/examples/screenshots.md`、`DESIGN.md` も合わせる
+- 文書：`docs/DECISIONS.md`（ADR-048）、`docs/SPEC.md`、`docs/ROADMAP.md`（V45、V46）を更新する。README、`docs/examples/screenshots.md`、`DESIGN.md` も合わせる
 - 依存：GitHubのプロジェクトで画像を付けるには、端末に `gh`（v2.99.0以上）が要る。無くても実行と書き戻しは今までどおり動く
 - 互換性：`implement.md` が無ければ今までと同じ指示になる。置き場所に画像が無ければ何もしない

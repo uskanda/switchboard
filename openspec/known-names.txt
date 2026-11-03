@@ -28,3 +28,16 @@ agent.allow_tools_extra
 GH_TOKEN
 GH_CONFIG_DIR
 user-attachments
+google-services.json
+expo-notifications
+react-native-webview
+expo-build-properties
+usesCleartextTraffic
+ACCESS_LOCAL_NETWORK
+assembleRelease
+expo prebuild
+oauth2.googleapis.com
+exp.host
+expo-task-manager
+react-native-safe-area-context
+expo-system-ui
