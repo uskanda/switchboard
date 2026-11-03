@@ -76,6 +76,10 @@ type Merges interface {
 	// *NotMergeableError when the forge refuses, ErrForbidden when the token may not, and ErrNotFound when there is
 	// no such change request.
 	MergeChangeRequest(ctx context.Context, owner, repo string, number int, sha string) error
+	// ChangeRequestHead returns the state, the head commit and the conflict with the base of the change request
+	// number, as CI's does: the inbox service reads it to tell a merge refused for a conflict, and to merge after the
+	// agent fixed it (ADR-047).
+	ChangeRequestHead(ctx context.Context, owner, repo string, number int) (*ChangeRequestState, error)
 }
 
 // The forge kinds, as written before the colon of a project reference.

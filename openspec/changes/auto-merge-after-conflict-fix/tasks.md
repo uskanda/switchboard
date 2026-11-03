@@ -7,7 +7,7 @@
 
 ## 2. フォージの層
 
-- [ ] 2.1 `forge.Merges` に `ChangeRequestHead` を足す。fakeの `Change` に `Conflict` と `Closed` を足し、`SetChange` の状態を `ChangeRequestHead` が返すテストを書いてから直す
+- [x] 2.1 `forge.Merges` に `ChangeRequestHead` を足す。fakeの `Change` に `Conflict` と `Closed` を足し、`SetChange` の状態を `ChangeRequestHead` が返すテストを書いてから直す
 
 ## 3. 依頼の置き場
 
