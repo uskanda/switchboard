@@ -399,6 +399,10 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) (o *outcome) {
 		req.SystemPrompt = prompt.WithSandbox(req.SystemPrompt, p.VerifyCommand)
 		req.SystemPrompt = prompt.WithUserInstructions(req.SystemPrompt, extra)
 	}
+	if pl.kind == planRun {
+		req.ResumeFrom = a.resumeFrom(pl, launchOf(req, head))
+		in.Continued = req.ResumeFrom != ""
+	}
 	req.Prompt = prompt.Build(in)
 	// The run's directory is made first, so that the runs are hidden from the first run on.
 	if err := os.MkdirAll(req.RunDir, 0o700); err != nil {
@@ -408,11 +412,30 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) (o *outcome) {
 	if err := a.checkSandbox(ctx); err != nil {
 		return o.fail(fmt.Sprintf(a.msg.sandbox, err))
 	}
-	a.logStarted(is.Ref, rec.Run, pl, added, used, impl)
+	if err := a.writeLaunch(req.RunDir, launchOf(req, head)); err != nil {
+		return o.fail(fmt.Sprintf(a.msg.prepare, err))
+	}
+	a.logStarted(is.Ref, rec.Run, pl, added, used, impl, req.ResumeFrom)
 	stopProgress := a.followProgress(ctx, is.Ref, rec, filepath.Join(a.runDir(rec.Run), "stream.jsonl"))
 	res, err := claudecode.Run(ctx, req)
 	stopProgress()
 	a.addCost(res)
+	if err == nil && req.ResumeFrom != "" && claudecode.SessionNotFound(res) {
+		// The session to fork from is gone: the run starts again in a fresh session of its own, as if it had not
+		// tried to fork (ADR-005).
+		a.logf("%s: run %s: session %s to fork from is gone; starting a fresh session", is.Ref, rec.Run, req.ResumeFrom)
+		rec.Session = newUUID()
+		o.Session, req.SessionID, req.ResumeFrom, in.Continued = rec.Session, rec.Session, "", false
+		req.Prompt = prompt.Build(in)
+		if err := a.writeLaunch(req.RunDir, launchOf(req, head)); err != nil {
+			return o.fail(fmt.Sprintf(a.msg.prepare, err))
+		}
+		a.logStarted(is.Ref, rec.Run, pl, added, used, impl, "")
+		stopProgress = a.followProgress(ctx, is.Ref, rec, filepath.Join(a.runDir(rec.Run), "stream.jsonl"))
+		res, err = claudecode.Run(ctx, req)
+		stopProgress()
+		a.addCost(res)
+	}
 	discarded := false
 	if head != "" {
 		// A plan run changes nothing; whatever it changed anyway is thrown away, also when it failed.
@@ -627,9 +650,9 @@ func (a *Agent) loadInstructions(kind instructions.Kind, p config.Project) instr
 // so that the audit log tells which permissions and which saved version of the instructions a run used: used are the
 // plan or run instructions, impl the implement instructions. The text of the instructions is never logged, as for
 // instructions.saved.
-func (a *Agent) logStarted(ref forge.IssueRef, run string, pl *plan, added []string, used, impl instructions.Loaded) {
+func (a *Agent) logStarted(ref forge.IssueRef, run string, pl *plan, added []string, used, impl instructions.Loaded, resumedFrom string) {
 	fields := map[string]any{
-		"issue": ref.String(), "run": run, "kind": pl.kind.String(), "allow": added,
+		"issue": ref.String(), "run": run, "kind": pl.kind.String(), "allow": added, "resumed_from": resumedFrom,
 		"instructions": map[string]string{"global": used.Global, "project": used.Project},
 		"implement":    map[string]string{"global": impl.Global, "project": impl.Project},
 	}

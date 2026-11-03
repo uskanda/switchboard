@@ -284,3 +284,32 @@ func TestRealClaudeSandbox(t *testing.T) {
 		t.Error("the sandbox created the hidden path that did not exist")
 	}
 }
+
+// V53: a plan run that forks from the previous round's session takes the new session ID and remembers that round.
+func TestRealClaudePlanRoundForksFromThePrevious(t *testing.T) {
+	dir := realClaudeRepo(t)
+	start := func(prompt, session, from string) *claudecode.Result {
+		t.Helper()
+		res, err := claudecode.Run(context.Background(), claudecode.Request{
+			Binary: realClaudeBinary(), Dir: dir, RunDir: filepath.Join(t.TempDir(), "run"), SessionID: session,
+			ResumeFrom: from, Prompt: prompt, SystemPrompt: "Answer with the structured output.", Settings: planSettings(),
+			Tools: planTools, MaxTurns: 4, Schema: PlanSchema, Auth: "subscription", Timeout: 5 * time.Minute, Effort: "low",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+	first := newUUID()
+	start("The code word is PELICAN; keep it in mind. Read no file. End with status \"questions\" and one question: "+
+		"\"Go on?\".", first, "")
+	second := newUUID()
+	res := start("Read no file. End with status \"plan\" and put the code word I gave you earlier in the plan.", second, first)
+	t.Logf("result %q", res.Text)
+	if res.SessionID != second {
+		t.Errorf("session = %q, want the fork's %q", res.SessionID, second)
+	}
+	if !strings.Contains(string(res.Structured), "PELICAN") {
+		t.Errorf("the fork does not remember the code word: %s", res.Structured)
+	}
+}

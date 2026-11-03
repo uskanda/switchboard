@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -37,10 +38,13 @@ type Settings struct {
 
 // Request describes one run.
 type Request struct {
-	Binary       string // the claude executable
-	Dir          string // working directory (the issue's worktree)
-	RunDir       string // where the run's files are written: prompt, settings, output
-	SessionID    string // a new UUID for every run
+	Binary    string // the claude executable
+	Dir       string // working directory (the issue's worktree)
+	RunDir    string // where the run's files are written: prompt, settings, output
+	SessionID string // a new UUID for every run
+	// ResumeFrom, when set, is the session the run forks from (--resume --fork-session); the fork takes SessionID.
+	// The forked run keeps the system prompt of that session: --append-system-prompt-file is not applied (V53).
+	ResumeFrom   string
 	Prompt       string // sent on stdin
 	SystemPrompt string // appended to the system prompt
 	Settings     Settings
@@ -135,6 +139,9 @@ func Args(req Request) []string {
 		"--append-system-prompt-file", filepath.Join(req.RunDir, "system.md"),
 		"--max-turns", strconv.Itoa(req.MaxTurns),
 		"--json-schema", req.Schema,
+	}
+	if req.ResumeFrom != "" {
+		args = append(args, "--resume", req.ResumeFrom, "--fork-session")
 	}
 	if len(req.Tools) > 0 {
 		args = append(args, "--tools", strings.Join(req.Tools, ","))
@@ -360,6 +367,15 @@ func Parse(r io.Reader, res *Result) error {
 		}
 	}
 	return sc.Err()
+}
+
+// SessionNotFound reports whether a run that was to fork from ResumeFrom ended before its first turn because that
+// session does not exist (V53). Such a run cost nothing, and may be started again without ResumeFrom.
+func SessionNotFound(res *Result) bool {
+	if res == nil || !res.HasResult || !res.IsError || res.NumTurns != 0 {
+		return false
+	}
+	return slices.ContainsFunc(res.Errors, func(e string) bool { return strings.Contains(e, "No conversation found") })
 }
 
 // CheckSandbox reports whether the sandbox can run on this machine. On Linux it starts bwrap (the given binary,

@@ -163,7 +163,7 @@ claude -p \
 ```
 
 - 新規起動時は `--session-id` でセッションIDをエージェント側で先に決める〔確認済C17、`-p` との組み合わせはV7〕。フック入力から取り出す必要がなくなり、V1への依存が下がる
-- 再開時は `--fork-session` で毎回新しいIDに分岐させ、新しいIDはstream-jsonの結果から取る。分岐なしで同じセッションを2か所から再開すると発言が1つのtranscriptに混ざる〔確認済C17〕ので、マスターが同じセッションを対話で開いていても衝突しないようにする（V4のリスクを設計で消す）
+- 再開時は `--fork-session` で毎回新しいIDに分岐させ、分岐した先のIDも `--session-id` で先に決める（V53）。再開するのは、同じ端末で1時間以内に続く計画の実行だけである（ADR-058）。再開では追記するシステムプロンプトが差し替わらないため、前回と今回の起動の条件を `launch.json` で比べる。分岐なしで同じセッションを2か所から再開すると発言が1つのtranscriptに混ざる〔確認済C17〕ので、マスターが同じセッションを対話で開いていても衝突しないようにする（V4のリスクを設計で消す）
 - `--permission-mode dontAsk` と明示allowで動かす。`-p` で事前許可のないツールは確認待ちにならず拒否され、最終resultの `permission_denials` に残る〔確認済C15、dontAskの厳密な挙動はV18〕
 - `--tools` で渡すツールを実行の種類ごとに固定する（ADR-052）。ファイルを書く実行は `Bash,Read,Edit,Write,Glob,Grep,WebSearch` に、`allow_tools_extra` の項目のツール名を足す。計画の実行は `Bash,Read,Glob,Grep,WebSearch` とする。`--model` と `--effort` は、`agent.model`、`agent.effort`、`agent.plan`、`agent.fix` の値があるときだけ付ける
 - `--strict-mcp-config` と空に近い `mcp.json` で、対象リポジトリの `.mcp.json` 由来のMCPサーバーを読み込ませない
