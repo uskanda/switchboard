@@ -59,9 +59,9 @@ function OneQuestion({ q, answer, disabled, onChange }: { q: Question; answer: A
   });
   return (
     <section aria-labelledby={`q${q.n}-title`} className="flex flex-col gap-sm">
-      <h4 id={`q${q.n}-title`} className="font-semibold break-words">
+      <h3 id={`q${q.n}-title`} className="font-semibold break-words">
         Q{q.n} {q.title}
-      </h4>
+      </h3>
       {body}
       {lastGroup < 0 && note}
       {q.recommendation && (

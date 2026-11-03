@@ -89,6 +89,14 @@ describe("merging a done issue's pull request", () => {
     expect(screen.getAllByRole("link", { name: "https://github.test/o/r/pull/9" })[0]).toBeInTheDocument();
   });
 
+  it("puts the focus on the button that backs out when the dialog opens", async () => {
+    answer({ "GET /api/inbox": listing });
+    at("/");
+    await userEvent.click((await screen.findAllByRole("button", { name: "PR #9をマージ" }))[0]);
+    const dialog = await screen.findByRole("dialog", { name: "PR #9をマージしますか" });
+    expect(within(dialog).getByRole("button", { name: "やめる" })).toHaveFocus();
+  });
+
   it("sends nothing when the dialog is dismissed", async () => {
     const calls = answer({ "GET /api/inbox": listing });
     at("/");

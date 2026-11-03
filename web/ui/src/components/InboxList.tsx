@@ -5,7 +5,6 @@ import { Loading } from "@/components/Loading";
 import { MergeButton, changeName } from "@/components/MergeButton";
 import { NewIssue } from "@/components/NewIssue";
 import { ReasonBadge } from "@/components/ReasonBadge";
-import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { Table, TableCell, TableHead } from "@/components/ui/table";
@@ -128,11 +127,16 @@ function Items({ items, timeHead, selected }: { items: ViewItem[]; timeHead: str
           const current = it.ref === selected;
           return (
             <li key={it.ref} data-flip-key={it.ref}>
-              <Card className={cn("flex flex-col p-0", current && "border-2 border-primary")}>
+              <Card
+                className={cn(
+                  "flex flex-col p-0 has-[>a:focus-visible]:outline-2 has-[>a:focus-visible]:outline-offset-2 has-[>a:focus-visible]:outline-primary",
+                  current && "border-2 border-primary",
+                )}
+              >
                 <Link
                   to={issuePath(it.ref)}
                   aria-current={current ? "page" : undefined}
-                  className="flex flex-col gap-xs rounded-md p-lg focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary"
+                  className="flex flex-col gap-xs rounded-md p-lg focus-visible:outline-none"
                 >
                   <IssueRef value={it.ref} className="self-start" />
                   <span className="font-medium break-words">{it.title}</span>
@@ -155,7 +159,8 @@ function Items({ items, timeHead, selected }: { items: ViewItem[]; timeHead: str
 
 /**
  * InboxList is the button for a new issue, then the waiting, the running, the queued and the done issues (open,
- * waiting to be closed), each under its own heading. Until the first listing arrives it says that it is loading.
+ * waiting to be closed), each under its own heading. Until the first listing arrives it says that it is loading. What
+ * the listing could not read is not here: InboxErrors shows it above the panes.
  * The rows are the listing with what this tab asked of the issues laid over it (lib/pending.ts). A row that changes
  * places on an update moves there, and a new one fades in (lib/flip.ts).
  */
@@ -171,12 +176,6 @@ export function InboxList({ selected }: { selected?: string }) {
     <div ref={root} className="flex flex-col gap-lg">
       <h2 className="sr-only">一覧</h2>
       <NewIssue />
-      {error && <Alert>{error}</Alert>}
-      {inbox?.errors.map((e) => (
-        <Alert key={e.forge}>
-          {e.forge}を読めませんでした：{e.message}
-        </Alert>
-      ))}
       {!inbox && !error && <Loading />}
       {inbox && (
         <section className="flex flex-col gap-sm">
