@@ -38,7 +38,14 @@ function lineBreaks() {
 }
 
 // Links from an issue open in a new tab and send no referrer. Images are not loaded: each becomes a link to it.
+// Headings go two levels down, h1 to h3 and the rest to h6 at most: the page's header is h1 and the issue's title h2.
 const components: Components = {
+  h1: ({ children }) => <h3>{children}</h3>,
+  h2: ({ children }) => <h4>{children}</h4>,
+  h3: ({ children }) => <h5>{children}</h5>,
+  h4: ({ children }) => <h6>{children}</h6>,
+  h5: ({ children }) => <h6>{children}</h6>,
+  h6: ({ children }) => <h6>{children}</h6>,
   a: ({ href, children }) => (
     <a href={href} target="_blank" rel="noreferrer" className="underline">
       {children}

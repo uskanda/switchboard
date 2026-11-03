@@ -81,7 +81,8 @@ describe("the reply", () => {
     await waitFor(() => expect(calls.some((c) => c.key === "POST /api/reply")).toBe(true));
   });
 
-  it("moves the focus to what says it was sent", async () => {
+  // With another wait on the list, the focus goes to the button to it instead (waitNav.test.tsx).
+  it("moves the focus to what says it was sent when no other wait is left", async () => {
     answer({
       "GET /api/inbox": listing(item()),
       "GET /api/issue?ref=gh%3Ao%2Fr%2312": detail(),
@@ -140,6 +141,13 @@ describe("the list", () => {
     answer({ "GET /api/inbox": listing(done) });
     at("/");
     expect((await screen.findAllByRole("link", { name: "PR #9" }))[0]).toHaveAttribute("href", "https://github.test/o/r/pull/9");
+  });
+
+  it("draws a card's focus apart from the card, so it differs from the frame of the chosen one", async () => {
+    answer({ "GET /api/inbox": listing(item()) });
+    at("/");
+    const card = within(await screen.findByRole("list")).getAllByRole("link")[0];
+    expect(card).toHaveClass("focus-visible:outline-offset-2");
   });
 });
 
