@@ -120,6 +120,10 @@ components:
     typography: "{typography.label-md}"
     rounded: "{rounded.sm}"
     padding: "{spacing.xs}"
+  project-initial:
+    backgroundColor: "{colors.muted}"
+    textColor: "{colors.on-primary}"
+    rounded: "{rounded.full}"
   banner-error:
     backgroundColor: "{colors.error-container}"
     textColor: "{colors.on-error-container}"
@@ -200,6 +204,7 @@ components:
 ## Components
 
 - 参照：issueとプロジェクトの参照は、フォージのプレフィックス（`gh:`、`gl:`）を外して`mono-sm`で出し、すぐ後ろにフォージのバッジを置く（例：`o/r#12`［GitHub］）。バッジを置けないネイティブの選択肢では、「o/r GitHub」のように、フォージの名前を参照の後ろに文字で書く。入力の欄、URL、コピーして使うコマンドは、プレフィックスの付いた形のままにする
+- プロジェクトのアイコン：参照の前に、プロジェクトのアイコンを16pxの角丸（丸みは`sm`）で置く。画像の代替テキストは空にし、アイコン全体を読み上げから外す。読み上げは参照の文字に任せる。設定の`icon`が絵文字なら、画像の代わりにその文字を置く。画像を読み込む間と読めないときは、プロジェクト名の頭文字を`project-initial`の丸で置き、行の頭を揃える。頭文字の丸は色でプロジェクトを区別させない。新規issueの選択肢（ネイティブの`<select>`）と、全体の指示のように参照の無い場所には置かない
 - フォージのバッジ：GitHubは`badge-github`、GitLabは`badge-gitlab`。文字は公式の綴りの「GitHub」「GitLab」にし、色は見分けの補助にとどめる
 - ヘッダ：左から、名前（「SwitchBoard Inbox」。一覧へのリンク。スマホなど幅の狭い画面では「SwitchBoard」に縮める）、待ちと実行中の件数、自動更新の状態、右端に設定へのリンク。件数と状態は`label-md`の`muted`にする。幅640px未満では、設定へのリンクを名前と同じ1行目の右端に残し、件数と状態をその下に折り返す。状態の前には点を置き、つながっている間は`primary`で塗り、それ以外は`muted`の輪郭だけにする。つながっている間の文言は、受信箱のサービスと中継の状態で分ける。中継につながっていれば「自動更新中（即時）」、切れていれば「自動更新中（N秒ごと）」（Nは`inbox.refresh_interval`の秒数）、`inbox.relay`が無ければ「自動更新中」とする。点の印は中継の状態では変えない
 - 一覧の行（カード）：1行目に参照（`mono-sm`）とフォージのバッジ、タイトルを出す。2行目に理由のバッジ、端末、経過時間（`muted`）、3行目に質問の冒頭（Markdownの太字とコードの記号を除いた文）を出す。実行中の行では、3行目に進捗の最後の行を出し、進捗がまだ無ければ「進捗はまだありません」とする。行全体を1件の画面へのリンクにする。左のペインで選んでいる行は、`primary`の2pxの枠で示す

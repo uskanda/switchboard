@@ -15,6 +15,7 @@ repository.full_name
 project.path_with_namespace
 object_attributes.iid
 issue.iid
+namespace.avatar_url
 object_attributes.noteable_type
 outcome.PR
 inbox.Excerpt
