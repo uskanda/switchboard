@@ -109,7 +109,7 @@ describe("the list", () => {
     expect(await screen.findByRole("heading", { level: 2, name: "返答待ち" })).toBeInTheDocument();
   });
 
-  it("says a run has no progress yet instead of a question mark", async () => {
+  it("says a run is working while it has no words yet, instead of a question mark", async () => {
     answer({
       "GET /api/inbox": listing(
         item({ state: "running", running_since: t0, progress: "?" }),
@@ -117,8 +117,9 @@ describe("the list", () => {
       ),
     });
     at("/");
-    expect((await screen.findAllByText("進捗はまだありません"))[0]).toBeInTheDocument();
-    expect(screen.getAllByText("14:24 2分 Bash 1")[0]).toBeInTheDocument();
+    // A table row and a card of each of the two.
+    expect(await screen.findAllByText("作業しています")).toHaveLength(4);
+    expect(screen.queryByText(/Bash 1/)).toBeNull();
     expect(screen.queryByText("?")).toBeNull();
   });
 

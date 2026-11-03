@@ -25,7 +25,7 @@ function statusText(live: Live, inbox: Inbox | null): string {
 /**
  * Header is the bar over every page: the name, the counts of waiting and running issues (and of queued and done ones
  * when there are any), the state of the automatic updates (with how soon a change shows, see statusText), and the
- * settings link. The name links to the list. On a narrow screen the settings link stays on the first line, beside the
+ * settings link. The name links to the list. While an issue waits, its count is bold in the attention color. On a narrow screen the settings link stays on the first line, beside the
  * name, and the counts and the state wrap below them.
  */
 export function Header() {
@@ -51,7 +51,7 @@ export function Header() {
         {inbox && (
           <p className="text-label-md text-muted">
             <span aria-hidden>
-              待ち {waiting}・実行中 {running}
+              <span className={waiting > 0 ? "font-semibold text-attention" : undefined}>待ち {waiting}</span>・実行中 {running}
               {queued > 0 && `・順番待ち ${queued}`}
               {done > 0 && `・完了 ${done}`}
             </span>

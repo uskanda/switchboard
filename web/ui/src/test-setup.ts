@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
 import { forgetDrafts } from "@/lib/drafts";
+import { forgetInstructionDrafts } from "@/lib/instructionDrafts";
 import { forgetIssues } from "@/lib/issueCache";
 import { dismiss } from "@/lib/toast";
 import { installObservers, resetObservers } from "@/test-observers";
@@ -30,6 +31,7 @@ afterEach(() => {
   cleanup();
   forgetIssues();
   forgetDrafts();
+  forgetInstructionDrafts();
   resetObservers();
   dismiss();
 });

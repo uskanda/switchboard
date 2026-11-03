@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
-import { ApiError, age, elapsed, getIssue, postReply, queueText, watchKey, type Detail } from "@/lib/api";
+import { ApiError, getIssue, postReply, queueText, timeText, watchKey, type Detail } from "@/lib/api";
 import { draftOf, keepDraft } from "@/lib/drafts";
 import { useInbox } from "@/lib/inbox";
 import { useHeightVar } from "@/lib/height";
@@ -352,7 +352,7 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
               )}
               {queued && <span>{queueText(detail.reason)}</span>}
               <span>{detail.host}</span>
-              <span>{running ? elapsed(detail.since) : age(detail.since)}</span>
+              <span>{timeText(running ? "running" : queued ? "queued" : finished ? "done" : "waiting", detail.since)}</span>
               <a href={detail.url} className="inline-flex min-h-11 items-center underline" target="_blank" rel="noreferrer">
                 フォージで開く（新しいタブ）
               </a>

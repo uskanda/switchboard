@@ -7,7 +7,7 @@ import { ReasonBadge } from "@/components/ReasonBadge";
 import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
 import { Table, TableCell, TableHead } from "@/components/ui/table";
-import { age, elapsed, isDone, isQueued, isRunning, isWaiting, issuePath, plainText, progressText, queueText, type Item } from "@/lib/api";
+import { age, elapsed, isDone, isQueued, isRunning, isWaiting, issuePath, plainText, progressText, queueText, timeText, type Item } from "@/lib/api";
 import { useInbox } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
 
@@ -32,8 +32,9 @@ function ChangeLink({ it }: { it: Item }) {
 }
 
 /**
- * What a row shows: a waiting issue its reason, question and wait; a running one its progress and how long it ran; a
- * queued one the limit it waits on and since when; a done one since when it is done.
+ * What a row shows: a waiting issue its reason, question and wait; a running one what it is doing and how long it ran;
+ * a queued one the limit it waits on and since when; a done one since when it is done. time is for the table, whose
+ * column head says what it is; timeWords, for a card, says it in its own words ("5分前から待ち").
  */
 function cells(it: Item) {
   if (isDone(it)) {
@@ -41,6 +42,7 @@ function cells(it: Item) {
       tag: <span className="text-label-md font-medium">完了</span>,
       line: "closeすると一覧から消えます。コメントすると作業を再開します",
       time: age(it.done_since ?? null),
+      timeWords: timeText("done", it.done_since),
     };
   }
   if (isQueued(it)) {
@@ -48,6 +50,7 @@ function cells(it: Item) {
       tag: <span className="text-label-md font-medium">順番待ち</span>,
       line: queueText(it.reason),
       time: age(it.queued_since ?? null),
+      timeWords: timeText("queued", it.queued_since),
     };
   }
   if (isRunning(it)) {
@@ -55,9 +58,15 @@ function cells(it: Item) {
       tag: <span className="text-label-md font-medium">実行中</span>,
       line: progressText(it.progress),
       time: elapsed(it.running_since),
+      timeWords: timeText("running", it.running_since),
     };
   }
-  return { tag: <ReasonBadge reason={it.reason} />, line: plainText(it.question), time: age(it.waiting_since) };
+  return {
+    tag: <ReasonBadge reason={it.reason} />,
+    line: plainText(it.question),
+    time: age(it.waiting_since),
+    timeWords: timeText("waiting", it.waiting_since),
+  };
 }
 
 /**
@@ -114,11 +123,13 @@ function Items({ items, timeHead, selected }: { items: Item[]; timeHead: string;
               >
                 <Card className={cn("flex flex-col gap-xs", current && "border-2 border-primary")}>
                   <IssueRef value={it.ref} className="self-start" />
-                  <span className="font-medium break-words">{it.title}</span>
+                  <span className="line-clamp-2 font-medium break-words" title={it.title}>
+                    {it.title}
+                  </span>
                   <span className="flex flex-wrap items-center gap-sm text-label-md text-muted">
                     {c.tag}
                     <span>{it.host}</span>
-                    <span>{c.time}</span>
+                    <span>{c.timeWords}</span>
                   </span>
                   <span className="text-label-md text-muted break-words">{c.line}</span>
                 </Card>

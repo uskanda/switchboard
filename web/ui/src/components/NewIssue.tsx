@@ -40,7 +40,7 @@ function failure(err: unknown): string {
 
 /**
  * NewIssue is the button above the list that opens a dialog for a new issue in any configured project, with a start
- * label. The issue is opened with the inbox token, so the agent takes it up (ADR-040). Once it is opened the dialog
+ * label. The ready start says whether the chosen project starts with a plan. The issue is opened with the inbox token, so the agent takes it up (ADR-040). Once it is opened the dialog
  * closes and a success toast links to it on the forge.
  */
 export function NewIssue() {
@@ -96,6 +96,9 @@ export function NewIssue() {
     }
   }
 
+  // What the ready label does in the chosen project; an older inbox service does not say, and nothing is added.
+  const planFirst = targets?.items.find((it) => it.ref === project)?.plan_first;
+  const readyNote = planFirst === undefined ? "" : planFirst ? "（このプロジェクトは計画から始めます）" : "（このプロジェクトはすぐに実装します）";
   const ready = targets !== null && project !== "" && targets.starts.some((st) => st.kind === start);
   const canSend = ready && title.trim() !== "" && !sending;
 
@@ -157,6 +160,7 @@ export function NewIssue() {
                 />
                 <span>
                   {startText[st.kind]}（<span className="font-mono text-mono-sm">{st.label}</span>）
+                  {st.kind === "ready" && readyNote && <span className="text-muted">{readyNote}</span>}
                 </span>
               </label>
             ))}
