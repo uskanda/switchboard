@@ -228,6 +228,17 @@ type MergeRequest struct {
 	SHA string `json:"sha"`
 }
 
+// ProjectIcons is the answer to GET /v1/project-icons: the emoji of the projects whose icon in the configuration is
+// one, by project reference (gh:owner/repo). The other projects' icons are images, read with GET
+// /v1/project-icon?ref=, which answers 404 (CodeNotFound) when a project has none.
+type ProjectIcons map[string]string
+
+// Icon is the answer to GET /v1/project-icon: a PNG, JPEG, GIF or WebP image and its content type.
+type Icon struct {
+	Data        []byte
+	ContentType string
+}
+
 // The codes of Error.
 const (
 	CodeInvalid        = "invalid"         // 400
