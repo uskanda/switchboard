@@ -41,7 +41,7 @@ const waiting = (ref: string, title: string, min: number) => {
 const items = [
   waiting("gh:c/d#1", "Oldest in c/d", 30),
   waiting("gh:a/b#2", "Oldest in a/b", 20),
-  waiting("gl:c/d#3", "On GitLab", 15),
+  waiting("gl:c/d#3", "On the other forge", 15),
   waiting("gh:c/d#4", "Newer in c/d", 10),
   { ...waiting("gh:a/b#5", "Runs", 0), n: undefined, state: "running", waiting_since: null, running_since: ago(5), progress: "working" },
   { ...waiting("gh:a/b#6", "Finished", 0), n: 2, state: "done", waiting_since: null, done_since: ago(60) },
@@ -75,7 +75,7 @@ describe("the list grouped by project", () => {
       expect.stringContaining("Newer in c/d"),
     ]);
     expect(within(groups[1]).getAllByRole("link")).toHaveLength(1);
-    expect(within(groups[2]).getByRole("link")).toHaveTextContent("On GitLab");
+    expect(within(groups[2]).getByRole("link")).toHaveTextContent("On the other forge");
   });
 
   it("gives the table a heading for each project too", async () => {
@@ -90,6 +90,39 @@ describe("the list grouped by project", () => {
     at("/");
     expect(headings(cards(await section("実行中")))).toEqual(["a/b GitHub 1件"]);
     expect(headings(cards(await section("完了（close待ち）")))).toEqual(["a/b GitHub 1件"]);
+  });
+
+  it("leaves the project out of each card, its number before the title", async () => {
+    answer({ "GET /api/inbox": listing });
+    at("/");
+    const links = within(cards(await section("返答待ち"))).getAllByRole("link");
+    expect(links.map((a) => shown(a))).toEqual([
+      expect.stringMatching(/^#1 Oldest in c\/d/),
+      expect.stringMatching(/^#4 Newer in c\/d/),
+      expect.stringMatching(/^#2 Oldest in a\/b/),
+      expect.stringMatching(/^#3 On the other forge/),
+    ]);
+    for (const a of links) {
+      expect(a.textContent).not.toMatch(/[a-z]\/[a-z]#\d|GitHub|GitLab/);
+      expect(a.querySelector("[data-project-icon]")).toBeNull();
+    }
+  });
+
+  it("leaves the project out of each row of the table too", async () => {
+    answer({ "GET /api/inbox": listing });
+    at("/");
+    const table = within(await section("返答待ち")).getByRole("table");
+    const links = within(table).getAllByRole("link");
+    expect(links.map((a) => shown(a))).toEqual([
+      expect.stringMatching(/^#1 Oldest in c\/d/),
+      expect.stringMatching(/^#4 Newer in c\/d/),
+      expect.stringMatching(/^#2 Oldest in a\/b/),
+      expect.stringMatching(/^#3 On the other forge/),
+    ]);
+    for (const a of links) {
+      expect(a.textContent).not.toMatch(/[a-z]\/[a-z]#\d|GitHub|GitLab/);
+      expect(a.querySelector("[data-project-icon]")).toBeNull();
+    }
   });
 
   it("keeps the selected row marked", async () => {
@@ -119,8 +152,19 @@ describe("the grouping toggle", () => {
     expect(within(s).getAllByRole("link").map((a) => a.textContent)).toEqual([
       expect.stringContaining("Oldest in c/d"),
       expect.stringContaining("Oldest in a/b"),
-      expect.stringContaining("On GitLab"),
+      expect.stringContaining("On the other forge"),
       expect.stringContaining("Newer in c/d"),
+    ]);
+    for (const a of within(s).getAllByRole("link")) {
+      expect(shown(a)).toMatch(/^[a-z]\/[a-z]#\d (GitHub|GitLab)/);
+      expect(a.querySelector("[data-project-icon]")).not.toBeNull();
+    }
+    const table = within(await section("返答待ち")).getByRole("table");
+    expect(within(table).getAllByRole("link").map((a) => shown(a))).toEqual([
+      expect.stringMatching(/^c\/d#1 GitHub/),
+      expect.stringMatching(/^a\/b#2 GitHub/),
+      expect.stringMatching(/^c\/d#3 GitLab/),
+      expect.stringMatching(/^c\/d#4 GitHub/),
     ]);
     expect(window.localStorage.getItem(GROUP_BY_PROJECT_KEY)).toBe("false");
 

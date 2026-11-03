@@ -1,8 +1,9 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { AppRoutes } from "@/App";
+import { GROUP_BY_PROJECT_KEY } from "@/lib/groupPref";
 
 type Answer = { status: number; body?: unknown };
 
@@ -41,6 +42,9 @@ const item = {
 
 describe("the inbox", () => {
   it("lists the waiting issues, with issue text as text", async () => {
+    // Ungrouped, each row shows its own reference and forge (grouping.test.tsx has the grouped rows).
+    window.localStorage.setItem(GROUP_BY_PROJECT_KEY, "false");
+    onTestFinished(() => window.localStorage.clear());
     answer({ "GET /api/inbox": { status: 200, body: { items: [item, { ...item, n: 2, ref: "gl:nas/sb#6", reason: "error" }], errors: [], fetched_at: "" } } });
     at("/");
     expect(await screen.findAllByText("<script>alert(1)</script>")).not.toHaveLength(0);

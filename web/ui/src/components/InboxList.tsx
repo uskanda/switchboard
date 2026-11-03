@@ -99,8 +99,23 @@ function cells(it: ViewItem) {
   };
 }
 
-/** Row is one issue as a row of the table. */
-function Row({ it, selected }: { it: ViewItem; selected?: string }) {
+/**
+ * IssueNumber is an issue's number put before its title in a row grouped by project, whose heading already names the
+ * project and forge: "#12 Title".
+ */
+function IssueNumber({ it }: { it: ViewItem }) {
+  return (
+    <>
+      <span className="font-mono text-mono-sm font-normal text-muted">#{it.number}</span>{" "}
+    </>
+  );
+}
+
+/**
+ * Row is one issue as a row of the table. Grouped by project, it leaves out the project's icon, reference and forge's
+ * badge, which its group's heading shows, and puts the issue's number before the title.
+ */
+function Row({ it, selected, grouped }: { it: ViewItem; selected?: string; grouped: boolean }) {
   const c = cells(it);
   return (
     <tr data-flip-key={it.ref}>
@@ -110,8 +125,11 @@ function Row({ it, selected }: { it: ViewItem; selected?: string }) {
           aria-current={it.ref === selected ? "page" : undefined}
           className="block focus-visible:outline-2 focus-visible:outline-primary"
         >
-          <IssueRef value={it.ref} />
-          <span className="block truncate font-medium">{it.title}</span>
+          {!grouped && <IssueRef value={it.ref} />}
+          <span className="block truncate font-medium">
+            {grouped && <IssueNumber it={it} />}
+            {it.title}
+          </span>
           <span className="block truncate text-label-md text-muted">{c.line}</span>
         </Link>
         <ChangeLink it={it} />
@@ -125,9 +143,11 @@ function Row({ it, selected }: { it: ViewItem; selected?: string }) {
 
 /**
  * CardList is issues as cards, one under another. A card's frame holds its link to the issue and, below a line, a done
- * issue's change and its merge button, which stay outside that link.
+ * issue's change and its merge button, which stay outside that link. Grouped by project, a card leaves out the
+ * project's icon, reference and forge's badge, which its group's heading shows, and puts the issue's number before the
+ * title, within the title's two lines.
  */
-function CardList({ items, selected }: { items: ViewItem[]; selected?: string }) {
+function CardList({ items, selected, grouped }: { items: ViewItem[]; selected?: string; grouped: boolean }) {
   return (
     <ul className="flex flex-col gap-sm">
       {items.map((it) => {
@@ -146,8 +166,9 @@ function CardList({ items, selected }: { items: ViewItem[]; selected?: string })
                 aria-current={current ? "page" : undefined}
                 className="flex flex-col gap-xs rounded-md p-lg focus-visible:outline-none"
               >
-                <IssueRef value={it.ref} className="self-start" />
+                {!grouped && <IssueRef value={it.ref} className="self-start" />}
                 <span className="line-clamp-2 font-medium break-words" title={it.title}>
+                  {grouped && <IssueNumber it={it} />}
                   {it.title}
                 </span>
                 <span className="flex flex-wrap items-center gap-sm text-label-md text-muted">
@@ -181,7 +202,8 @@ function GroupHeading({ group }: { group: ProjectGroup }) {
 /**
  * Items lists issues. On the list's own page, a screen from 640px gets a table; the pane next to an issue (from
  * 1024px) and a narrow screen get the same items as cards. The selected issue is marked. Grouped, the items come
- * under a heading for each project, the projects in the order their first items come.
+ * under a heading for each project, the projects in the order their first items come, and each row shows the issue's
+ * number in place of its reference.
  */
 function Items({ items, timeHead, selected, grouped }: { items: ViewItem[]; timeHead: string; selected?: string; grouped: boolean }) {
   const groups = grouped ? groupByProject(items) : null;
@@ -205,14 +227,14 @@ function Items({ items, timeHead, selected, grouped }: { items: ViewItem[]; time
                 </TableCell>
               </tr>
               {g.items.map((it) => (
-                <Row key={it.ref} it={it} selected={selected} />
+                <Row key={it.ref} it={it} selected={selected} grouped />
               ))}
             </tbody>
           ))
         ) : (
           <tbody>
             {items.map((it) => (
-              <Row key={it.ref} it={it} selected={selected} />
+              <Row key={it.ref} it={it} selected={selected} grouped={false} />
             ))}
           </tbody>
         )}
@@ -222,11 +244,11 @@ function Items({ items, timeHead, selected, grouped }: { items: ViewItem[]; time
           groups.map((g) => (
             <div key={g.project} className="flex flex-col gap-xs">
               <GroupHeading group={g} />
-              <CardList items={g.items} selected={selected} />
+              <CardList items={g.items} selected={selected} grouped />
             </div>
           ))
         ) : (
-          <CardList items={items} selected={selected} />
+          <CardList items={items} selected={selected} grouped={false} />
         )}
       </div>
     </>
