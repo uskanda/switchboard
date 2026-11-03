@@ -31,6 +31,10 @@ type watch struct {
 	// giveUp is the wait written when the CI failed past the fix limit, kept until it is written back, so that a
 	// retry posts it once.
 	giveUp *outcome
+	// fixWaiting is the cause (prompt.FixConflict or prompt.FixCI) of a fix run that found no free slot, or "";
+	// fixSince is when it began to wait. startFixes starts such a fix run before the queue (ADR-048).
+	fixWaiting string
+	fixSince   time.Time
 }
 
 const (
@@ -186,12 +190,89 @@ func (a *Agent) checkWatches(ctx context.Context) {
 		w := a.watches[ref]
 		a.mu.Unlock()
 		if w != nil {
-			a.checkWatch(ctx, ref, w)
+			a.checkWatch(ctx, ref, w, false)
 		}
 	}
 }
 
-func (a *Agent) checkWatch(ctx context.Context, ref forge.IssueRef, w *watch) {
+// fixWait is a watch whose fix run waits for a slot, as startFixes orders them.
+type fixWait struct {
+	ref      forge.IssueRef
+	conflict bool
+	since    time.Time
+}
+
+// startFixes starts the fix runs that wait for a slot, before the queue is offered the slots (ADR-048): the
+// conflicts first, then the failed CIs, each by the time it began to wait, then by ref. Each is read again before it
+// starts, at once, also in the conflict stage before reconcile_interval. It stops when the agent is at
+// agent.max_parallel; a fix run whose project is at its limit keeps waiting and does not hold up the others. Call it
+// with pollMu held.
+func (a *Agent) startFixes(ctx context.Context) {
+	a.mu.Lock()
+	var waits []fixWait
+	for ref, w := range a.watches {
+		if w.fixWaiting != "" && a.active[ref] == nil {
+			waits = append(waits, fixWait{ref: ref, conflict: w.fixWaiting == prompt.FixConflict, since: w.fixSince})
+		}
+	}
+	a.mu.Unlock()
+	sort.Slice(waits, func(i, j int) bool {
+		wi, wj := waits[i], waits[j]
+		if wi.conflict != wj.conflict {
+			return wi.conflict
+		}
+		if !wi.since.Equal(wj.since) {
+			return wi.since.Before(wj.since)
+		}
+		return wi.ref.String() < wj.ref.String()
+	})
+	for _, fw := range waits {
+		if ctx.Err() != nil {
+			return
+		}
+		limit := a.projectLimit(fw.ref)
+		a.mu.Lock()
+		full := len(a.active) >= a.maxParallel
+		slot, _, _ := a.hasSlot(fw.ref, limit)
+		w := a.watches[fw.ref]
+		still := w != nil && w.fixWaiting != "" && a.active[fw.ref] == nil
+		a.mu.Unlock()
+		if full {
+			return
+		}
+		if slot && still {
+			a.checkWatch(ctx, fw.ref, w, true)
+		}
+	}
+}
+
+// waitFix records that the fix run of w for cause found no free slot, and logs it when it begins to wait or its
+// cause changes. No queued comment is posted: a done issue never enters the queue.
+func (a *Agent) waitFix(ref forge.IssueRef, w *watch, cause string) {
+	a.mu.Lock()
+	changed := w.fixWaiting != cause
+	w.fixWaiting = cause
+	if w.fixSince.IsZero() {
+		w.fixSince = a.now()
+	}
+	a.mu.Unlock()
+	if changed {
+		a.logf("%s: the fix run (%s) waits for a slot", ref, cause)
+	}
+}
+
+// endWait forgets the waiting fix run of w when it is for cause, or for any cause when cause is "".
+func (a *Agent) endWait(w *watch, cause string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if w.fixWaiting != "" && (cause == "" || w.fixWaiting == cause) {
+		w.fixWaiting, w.fixSince = "", time.Time{}
+	}
+}
+
+// checkWatch reads the watched change request of ref and acts on what it finds. force reads it in the conflict
+// stage also before reconcile_interval, for a fix run that waits for a slot.
+func (a *Agent) checkWatch(ctx context.Context, ref forge.IssueRef, w *watch, force bool) {
 	ci, ok := a.forgeOf(ref).(forge.CI)
 	if !ok {
 		a.unwatch(ref, "the forge client cannot read CI")
@@ -202,7 +283,7 @@ func (a *Agent) checkWatch(ctx context.Context, ref forge.IssueRef, w *watch) {
 		return
 	}
 	if w.conflictsOnly {
-		if a.now().Sub(w.checked) < a.Config.Agent.ReconcileInterval {
+		if !force && a.now().Sub(w.checked) < a.Config.Agent.ReconcileInterval {
 			return
 		}
 		a.mu.Lock()
@@ -225,7 +306,10 @@ func (a *Agent) checkWatch(ctx context.Context, ref forge.IssueRef, w *watch) {
 		// A conflicting change request gets no CI on GitHub, and the CI it had is moot once the base is merged.
 		a.conflicted(ctx, ref, w)
 		return
-	case w.conflictsOnly:
+	}
+	a.endWait(w, prompt.FixConflict)
+	if w.conflictsOnly {
+		a.endWait(w, "")
 		return
 	}
 	checks, err := ci.CommitChecks(ctx, ref.Owner, ref.Repo, w.sha)
@@ -233,30 +317,35 @@ func (a *Agent) checkWatch(ctx context.Context, ref forge.IssueRef, w *watch) {
 		a.ciError(ref, w, err)
 		return
 	}
-	age := a.now().Sub(w.pushed)
-	if len(checks) == 0 {
-		if age >= ciAppearWithin {
-			a.ciOver(ref, w, "no CI ran on the commit")
-		}
-		return
-	}
 	var failed []forge.Check
+	running := false
 	for _, c := range checks {
 		if !c.Done {
-			if age >= ciWatchFor {
-				a.ciOver(ref, w, fmt.Sprintf("the CI did not finish within %s", ciWatchFor))
-			}
-			return
+			running = true
+			break
 		}
 		if c.Failed() {
 			failed = append(failed, c)
 		}
 	}
-	if len(failed) == 0 {
+	age := a.now().Sub(w.pushed)
+	switch {
+	case len(checks) == 0:
+		a.endWait(w, "")
+		if age >= ciAppearWithin {
+			a.ciOver(ref, w, "no CI ran on the commit")
+		}
+	case running:
+		a.endWait(w, "")
+		if age >= ciWatchFor {
+			a.ciOver(ref, w, fmt.Sprintf("the CI did not finish within %s", ciWatchFor))
+		}
+	case len(failed) == 0:
+		a.endWait(w, "")
 		a.ciOver(ref, w, "the CI passed")
-		return
+	default:
+		a.ciFailed(ctx, ref, w, ci, failed)
 	}
-	a.ciFailed(ctx, ref, w, ci, failed)
 }
 
 // ciError handles a failed read of the CI: a token that may not read it ends the watch, logged once per project;
@@ -281,7 +370,7 @@ func (a *Agent) ciError(ref forge.IssueRef, w *watch, err error) {
 }
 
 // ciFailed starts a fix run of the failed CI, or, past the fix limit, makes the issue wait (reason ci). A fix run
-// that finds no free slot is tried again at the next poll.
+// that finds no free slot waits for one: startFixes starts it as soon as a slot frees, before the queue (ADR-048).
 func (a *Agent) ciFailed(ctx context.Context, ref forge.IssueRef, w *watch, ci forge.CI, failed []forge.Check) {
 	fix := &fixInfo{cause: prompt.FixCI, checks: checkNames(failed)}
 	pl, err := a.fixPlan(ctx, w.project, ref, a.Config.Labels.Done, fix)
@@ -300,6 +389,7 @@ func (a *Agent) ciFailed(ctx context.Context, ref forge.IssueRef, w *watch, ci f
 			a.ciError(ref, w, err)
 			return
 		}
+		a.endWait(w, "")
 		w.giveUp = a.giveUpOutcome(pl, w, failed, logs, fix.attempt-1, limit)
 		a.writeGiveUp(ctx, ref, w)
 		return
@@ -309,6 +399,7 @@ func (a *Agent) ciFailed(ctx context.Context, ref forge.IssueRef, w *watch, ci f
 	free, _, _ := a.hasSlot(ref, limitOf)
 	a.mu.Unlock()
 	if !free {
+		a.waitFix(ref, w, prompt.FixCI)
 		return
 	}
 	logs, err := a.ciLogs(ctx, ref, ci, failed)
@@ -321,6 +412,7 @@ func (a *Agent) ciFailed(ctx context.Context, ref forge.IssueRef, w *watch, ci f
 	case err == nil:
 		a.unwatch(ref, "the CI failed; a fix run started")
 	case errors.Is(err, errQueued):
+		a.waitFix(ref, w, prompt.FixCI)
 	default:
 		a.logf("%s: start the fix run: %v; tried again at the next poll", ref, err)
 	}
@@ -379,7 +471,8 @@ func ciReport(sha string, failed []forge.Check, logs map[int]string) string {
 }
 
 // conflicted starts a fix run that merges the base into the conflicting change request of w, or, past the fix
-// limit, makes the issue wait (reason conflict). A fix run that finds no free slot is tried again at the next poll.
+// limit, makes the issue wait (reason conflict). A fix run that finds no free slot waits for one: startFixes starts
+// it as soon as a slot frees, before the queue and before a waiting CI fix (ADR-048).
 func (a *Agent) conflicted(ctx context.Context, ref forge.IssueRef, w *watch) {
 	fix := &fixInfo{cause: prompt.FixConflict, report: fmt.Sprintf("Change request %s conflicts with the base branch %s.", crName(ref, w.cr), w.project.BaseBranch)}
 	pl, err := a.fixPlan(ctx, w.project, ref, a.Config.Labels.Done, fix)
@@ -393,6 +486,7 @@ func (a *Agent) conflicted(ctx context.Context, ref forge.IssueRef, w *watch) {
 	}
 	limit := a.Config.Agent.FixAttempts()
 	if fix.attempt > limit {
+		a.endWait(w, "")
 		w.giveUp = a.conflictOutcome(pl, w, fix.attempt-1, limit)
 		a.writeGiveUp(ctx, ref, w)
 		return
@@ -402,12 +496,14 @@ func (a *Agent) conflicted(ctx context.Context, ref forge.IssueRef, w *watch) {
 	free, _, _ := a.hasSlot(ref, limitOf)
 	a.mu.Unlock()
 	if !free {
+		a.waitFix(ref, w, prompt.FixConflict)
 		return
 	}
 	switch err := a.launch(ctx, pl); {
 	case err == nil:
 		a.unwatch(ref, "the change request conflicts with the base; a fix run started")
 	case errors.Is(err, errQueued):
+		a.waitFix(ref, w, prompt.FixConflict)
 	default:
 		a.logf("%s: start the fix run: %v; tried again at the next poll", ref, err)
 	}

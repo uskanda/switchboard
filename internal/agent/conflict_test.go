@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -207,5 +208,122 @@ func TestTheConflictWaitIsNotified(t *testing.T) {
 	got := n.sent()
 	if len(got) != 1 || !strings.Contains(got[0], "⏸ Waiting (conflict) gh:o/r#12") {
 		t.Fatalf("notifications = %q", got)
+	}
+}
+
+// fixLog is newCI with the agent's log kept.
+func fixLog(t *testing.T, edit func(*config.Config)) (*ciWorld, *lockedLog) {
+	w := newCI(t, "", edit)
+	log := &lockedLog{}
+	w.agentWith(func(a *Agent) { a.Now = w.now; a.Log = log })
+	return w, log
+}
+
+// block13 starts o/r#13 as claude start n, blocked until release(n), so that it holds the only slot.
+func (w *ciWorld) block13(n int) forge.IssueRef {
+	w.t.Helper()
+	other := w.f.AddIssue("o", "r", 13, "Other", "Do something else.", w.master)
+	w.step(n, block(n, done("Other done.")))
+	w.f.AddLabel(other, "agent:ready", w.master)
+	w.poll()
+	w.waitStarted(n)
+	return other
+}
+
+// isConflictFix reports whether claude start n was a fix run of a conflict.
+func (w *ciWorld) isConflictFix(n int) bool {
+	return strings.Contains(w.file(fmt.Sprintf("system-%d.md", n)), "The change request conflicts with its base branch")
+}
+
+// isCIFix reports whether claude start n was a fix run of a failed CI.
+func (w *ciWorld) isCIFix(n int) bool {
+	return strings.Contains(w.file(fmt.Sprintf("system-%d.md", n)), "The CI of the change request failed")
+}
+
+func TestAConflictFixStartsWhenASlotFreesBeforeTheReconcile(t *testing.T) {
+	w, log := fixLog(t, nil)
+	w.passCI()
+	w.block13(2)
+	w.later(w.cfg.Agent.ReconcileInterval)
+	w.f.SetConflict(0, true)
+	w.poll()
+	if w.starts() != 2 || w.labels(w.ref) != "agent:done" {
+		t.Fatalf("starts=%d labels=%q: the fix run must wait for the slot", w.starts(), w.labels(w.ref))
+	}
+	w.step(3, commit("merge.txt", "merged")+done("Merged main."))
+	w.release(2)
+	w.settle()
+	if w.starts() != 3 || !w.isConflictFix(3) {
+		t.Fatalf("starts=%d: want the conflict's fix run as soon as the slot freed, before reconcile_interval", w.starts())
+	}
+	if n := strings.Count(log.String(), "gh:o/r#12: the fix run (conflict) waits for a slot"); n != 1 {
+		t.Errorf("wait log lines = %d, want 1\n%s", n, log.String())
+	}
+}
+
+func TestAConflictIsFixedBeforeAFailedCIOfAnotherIssue(t *testing.T) {
+	w := newCI(t, "", nil)
+	second := w.f.AddIssue("o", "r", 14, "Second", "Do a second thing.", w.master)
+	w.step(2, commit("second.txt", "second")+done("Did it."))
+	w.f.AddLabel(second, "agent:ready", w.master)
+	w.poll()
+	w.settle()
+	p := w.lastPost(second)
+	w.f.SetPRHead(p.Marker.CR-1, p.Marker.SHA)
+	w.block13(3)
+	w.f.SetChecks("o", "r", p.Marker.SHA, failedCheck("test", 7))
+	w.poll() // o/r#14's CI fix waits first
+	w.later(time.Minute)
+	w.f.SetConflict(0, true)
+	w.poll() // then o/r#12's conflict fix
+	if w.starts() != 3 {
+		t.Fatalf("starts=%d: both fix runs must wait for the slot", w.starts())
+	}
+	w.step(4, block(4, commit("merge.txt", "merged")+done("Merged main.")))
+	w.step(5, commit("fix.txt", "fixed")+done("Fixed."))
+	w.release(3)
+	w.waitStarted(4)
+	if !w.isConflictFix(4) || w.labels(w.ref) != "agent:running" || w.labels(second) != "agent:done" {
+		t.Fatalf("start 4: conflict fix=%v labels #12=%q #14=%q; want the conflict first", w.isConflictFix(4), w.labels(w.ref), w.labels(second))
+	}
+	w.release(4)
+	w.settle()
+	if w.starts() != 5 || !w.isCIFix(5) {
+		t.Fatalf("starts=%d: want the CI fix of o/r#14 after the conflict", w.starts())
+	}
+}
+
+func TestAWaitingConflictFixDoesNotStartOnceTheConflictIsGone(t *testing.T) {
+	w, log := fixLog(t, nil)
+	w.passCI()
+	w.block13(2)
+	w.later(w.cfg.Agent.ReconcileInterval)
+	w.f.SetConflict(0, true)
+	w.poll()
+	w.later(w.cfg.Agent.ReconcileInterval)
+	w.poll()
+	w.f.SetConflict(0, false)
+	w.release(2)
+	w.settle()
+	if w.starts() != 2 || w.labels(w.ref) != "agent:done" || !w.a.watched(w.ref) {
+		t.Fatalf("starts=%d labels=%q watched=%v: no fix run once the conflict is gone", w.starts(), w.labels(w.ref), w.a.watched(w.ref))
+	}
+	if n := strings.Count(log.String(), "gh:o/r#12: the fix run (conflict) waits for a slot"); n != 1 {
+		t.Errorf("wait log lines = %d, want 1\n%s", n, log.String())
+	}
+}
+
+func TestAWaitingConflictFixDoesNotStartOnceTheHeadMoved(t *testing.T) {
+	w := newCI(t, "", nil)
+	w.passCI()
+	w.block13(2)
+	w.later(w.cfg.Agent.ReconcileInterval)
+	w.f.SetConflict(0, true)
+	w.poll()
+	w.f.SetPRHead(0, "0000000000000000000000000000000000000000")
+	w.release(2)
+	w.settle()
+	if w.starts() != 2 || w.labels(w.ref) != "agent:done" || w.a.watched(w.ref) {
+		t.Fatalf("starts=%d labels=%q watched=%v: a person's push ends the watch", w.starts(), w.labels(w.ref), w.a.watched(w.ref))
 	}
 }

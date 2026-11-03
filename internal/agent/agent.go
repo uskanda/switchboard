@@ -334,6 +334,7 @@ func (a *Agent) poll(ctx context.Context, ps []config.Project) error {
 	a.pollMu.Lock()
 	defer a.pollMu.Unlock()
 	a.retryWriteBacks(ctx)
+	a.startFixes(ctx) // before a newly ready issue takes a free slot
 	var errs []error
 	for _, p := range ps {
 		errs = append(errs, a.pollProject(ctx, p)...)
@@ -694,7 +695,7 @@ func (a *Agent) launch(ctx context.Context, pl *plan) error {
 	if ok, limitKind, value := a.hasSlot(ref, limit); !ok {
 		if pl.fix != nil {
 			a.mu.Unlock()
-			return errQueued // the CI watch tries again at the next poll; a done issue is never queued
+			return errQueued // the watch keeps the fix run waiting for startFixes; a done issue is never queued
 		}
 		// An issue already queued keeps its place; its kind may have changed meanwhile (a plan approved).
 		q, ok := a.pending[ref]
@@ -802,7 +803,8 @@ type queuedRun struct {
 }
 
 // queueOrder is the order in which drain offers the slots (ADR-046): the plan runs first when preferPlan is on, then
-// the earliest in the queue, then by ref. Call it with mu held.
+// the earliest in the queue, then by ref. The fix runs that wait for a slot are not in the queue: startFixes starts
+// them before it (ADR-048). Call it with mu held.
 func (a *Agent) queueOrder() []forge.IssueRef {
 	refs := make([]forge.IssueRef, 0, len(a.pending))
 	for ref := range a.pending {
@@ -821,9 +823,10 @@ func (a *Agent) queueOrder() []forge.IssueRef {
 	return refs
 }
 
-// drain starts queued issues while slots are free, in queueOrder. An issue whose project is at its limit stays
-// queued and does not hold up the issues of other projects.
+// drain starts the fix runs that wait for a slot (startFixes), then queued issues while slots are free, in
+// queueOrder. An issue whose project is at its limit stays queued and does not hold up the issues of other projects.
 func (a *Agent) drain(ctx context.Context) {
+	a.startFixes(ctx)
 	a.mu.Lock()
 	refs := a.queueOrder()
 	a.mu.Unlock()

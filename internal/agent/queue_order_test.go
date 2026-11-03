@@ -119,6 +119,138 @@ func TestReloadTurnsPreferPlanOn(t *testing.T) {
 	x.expect(map[int]bool{9: true}, 9, 10, 11)
 }
 
+// queueIssue puts o/r#num with label in the queue behind the run that holds the slot.
+func (w *ciWorld) queueIssue(num int, label string) forge.IssueRef {
+	w.t.Helper()
+	ref := w.f.AddIssue("o", "r", num, fmt.Sprintf("Issue %d", num), "Do it.", w.master)
+	w.f.AddLabel(ref, label, w.master)
+	w.poll()
+	if len(w.queuedPosts(ref)) != 1 {
+		w.t.Fatalf("%s is not queued", ref)
+	}
+	return ref
+}
+
+// noQueuedPost fails when the done issue ref got a queued comment.
+func (w *ciWorld) noQueuedPost(ref forge.IssueRef) {
+	w.t.Helper()
+	if n := len(w.queuedPosts(ref)); n != 0 {
+		w.t.Fatalf("%s got %d queued comment(s); a fix run never posts one", ref, n)
+	}
+}
+
+func TestAConflictFixStartsBeforeTheQueue(t *testing.T) {
+	w := newCI(t, "", nil)
+	w.passCI()
+	w.block13(2)
+	q := w.queueIssue(10, "agent:ready")
+	w.later(w.cfg.Agent.ReconcileInterval)
+	w.f.SetConflict(0, true)
+	w.poll()
+	w.step(3, block(3, commit("merge.txt", "merged")+done("Merged main.")))
+	w.release(2)
+	w.waitStarted(3)
+	if !w.isConflictFix(3) || w.labels(w.ref) != "agent:running" || w.labels(q) != "agent:ready" {
+		t.Fatalf("start 3: conflict fix=%v labels #12=%q #10=%q; want the fix run before the queue", w.isConflictFix(3), w.labels(w.ref), w.labels(q))
+	}
+	w.noQueuedPost(w.ref)
+	w.release(3)
+	w.settle()
+	if w.starts() != 4 || w.labels(q) != "agent:waiting" {
+		t.Fatalf("starts=%d labels #10=%q: the queued issue runs after the fix", w.starts(), w.labels(q))
+	}
+}
+
+func TestACIFixStartsBeforeAPreferredPlanRun(t *testing.T) {
+	w := newCI(t, "", func(c *config.Config) { c.Agent.PreferPlan = true })
+	w.block13(2)
+	q := w.queueIssue(9, "agent:plan")
+	w.f.SetChecks("o", "r", w.syncHead(), failedCheck("test", 7))
+	w.poll()
+	w.step(3, block(3, commit("fix.txt", "fixed")+done("Fixed.")))
+	w.step(4, questions([3]string{"Default", "Which default?", "A."}))
+	w.release(2)
+	w.waitStarted(3)
+	if !w.isCIFix(3) || w.labels(w.ref) != "agent:running" || w.labels(q) != "agent:plan" {
+		t.Fatalf("start 3: CI fix=%v labels #12=%q #9=%q; want the fix run before the plan run", w.isCIFix(3), w.labels(w.ref), w.labels(q))
+	}
+	w.noQueuedPost(w.ref)
+	w.release(3)
+	w.settle()
+	if w.starts() != 4 {
+		t.Fatalf("starts=%d: the plan run follows the fix", w.starts())
+	}
+}
+
+func TestAPollDoesNotGiveAWaitingFixsSlotToANewIssue(t *testing.T) {
+	w := newCI(t, "", nil)
+	w.passCI()
+	w.block13(2)
+	w.later(w.cfg.Agent.ReconcileInterval)
+	w.f.SetConflict(0, true)
+	w.poll()
+	// A second slot opens while o/r#13 runs, and a new issue becomes ready in the same poll.
+	fresh := w.f.AddIssue("o", "r", 10, "Issue 10", "Do it.", w.master)
+	w.f.AddLabel(fresh, "agent:ready", w.master)
+	w.step(3, block(3, commit("merge.txt", "merged")+done("Merged main.")))
+	w.a.Reload(&config.Change{Projects: w.cfg.Projects, MaxParallel: 2})
+	w.poll()
+	w.waitStarted(3)
+	if !w.isConflictFix(3) || w.labels(fresh) != "agent:ready" || len(w.queuedPosts(fresh)) != 1 {
+		t.Fatalf("start 3: conflict fix=%v labels #10=%q; want the slot for the waiting fix and #10 queued", w.isConflictFix(3), w.labels(fresh))
+	}
+	w.release(2)
+	w.release(3)
+	w.settle()
+}
+
+func TestAFixAtItsProjectLimitDoesNotHoldUpAnotherProject(t *testing.T) {
+	x := newReloadH(t)
+	x.cfg.Agent.MaxParallel = 2
+	x.cfg.Projects[0].MaxParallel = limit(1)
+	w := &ciWorld{h: x.h}
+	x.agentWith(func(a *Agent) {
+		a.Now = w.now
+		a.Log = &x.log
+		a.CloneURL = func(p config.Project) string {
+			if p.Ref == "gh:o/notes" {
+				return x.origin
+			}
+			return x.h.origin
+		}
+	})
+	w.step(1, commit("flag.txt", "dry-run")+done("Added it."))
+	w.f.AddLabel(w.ref, "agent:ready", w.master)
+	w.poll()
+	w.settle()
+	w.syncHead()
+	w.passCI()
+	w.block13(2) // o/r at its limit
+	w.step(3, block(3, waiting("s", "q")))
+	x.reload(x.notes)
+	w.poll()
+	w.waitStarted(3) // o/notes#1: the host is full
+	notes2 := w.f.AddIssue("o", "notes", 2, "More notes", "More.", w.master)
+	w.f.AddLabel(notes2, "agent:ready", w.master)
+	w.later(w.cfg.Agent.ReconcileInterval)
+	w.f.SetConflict(0, true)
+	w.poll()
+	w.step(4, block(4, waiting("s", "q")))
+	w.step(5, commit("merge.txt", "merged")+done("Merged main."))
+	w.release(3)
+	w.waitStarted(4)
+	if w.labels(notes2) == "agent:ready" || w.labels(w.ref) != "agent:done" {
+		t.Fatalf("labels notes#2=%q r#12=%q; want notes#2 taken up and the fix of o/r#12 still waiting", w.labels(notes2), w.labels(w.ref))
+	}
+	w.release(2)
+	w.waitFor("the fix run of o/r#12", func() bool { return w.starts() == 5 })
+	w.release(4)
+	w.settle()
+	if !w.isConflictFix(5) {
+		t.Fatal("start 5 is not the conflict's fix run")
+	}
+}
+
 func TestQueuedIssueKeepsItsPlaceWhenItsKindChanges(t *testing.T) {
 	x := newOrderH(t, true, queueItem{10, "agent:ready"}, queueItem{9, "agent:plan"}, queueItem{11, "agent:ready"})
 	// o/r#9 becomes an implementation while it waits: it no longer goes first, and keeps its time in the queue.
