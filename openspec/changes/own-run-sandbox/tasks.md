@@ -2,9 +2,9 @@
 
 ## 1. 実物での確認
 
-- [ ] 1.1 `excludedCommands` に `make verify` を入れたとき、`make deploy` はsandboxの中で動くことを、実物の `claude` で確かめる
-- [ ] 1.2 `denyRead` に入れたパスが無いとき、sandboxがそのパスにファイルを置くかを確かめる
-- [ ] 1.3 `docs/ROADMAP.md` の検証項目に、確認の結果と、grillingの間に確かめた4項目を書く
+- [x] 1.1 `excludedCommands` に `make verify` を入れたとき、`make deploy` はsandboxの中で動くことを、実物の `claude` で確かめる
+- [x] 1.2 `denyRead` に入れたパスが無いとき、sandboxがそのパスにファイルを置くかを確かめる
+- [x] 1.3 `docs/ROADMAP.md` の検証項目に、確認の結果と、grillingの間に確かめた4項目を書く
 
 ## 2. 起動の引数と設定ファイル
 
@@ -26,7 +26,7 @@
 
 ## 5. 実物での確認
 
-- [ ] 5.1 `realclaude` のタグの付いたテストを足す。許可の規則の無い `python3` が動き、worktreeの外への書き込みと `gh` が拒否されることを確かめる
+- [x] 5.1 `realclaude` のタグの付いたテストを足す。許可の規則の無い `python3` が動き、worktreeの外への書き込みと `gh` が拒否されることを確かめる
 
 ## 6. 文書
 
