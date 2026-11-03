@@ -115,3 +115,22 @@ func TestFixClaimMarker(t *testing.T) {
 		t.Fatalf("Parse(%q) = %+v", m.Format(), got)
 	}
 }
+
+// A done post of a fix run names what it fixed; other done posts, and older markers, carry no fix.
+func TestDoneMarkerOfAFixRun(t *testing.T) {
+	line := Marker{Host: "h", State: Done, SHA: "def", CR: 48, Fix: Conflict, At: at}.Format()
+	if !strings.Contains(line, " fix=conflict") {
+		t.Fatalf("Format = %q", line)
+	}
+	got, ok := Parse(line)
+	if !ok || got.Fix != Conflict || got.SHA != "def" || got.CR != 48 {
+		t.Fatalf("Parse = %+v, %v", got, ok)
+	}
+	plain := Marker{Host: "h", State: Done, SHA: "abc", CR: 48, At: at}.Format()
+	if strings.Contains(plain, "fix=") {
+		t.Fatalf("a done post of another run names a fix: %q", plain)
+	}
+	if old, _ := Parse("<!-- switchboard v=1 host=h state=done sha=abc cr=48 -->"); old.Fix != "" {
+		t.Fatalf("an old marker reads as a fix: %+v", old)
+	}
+}
