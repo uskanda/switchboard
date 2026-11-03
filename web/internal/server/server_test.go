@@ -1,6 +1,8 @@
 package server
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"io"
@@ -175,6 +177,123 @@ func TestIconsAndManifest(t *testing.T) {
 		w := do(s, "GET", path, "", nil)
 		if w.Code != 200 || !strings.HasPrefix(w.Header().Get("Content-Type"), want) || strings.Contains(w.Body.String(), "<title>") {
 			t.Fatalf("%s: %d %q %s", path, w.Code, w.Header().Get("Content-Type"), w.Body)
+		}
+	}
+}
+
+// bigJS is an asset big enough for gzip to shrink.
+var bigJS = strings.Repeat("console.log('switchboard inbox');\n", 200)
+
+var textAssets = fstest.MapFS{
+	"index.html":      {Data: []byte("<!doctype html><title>inbox</title>")},
+	"assets/app-1.js": {Data: []byte(bigJS)},
+	"assets/logo.png": {Data: []byte(strings.Repeat("\x89PNG", 200))},
+	"favicon.svg":     {Data: []byte("<svg xmlns='http://www.w3.org/2000/svg'></svg>")},
+}
+
+func gunzip(t *testing.T, b []byte) string {
+	t.Helper()
+	zr, err := gzip.NewReader(bytes.NewReader(b))
+	if err != nil {
+		t.Fatalf("gunzip: %v", err)
+	}
+	out, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatalf("gunzip: %v", err)
+	}
+	return string(out)
+}
+
+func TestAssetsAreGzipped(t *testing.T) {
+	s := &Server{Inbox: &fakeInbox{}, Listen: listen, Assets: textAssets}
+	w := do(s, "GET", "/assets/app-1.js", "", map[string]string{"Accept-Encoding": "gzip, deflate, br"})
+	h := w.Header()
+	if w.Code != 200 || h.Get("Content-Encoding") != "gzip" || h.Get("Vary") != "Accept-Encoding" {
+		t.Fatalf("gzip: %d %v", w.Code, h)
+	}
+	if !strings.HasPrefix(h.Get("Content-Type"), "text/javascript") {
+		t.Fatalf("content type: %q", h.Get("Content-Type"))
+	}
+	if w.Body.Len() >= len(bigJS) || gunzip(t, w.Body.Bytes()) != bigJS {
+		t.Fatalf("gzip body: %d bytes", w.Body.Len())
+	}
+
+	for _, ae := range []string{"", "gzip;q=0", "identity"} {
+		w = do(s, "GET", "/assets/app-1.js", "", map[string]string{"Accept-Encoding": ae})
+		if w.Code != 200 || w.Header().Get("Content-Encoding") != "" || w.Body.String() != bigJS || w.Header().Get("Vary") != "Accept-Encoding" {
+			t.Fatalf("Accept-Encoding %q: %d %v", ae, w.Code, w.Header())
+		}
+	}
+
+	w = do(s, "GET", "/assets/logo.png", "", map[string]string{"Accept-Encoding": "gzip"})
+	if w.Code != 200 || w.Header().Get("Content-Encoding") != "" || w.Body.String() != strings.Repeat("\x89PNG", 200) {
+		t.Fatalf("png: %d %v", w.Code, w.Header())
+	}
+
+	// A range of a gzipped file is not taken: the whole gzip comes back.
+	w = do(s, "GET", "/assets/app-1.js", "", map[string]string{"Accept-Encoding": "gzip", "Range": "bytes=0-9"})
+	if w.Code != 200 || gunzip(t, w.Body.Bytes()) != bigJS {
+		t.Fatalf("range on gzip: %d", w.Code)
+	}
+}
+
+func TestCacheHeaders(t *testing.T) {
+	s := &Server{Inbox: &fakeInbox{}, Listen: listen, Assets: textAssets}
+	for _, p := range []string{"/assets/app-1.js", "/assets/logo.png"} {
+		if cc := do(s, "GET", p, "", nil).Header().Get("Cache-Control"); cc != "public, max-age=31536000, immutable" {
+			t.Fatalf("%s: Cache-Control %q", p, cc)
+		}
+	}
+	for _, p := range []string{"/", "/index.html", "/issue/x", "/favicon.svg"} {
+		w := do(s, "GET", p, "", nil)
+		if w.Code != 200 || w.Header().Get("Cache-Control") != "no-cache" || w.Header().Get("ETag") == "" {
+			t.Fatalf("%s: %d %v", p, w.Code, w.Header())
+		}
+	}
+	if w := do(s, "GET", "/issue/x", "", nil); !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") || !strings.Contains(w.Body.String(), "<title>inbox</title>") {
+		t.Fatalf("fallback: %v %s", w.Header(), w.Body)
+	}
+}
+
+func TestETagAndNotModified(t *testing.T) {
+	s := &Server{Inbox: &fakeInbox{}, Listen: listen, Assets: textAssets}
+	for _, c := range []struct{ path, ae string }{{"/", ""}, {"/issue/x", "gzip"}, {"/assets/app-1.js", ""}, {"/assets/app-1.js", "gzip"}} {
+		h := map[string]string{"Accept-Encoding": c.ae}
+		first := do(s, "GET", c.path, "", h)
+		tag := first.Header().Get("ETag")
+		if tag == "" {
+			t.Fatalf("%s %q: no ETag", c.path, c.ae)
+		}
+		again := do(s, "GET", c.path, "", h)
+		if again.Header().Get("ETag") != tag || !bytes.Equal(again.Body.Bytes(), first.Body.Bytes()) {
+			t.Fatalf("%s %q: second answer differs", c.path, c.ae)
+		}
+		h["If-None-Match"] = tag
+		w := do(s, "GET", c.path, "", h)
+		if w.Code != http.StatusNotModified || w.Body.Len() != 0 {
+			t.Fatalf("%s %q: If-None-Match: %d %d bytes", c.path, c.ae, w.Code, w.Body.Len())
+		}
+	}
+	plain := do(s, "GET", "/assets/app-1.js", "", nil).Header().Get("ETag")
+	gz := do(s, "GET", "/assets/app-1.js", "", map[string]string{"Accept-Encoding": "gzip"}).Header().Get("ETag")
+	if plain == gz {
+		t.Fatalf("the gzip version has the same ETag %s", plain)
+	}
+}
+
+func TestHeadOfStaticFiles(t *testing.T) {
+	s := &Server{Inbox: &fakeInbox{}, Listen: listen, Assets: textAssets}
+	for _, p := range []string{"/", "/assets/app-1.js"} {
+		h := map[string]string{"Accept-Encoding": "gzip"}
+		get := do(s, "GET", p, "", h)
+		head := do(s, "HEAD", p, "", h)
+		if head.Code != 200 || head.Body.Len() != 0 {
+			t.Fatalf("HEAD %s: %d %d bytes", p, head.Code, head.Body.Len())
+		}
+		for _, k := range []string{"Content-Type", "Content-Encoding", "Cache-Control", "ETag", "Vary", "Content-Length"} {
+			if head.Header().Get(k) != get.Header().Get(k) {
+				t.Fatalf("HEAD %s: %s %q, GET has %q", p, k, head.Header().Get(k), get.Header().Get(k))
+			}
 		}
 	}
 }

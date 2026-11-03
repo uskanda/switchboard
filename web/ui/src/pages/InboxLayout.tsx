@@ -1,12 +1,15 @@
-import { useRef, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
-import { useParams } from "react-router";
+import { useEffect, useRef, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
+import { useNavigate, useParams } from "react-router";
 import { Header } from "@/components/Header";
+import { InboxErrors } from "@/components/InboxErrors";
 import { InboxList } from "@/components/InboxList";
 import { IssuePane } from "@/components/IssuePane";
+import { isWaiting, issuePath } from "@/lib/api";
 import { LIST_WIDTH_DEFAULT, LIST_WIDTH_MAX, LIST_WIDTH_MIN, LIST_WIDTH_STEP, useListWidth } from "@/lib/paneWidth";
 import { useInbox } from "@/lib/inbox";
 import { usePageTitle } from "@/lib/title";
 import { cn } from "@/lib/utils";
+import { ignoreKey, stepWait } from "@/lib/waits";
 
 /**
  * PaneBorder is the border between the panes, which the user drags (or moves with the arrow keys) to change the list
@@ -60,21 +63,46 @@ function PaneBorder({ width, setWidth }: { width: number; setWidth: (w: number) 
  * InboxLayout draws / and /issue/:ref. From 1024px it puts the list in a left pane and the selected issue in the
  * right one, with a border the user drags to resize the list; below that, / shows the list alone and /issue/:ref the
  * issue alone.
+ * On either, j and k open the wait below and above the open issue (lib/waits.ts), and r moves the focus to the reply;
+ * from 1024px, a line under the list tells these keys.
  */
 export function InboxLayout() {
   const ref = useParams().ref;
   const [width, setWidth] = useListWidth();
-  const { inbox } = useInbox();
+  const { inbox, view } = useInbox();
   usePageTitle(ref && (inbox?.items.find((it) => it.ref === ref)?.title ?? ref));
+  const navigate = useNavigate();
+  useEffect(() => {
+    const onKeyDown = (e: globalThis.KeyboardEvent) => {
+      if (!["j", "k", "r"].includes(e.key) || ignoreKey(e)) return;
+      if (e.key === "r") {
+        const reply = document.getElementById("reply");
+        if (!reply) return;
+        // Stopped, or the r would be typed into the field the focus just moved to.
+        e.preventDefault();
+        reply.focus();
+        return;
+      }
+      // The waits as the list shows them: an issue being processed (lib/pending.ts) is shown under running.
+      const to = stepWait(view?.filter(isWaiting) ?? [], ref, e.key === "j" ? 1 : -1);
+      if (!to) return;
+      e.preventDefault();
+      void navigate(issuePath(to.ref));
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [view, ref, navigate]);
   return (
     <div className="flex min-h-dvh flex-col lg:h-dvh">
       <Header />
+      <InboxErrors className="px-lg pt-lg" />
       <div
         style={{ "--list-width": `${width}px` } as CSSProperties}
         className="flex-1 lg:relative lg:grid lg:min-h-0 lg:grid-cols-[var(--list-width)_minmax(0,1fr)]"
       >
         <nav aria-label="一覧" className={cn("min-w-0 px-lg py-xl lg:overflow-y-auto lg:border-r lg:border-outline", ref && "hidden lg:block")}>
           <InboxList selected={ref} />
+          <p className="mt-lg hidden text-label-md text-muted lg:block">{"j/k：待ちの間を移る　r：返答の欄へ"}</p>
         </nav>
         <PaneBorder width={width} setWidth={setWidth} />
         {/* No padding on top: the issue's pinned head brings its own, so nothing shows above it once scrolled. */}
