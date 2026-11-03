@@ -75,8 +75,10 @@ type Item struct {
 	RunningSince *time.Time `json:"running_since,omitempty"`
 	Progress     string     `json:"progress,omitempty"`
 	QueuedSince  *time.Time `json:"queued_since,omitempty"`
-	DoneSince    *time.Time `json:"done_since,omitempty"`
-	ChangeURL    string     `json:"change_url,omitempty"`
+	// QueuedUntil, on an issue queued on a pause of its host (reason limit or quota), is when the pause ends.
+	QueuedUntil *time.Time `json:"queued_until,omitempty"`
+	DoneSince   *time.Time `json:"done_since,omitempty"`
+	ChangeURL   string     `json:"change_url,omitempty"`
 	// ChangeNumber and ChangeSHA are the change request and the commit the marker of the latest done post names
 	// (cr and sha); a page merges that commit of that change request, and offers no merge without them.
 	ChangeNumber int    `json:"change_number,omitempty"`
@@ -371,6 +373,10 @@ func queuedItem(s forge.IssueSummary, m *marker.Marker) Item {
 		at := m.At
 		it.QueuedSince = &at
 	}
+	if !m.Until.IsZero() {
+		until := m.Until
+		it.QueuedUntil = &until
+	}
 	return it
 }
 
@@ -541,7 +547,11 @@ func Print(w io.Writer, items []Item, now time.Time) {
 		tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 		fmt.Fprintln(tw, "ISSUE\tHOST\tQUEUED\tLIMIT")
 		for _, it := range queued {
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", it.Ref, it.Host, age(it.QueuedSince, now), it.Reason)
+			limit := it.Reason
+			if it.QueuedUntil != nil {
+				limit += " (until " + it.QueuedUntil.Local().Format("01-02 15:04") + ")"
+			}
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", it.Ref, it.Host, age(it.QueuedSince, now), limit)
 		}
 		tw.Flush()
 	}

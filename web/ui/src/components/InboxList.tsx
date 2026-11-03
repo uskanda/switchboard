@@ -67,7 +67,7 @@ function cells(it: ViewItem) {
   if (isQueued(it)) {
     return {
       tag: <span className="text-label-md font-medium">順番待ち</span>,
-      line: queueText(it.reason),
+      line: queueText(it.reason, it.queued_until),
       time: age(it.queued_since ?? null),
       timeWords: timeText("queued", it.queued_since),
     };

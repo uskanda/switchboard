@@ -20,6 +20,8 @@ export type Item = {
   progress?: string;
   /** When the issue was queued for a free slot; reason then names the limit reached. */
   queued_since?: string | null;
+  /** When the pause of the host ends, for an issue queued on one (reason limit or quota). */
+  queued_until?: string | null;
   /** When the agent finished an issue still open (it waits to be closed), and the pull or merge request it names. */
   done_since?: string | null;
   change_url?: string;
@@ -52,9 +54,20 @@ export function progressText(progress: string | undefined): string {
 /** plainText is the start of a question as one plain line: the bold and code marks of its Markdown left out. */
 export const plainText = (s: string) => s.replace(/\*\*|__|`/g, "").replace(/^#+\s+/, "");
 
-/** queueText says which limit a queued issue waits on. */
-export const queueText = (reason: string) =>
-  reason === "project-max-parallel" ? "プロジェクトの上限に達しています" : "端末の上限に達しています";
+/**
+ * queueText says which limit a queued issue waits on: a full slot of the host or the project, or a pause of the host
+ * on a usage limit or the API quota, with the time the pause ends (local time) when there is one.
+ */
+export function queueText(reason: string, until?: string | null): string {
+  const pause: Record<string, string> = { limit: "利用上限に達しています", quota: "APIのクオータに達しています" };
+  if (reason in pause) {
+    if (!until) return pause[reason];
+    const d = new Date(until);
+    const hm = `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
+    return `${pause[reason]}（${d.getMonth() + 1}/${d.getDate()} ${hm}まで）`;
+  }
+  return reason === "project-max-parallel" ? "プロジェクトの上限に達しています" : "端末の上限に達しています";
+}
 
 /**
  * Inbox is a listing. relay is whether the inbox service follows the relay's events ("" when it is not set up), and
