@@ -253,7 +253,7 @@ func (d *Doctor) claude(ctx context.Context) {
 	d.ok("claude %s (checked against %s)", v, claudecode.CheckedVersion)
 }
 
-// gh checks the GitHub CLI the agent attaches the images of a done run with (ADR-048), when this host has a GitHub
+// gh checks the GitHub CLI the agent attaches the images of a done run with (ADR-050), when this host has a GitHub
 // project. Without it the runs and their write-backs work as before; only the images are not attached.
 func (d *Doctor) gh(ctx context.Context) {
 	github := false

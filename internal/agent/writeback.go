@@ -32,8 +32,9 @@ type outcome struct {
 	Q       int    `json:"q,omitempty"`   // for plan-questions: the number of the last question
 	SHA     string `json:"sha,omitempty"` // for done: the commit pushed, whose CI is watched
 	CR      int    `json:"cr,omitempty"`  // for done: the number of the change request
+	Fix     string `json:"fix,omitempty"` // for done of a fix run: what it fixed (marker.CI, marker.Push or marker.Conflict)
 	// For done: the images kept in the run directory's screenshots/ to attach, the files left out, and why the
-	// images could not be collected (ADR-048).
+	// images could not be collected (ADR-050).
 	Shots      []string            `json:"shots,omitempty"`
 	Skipped    []workspace.Skipped `json:"skipped,omitempty"`
 	ShotsError string              `json:"shots_error,omitempty"`
@@ -139,6 +140,9 @@ func (a *Agent) writeOut(ctx context.Context, ref forge.IssueRef, o *outcome, se
 		}
 		posting := body
 		m := marker.Marker{Host: a.Config.Host.Name, Session: o.Session, Run: o.Run, State: o.State, Reason: o.Reason, Ack: o.Ack, At: time.Now(), Q: o.Q, SHA: o.SHA, CR: o.CR}
+		if o.State == marker.Done {
+			m.Fix = o.Fix
+		}
 		body += "\n\n" + m.Format() + "\n"
 		a.checkComment(ref, o.Run, "comment.md", body)
 		c, err := a.forgeOf(ref).PostComment(ctx, ref, body)
@@ -165,7 +169,7 @@ func (a *Agent) writeOut(ctx context.Context, ref forge.IssueRef, o *outcome, se
 	return a.attach(ctx, ref, o, comments)
 }
 
-// attach posts the comment with the images of a done run, after its done post and its label (ADR-048), unless
+// attach posts the comment with the images of a done run, after its done post and its label (ADR-050), unless
 // comments hold one of the same run. When the images cannot be attached, the comment says why instead; the done
 // stays. Only a failure to post that comment fails the write-back, which is then tried again.
 func (a *Agent) attach(ctx context.Context, ref forge.IssueRef, o *outcome, comments []forge.Comment) error {

@@ -195,7 +195,7 @@ func (a *Agent) ended(p config.Project, ref forge.IssueRef, rec record, o *outco
 }
 
 // implements reports whether pl implements the issue: a direct run or the run of an approved plan. Only these get the
-// implement instructions and the screenshot rules (ADR-048).
+// implement instructions and the screenshot rules (ADR-050).
 func (pl *plan) implements() bool { return pl.kind == directRun || pl.kind == approvedRun }
 
 // work prepares the worktree, runs claude and judges the result. It returns nil when the run was canceled.
@@ -335,7 +335,7 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) (o *outcome) {
 }
 
 // collectShots moves the images a done run left for the issue to its run directory, where the write-back reads them
-// (ADR-048), and says on the done post that they follow. A failure is recorded; it never undoes the done.
+// (ADR-050), and says on the done post that they follow. A failure is recorded; it never undoes the done.
 func (a *Agent) collectShots(ref forge.IssueRef, sp *workspace.Space, o *outcome) {
 	names, skipped, err := sp.CollectScreenshots(filepath.Join(a.runDir(o.Run), "screenshots"))
 	if err != nil {
@@ -352,6 +352,10 @@ func (a *Agent) collectShots(ref forge.IssueRef, sp *workspace.Space, o *outcome
 // finish handles a run that declared done: verify, check the output, push, open the pull request.
 func (a *Agent) finish(ctx context.Context, pl *plan, sp *workspace.Space, d *Declaration, o *outcome) *outcome {
 	p, is := pl.project, pl.issue
+	if pl.fix != nil {
+		// The done post names what the fix run fixed; the causes are written as the marker's values (fix=).
+		o.Fix = pl.fix.cause
+	}
 	verified := a.msg.notVerified
 	if cmd := p.VerifyCommand; cmd != "" {
 		// The command runs code claude wrote, so it gets claude's environment: no forge token.

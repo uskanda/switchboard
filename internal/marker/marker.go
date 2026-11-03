@@ -3,7 +3,8 @@
 //	<!-- switchboard v=1 host=<host> session=<id> run=<id> state=<state> reason=<reason> ack=<comment-id> at=<RFC3339> -->
 //
 // A claim made from a start label also carries mode=<plan|direct>, and a post of plan questions q=<last number>.
-// A done post that names a change request carries sha=<the commit pushed> and cr=<its number>.
+// A done post that names a change request carries sha=<the commit pushed> and cr=<its number>; the done post of a fix
+// run also carries fix=<ci|push|conflict>, what it fixed.
 // Unknown keys are ignored, so that a newer version's marker still parses.
 package marker
 
@@ -33,6 +34,7 @@ type Marker struct {
 	Q       int    // on a post of plan questions: the number of its last question
 	SHA     string // on a done post: the commit pushed, whose CI the agent watches
 	CR      int    // on a done post: the number of the change request
+	Fix     string // on the done post of a fix run: what it fixed (CI, Push or Conflict); empty on any other post
 }
 
 // The modes a claim names, and the reasons of the waits in the plan stage.
@@ -59,7 +61,7 @@ const (
 	Queued   = "queued" // the comment of an issue waiting for a free slot
 	Waiting  = "waiting"
 	Done     = "done"
-	// Attachment marks the comment that attaches the images of a done run, posted after its done post (ADR-048).
+	// Attachment marks the comment that attaches the images of a done run, posted after its done post (ADR-050).
 	Attachment = "attachment"
 )
 
@@ -104,6 +106,7 @@ func (m Marker) Format() string {
 	if m.CR != 0 {
 		fmt.Fprintf(&b, " cr=%d", m.CR)
 	}
+	add("fix", m.Fix)
 	b.WriteString(" -->")
 	return b.String()
 }
@@ -148,6 +151,8 @@ func Parse(body string) (*Marker, bool) {
 			m.SHA = v
 		case "cr":
 			m.CR, _ = strconv.Atoi(v)
+		case "fix":
+			m.Fix = v
 		}
 	}
 	if m.V < 1 {

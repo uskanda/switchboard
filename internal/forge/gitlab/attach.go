@@ -16,7 +16,7 @@ import (
 )
 
 // AttachComment implements forge.Attacher: it uploads each file to the project (POST /projects/:id/uploads), then
-// posts one note with the markdown GitLab returned for each, before the body's last line (ADR-048, V46).
+// posts one note with the markdown GitLab returned for each, before the body's last line (ADR-050, V47).
 func (c *Client) AttachComment(ctx context.Context, ref forge.IssueRef, body string, files []string) (*forge.Comment, error) {
 	var links []string
 	for _, f := range files {
