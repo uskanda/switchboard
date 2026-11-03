@@ -140,6 +140,13 @@ describe("the list", () => {
     at("/");
     expect((await screen.findAllByRole("link", { name: "PR #9" }))[0]).toHaveAttribute("href", "https://github.test/o/r/pull/9");
   });
+
+  it("draws a card's focus apart from the card, so it differs from the frame of the chosen one", async () => {
+    answer({ "GET /api/inbox": listing(item()) });
+    at("/");
+    const card = within(await screen.findByRole("list")).getAllByRole("link")[0];
+    expect(card).toHaveClass("focus-visible:outline-offset-2");
+  });
 });
 
 describe("the page title", () => {
