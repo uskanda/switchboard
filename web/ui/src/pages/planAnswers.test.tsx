@@ -98,6 +98,15 @@ describe("the questions of a plan", () => {
     expect(screen.getByText("今のまま。")).toBeInTheDocument();
   });
 
+  it("head each question at the third level, with the headings of its text below it", async () => {
+    const body = "### 計画についての質問\n\n❓ **Q1** - **名前**\n\n## 今の名前\n\nAPIの名前をどうしますか。\n\n➡️ 今のまま。\n";
+    serve({ "gh:o/r#80": detail({ post: body, comments: [asked(body)] }) });
+    await open();
+    const q1 = screen.getByRole("region", { name: "Q1 名前" });
+    expect(within(q1).getByRole("heading", { name: "Q1 名前" }).tagName).toBe("H3");
+    expect(within(q1).getByRole("heading", { name: "今の名前" }).tagName).toBe("H4");
+  });
+
   it("are not drawn for the questions of an earlier round", async () => {
     const first = "### 計画についての質問\n\n❓ **Q1** - **前**\n\nA: x\nB: y\n\n➡️ A\n";
     serve({ "gh:o/r#80": detail({ comments: [asked(first, "2026-11-01T09:00:00Z"), { author: "me", created_at: t0, body: "Q1 前: B", agent: false }, asked(smarternews80)] }) });

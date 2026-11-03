@@ -132,6 +132,7 @@ function ChangeStatus({ name, read }: { name: string; read: Read }) {
  */
 export function MergeButton({ issueRef, number, sha, url }: { issueRef: string; number: number; sha: string; url?: string }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const backOut = useRef<HTMLButtonElement>(null);
   const id = useId();
   const [sending, setSending] = useState(false);
   const [read, setRead] = useState<Read | null>(null);
@@ -141,10 +142,13 @@ export function MergeButton({ issueRef, number, sha, url }: { issueRef: string; 
   const merging = view?.some((it) => it.ref === issueRef && it.pending === "merge") ?? false;
   const name = changeName(issueRef, number);
 
+  // The dialog would put the focus on its first link, the change request's; a merge cannot be undone, so the focus
+  // starts on backing out instead. React's autoFocus focuses on mount, while the dialog is closed, so it is moved here.
   function open() {
     const n = ++reads.current;
     setRead({ kind: "reading" });
     dialog.current?.showModal();
+    backOut.current?.focus();
     mergeStatus(issueRef, sha).then(
       (status) => reads.current === n && setRead({ kind: "read", status }),
       (err: unknown) => reads.current === n && setRead({ kind: "failed", ...readFailure(err) }),
@@ -196,7 +200,7 @@ export function MergeButton({ issueRef, number, sha, url }: { issueRef: string; 
             </section>
           )}
           <div className="flex flex-wrap justify-end gap-sm">
-            <Button type="button" variant="secondary" onClick={() => dialog.current?.close()} disabled={sending}>
+            <Button ref={backOut} type="button" variant="secondary" onClick={() => dialog.current?.close()} disabled={sending}>
               やめる
             </Button>
             <Button type="button" onClick={() => void confirm()} disabled={sending}>
