@@ -15,7 +15,7 @@
 
 ## 4. 受信箱の判断と見張り
 
-- [ ] 4.1 `internal/inbox` の`AutoMergeCandidate` と `AutoMergeStep` のテストを、判断の順の分岐ごとに書き、落ちることを確かめてから実装する
+- [x] 4.1 `internal/inbox` の`AutoMergeCandidate` と `AutoMergeStep` のテストを、判断の順の分岐ごとに書き、落ちることを確かめてから実装する
 - [ ] 4.2 `inboxserve` のテストを書き、落ちることを確かめてから実装する。対象は、マージのPOSTの202と取り消しのPOST、一覧と詳細の `auto_merge` と `auto_merge_results`、購読が無くても試す見張りである
 - [ ] 4.3 `inboxapi` の型とクライアント（`Merge` の戻り値、取り消し）を直し、テストを足す
 - [ ] 4.4 `cmd/switchboard` の `inbox serve` で `Store` を開き、見張りを動かす
