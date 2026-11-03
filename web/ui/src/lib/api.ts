@@ -299,6 +299,12 @@ export const cancelAutoMerge = (ref: string) =>
     body: JSON.stringify({ ref }),
   });
 
+/**
+ * getProjectIcons reads the emoji icons of the configuration, by project reference. The other projects' icons are
+ * images at /api/project-icon?ref=, which answers 404 when a project has none.
+ */
+export const getProjectIcons = () => call<Record<string, string>>("/api/project-icons");
+
 /** CheckStatus is one CI check of the commit. name is the forge's data: show it as text only. */
 export type CheckStatus = { name: string; status: "success" | "failure" | "running" | "other"; url: string };
 

@@ -36,6 +36,8 @@ type Inbox interface {
 	CreateIssue(ctx context.Context, req inboxapi.CreateIssueRequest) (*inboxapi.CreateIssueResponse, error)
 	Merge(ctx context.Context, ref, sha string) (*inboxapi.MergeResult, error)
 	CancelAutoMerge(ctx context.Context, ref string) error
+	ProjectIcon(ctx context.Context, ref string) (*inboxapi.Icon, error)
+	ProjectIcons(ctx context.Context) (inboxapi.ProjectIcons, error)
 	RegisterDevice(ctx context.Context, token string) error
 	Approve(ctx context.Context, ref string, since time.Time) error
 	MergeStatus(ctx context.Context, ref, sha string) (*inboxapi.MergeStatus, error)
@@ -91,6 +93,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.createIssue(w, r)
 	case r.URL.Path == "/api/merge" && r.Method == http.MethodPost:
 		s.merge(w, r)
+	case r.URL.Path == "/api/project-icon" && r.Method == http.MethodGet:
+		s.projectIcon(w, r)
+	case r.URL.Path == "/api/project-icons" && r.Method == http.MethodGet:
+		out, err := s.Inbox.ProjectIcons(r.Context())
+		s.answer(w, out, err)
 	case r.URL.Path == "/api/merge-status" && r.Method == http.MethodGet:
 		// It only reads, as /api/issue does; the merge itself is a POST with the checks of a reply.
 		q := r.URL.Query()
@@ -250,6 +257,20 @@ func (s *Server) cancelAutoMerge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// projectIcon passes a project's icon image on from the inbox service, which read it with the inbox token (ADR-055).
+// The page reads it from this origin, so the content security policy stays default-src 'self'; nosniff, set for
+// every answer, keeps the browser to the image type the inbox service checked.
+func (s *Server) projectIcon(w http.ResponseWriter, r *http.Request) {
+	icon, err := s.Inbox.ProjectIcon(r.Context(), r.URL.Query().Get("ref"))
+	if err != nil {
+		s.answer(w, nil, err)
+		return
+	}
+	w.Header().Set("Content-Type", icon.ContentType)
+	w.Header().Set("Cache-Control", "max-age=3600")
+	w.Write(icon.Data)
 }
 
 // registerDevice passes an app's FCM token on to the inbox service.

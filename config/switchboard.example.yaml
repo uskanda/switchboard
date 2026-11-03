@@ -79,6 +79,7 @@ projects:
     protected_paths_extra: []
     plan_first: false                 # true: agent:ready starts with a plan, as agent:plan does
     # max_parallel: 1                 # runs of this project at once, within agent.max_parallel; none when unset
+    # icon: "🚀"                      # the web inbox's icon: an https:// image URL, an image file (/ or ~/), or one emoji; the forge's avatar when unset
   # - ref: gl:YOUR_GROUP/switchboard-sandbox   # gl:group/project, or gl:group/sub/project
   #   path: ~/repos/switchboard-sandbox-gl
   #   host: ubuntu-a

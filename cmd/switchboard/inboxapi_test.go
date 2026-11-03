@@ -63,6 +63,22 @@ func TestInboxAPIOpensIssuesWithTheInboxForges(t *testing.T) {
 	}
 }
 
+func TestInboxAPIReadsIconsWithTheInboxForges(t *testing.T) {
+	cfg := load(t, bothForges)
+	gh := fake.New(nil)
+	api, reload := inboxAPI(cfg, map[string]forge.Forge{forge.GitHub: gh}, instructions.Store{})
+	if api.Icons == nil || api.Icons.Config != cfg || api.Icons.Avatars[forge.GitHub] != gh {
+		t.Fatalf("icons = %+v, want the inbox forges by kind", api.Icons)
+	}
+	if _, ok := api.Icons.Avatars[forge.GitLab]; ok {
+		t.Error("a forge without a client has an entry")
+	}
+	reload(cfg.Projects[:1])
+	if len(api.Icons.Config.Projects) != 1 {
+		t.Errorf("icons' projects = %+v, want the reloaded ones", api.Icons.Config.Projects)
+	}
+}
+
 func TestInboxAPIMergesWithTheInboxForges(t *testing.T) {
 	cfg := load(t, bothForges)
 	gh := fake.New(nil)

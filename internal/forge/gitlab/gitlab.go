@@ -439,6 +439,9 @@ type glProject struct {
 	ID            int64  `json:"id"`
 	Visibility    string `json:"visibility"`
 	DefaultBranch string `json:"default_branch"`
+	Namespace     struct {
+		AvatarURL string `json:"avatar_url"`
+	} `json:"namespace"`
 }
 
 func (c *Client) project(ctx context.Context, owner, repo string) (*glProject, error) {

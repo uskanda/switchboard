@@ -28,6 +28,26 @@ func (f *Forge) DefaultBranch(_ context.Context, owner, name string) (string, er
 	return r.branch, nil
 }
 
+// SetAvatar sets the avatar of a repository; it has none until set.
+func (f *Forge) SetAvatar(owner, name string, img []byte) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.repos[owner+"/"+name].avatar = img
+}
+
+var _ forge.Avatars = (*Forge)(nil)
+
+// ProjectAvatar implements forge.Avatars.
+func (f *Forge) ProjectAvatar(_ context.Context, owner, name string) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	r, ok := f.repos[owner+"/"+name]
+	if !ok || r.avatar == nil {
+		return nil, forge.ErrNotFound
+	}
+	return r.avatar, nil
+}
+
 // LabelNames implements forge.Repos, in name order.
 func (f *Forge) LabelNames(_ context.Context, owner, name string) ([]string, error) {
 	f.mu.Lock()

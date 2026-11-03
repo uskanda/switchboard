@@ -1,3 +1,4 @@
+import { ProjectIcon } from "@/components/ProjectIcon";
 import { Badge } from "@/components/ui/badge";
 import { forgeName, splitRef, type Forge } from "@/lib/ref";
 import { cn } from "@/lib/utils";
@@ -8,13 +9,15 @@ export function ForgeBadge({ forge }: { forge: Forge }) {
 }
 
 /**
- * IssueRef shows a reference of an issue or a project without the forge's prefix, the forge as a badge after it:
- * "o/r#12 [GitHub]". The space between the two keeps them apart in the accessible name ("o/r#12 GitHub").
+ * IssueRef shows a reference of an issue or a project without the forge's prefix, the project's icon before it and
+ * the forge as a badge after it: "[icon] o/r#12 [GitHub]". The space between the reference and the badge keeps them
+ * apart in the accessible name ("o/r#12 GitHub"); the icon is not part of it.
  */
 export function IssueRef({ value, className }: { value: string; className?: string }) {
   const { forge, path } = splitRef(value);
   return (
     <span className={cn("inline-flex flex-wrap items-center gap-xs align-middle", className)}>
+      <ProjectIcon value={value} />
       <span className="font-mono text-mono-sm break-all">{path}</span>
       {forge && (
         <>

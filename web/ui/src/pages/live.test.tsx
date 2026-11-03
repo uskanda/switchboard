@@ -381,7 +381,9 @@ describe("the thread", () => {
     const strong = await screen.findByText("README", { selector: "strong" });
     expect(strong).toBeInTheDocument();
     expect(screen.getByText(/<img src=x onerror="alert\(1\)">/)).toBeInTheDocument();
-    expect(document.querySelector("img")).toBeNull();
+    // The only images are the project icons beside the references, which the page asks switchboard-web for.
+    const images = [...document.querySelectorAll("img")];
+    expect(images.every((img) => img.closest("[data-project-icon]") && img.getAttribute("src")?.startsWith("/api/project-icon?"))).toBe(true);
     const image = screen.getByRole("link", { name: "画像：shot" });
     expect(image).toHaveAttribute("href", "https://example.test/a.png");
     const guide = screen.getByRole("link", { name: "the guide" });

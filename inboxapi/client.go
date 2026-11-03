@@ -138,6 +138,35 @@ func (c *Client) CreateIssue(ctx context.Context, req CreateIssueRequest) (*Crea
 	return &out, nil
 }
 
+// ProjectIcons returns the emoji icons of the configuration, by project reference.
+func (c *Client) ProjectIcons(ctx context.Context) (ProjectIcons, error) {
+	out := ProjectIcons{}
+	return out, c.do(ctx, http.MethodGet, "/v1/project-icons", nil, &out)
+}
+
+// ProjectIcon returns the icon image of a project, named as gh:owner/repo or gl:group/project. It is ErrNotFound when
+// the project has none that can be read.
+func (c *Client) ProjectIcon(ctx context.Context, ref string) (*Icon, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://inbox/v1/project-icon?ref="+url.QueryEscape(ref), nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.client().Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrUnavailable, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return nil, answerError(resp)
+	}
+	// The service sends images of at most 256 KiB; the bound only keeps a broken answer from filling memory.
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, err
+	}
+	return &Icon{Data: data, ContentType: resp.Header.Get("Content-Type")}, nil
+}
+
 // Events follows GET /v1/events: it calls fn with the listing the inbox service sends first, then with each listing
 // that differs from the one before, until ctx ends (ctx.Err()) or the stream breaks (ErrUnavailable). Reconnecting
 // is the caller's.

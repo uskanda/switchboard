@@ -64,6 +64,8 @@ type Server struct {
 	// Merges, when set, serves /v1/merge: it merges change requests with each forge's inbox token, by forge kind
 	// (ADR-043). The Inbox must be a Merger.
 	Merges map[string]forge.Merges
+	// Icons, when set, serves /v1/project-icon and /v1/project-icons.
+	Icons *Icons
 	// CI, when set, serves /v1/merge-status: it reads the change requests and the CI of done issues with each forge's
 	// inbox token, by forge kind, for the merge dialog (ADR-050). The Inbox must be a MergeStatusReader.
 	CI map[string]forge.CI
@@ -86,8 +88,8 @@ type Server struct {
 	// Observer, when set, gets every listing read from the forges, in order. Watch keeps them read with no page.
 	Observer Observer
 
-	// vmu guards Inbox, Instructions.Projects, Projects.Config and NewIssues.Config, which Reload replaces while
-	// requests read them.
+	// vmu guards Inbox, Instructions.Projects, Projects.Config, NewIssues.Config and Icons.Config, which Reload
+	// replaces while requests read them.
 	vmu sync.RWMutex
 
 	mu     sync.Mutex
@@ -121,7 +123,7 @@ func (s *Server) inbox() Inbox {
 }
 
 // Reload takes a configuration with new projects and the inbox b made for it: the listing, the instructions, the
-// projects and the targets of new issues follow it from the next request, and the cached listing is dropped.
+// projects, the targets of new issues and the icons follow it from the next request, and the cached listing is dropped.
 func (s *Server) Reload(cfg *config.Config, b Inbox) {
 	s.vmu.Lock()
 	s.Inbox = b
@@ -133,6 +135,9 @@ func (s *Server) Reload(cfg *config.Config, b Inbox) {
 	}
 	if s.NewIssues != nil {
 		s.NewIssues.Config = cfg
+	}
+	if s.Icons != nil {
+		s.Icons.Config = cfg
 	}
 	s.vmu.Unlock()
 	s.mu.Lock()
@@ -187,6 +192,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if s.AutoMerge != nil {
 			routes["/v1/automerge/cancel"] = route{http.MethodPost, s.cancelAutoMerge}
 		}
+	}
+	if s.Icons != nil {
+		routes["/v1/project-icon"] = route{http.MethodGet, s.projectIcon}
+		routes["/v1/project-icons"] = route{http.MethodGet, s.projectIcons}
 	}
 	if s.CI != nil {
 		routes["/v1/merge-status"] = route{http.MethodGet, s.mergeStatus}

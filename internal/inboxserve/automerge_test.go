@@ -38,14 +38,17 @@ func withAutoMerge(t *testing.T) *issuesWorld {
 
 var ref50 = forge.IssueRef{Forge: forge.GitHub, Owner: "o", Repo: "r", Number: 50}
 
-// fix is a fix run of the conflict that pushed "def".
+// fix is a fix run of the conflict that pushed "def", in the order an agent takes the steps: it claims the issue,
+// pushes, posts the done marker, then labels the issue done. A watch running beside it sees only states a real run
+// passes through.
 func (w *issuesWorld) fix() {
+	w.gh.SetLabels(ctx, ref50, []string{"agent:running"})
 	w.gh.PostAs = "bot"
 	w.gh.PostComment(ctx, ref50, "Fixing\n\n"+marker.Marker{Host: "here", Run: "f", State: marker.Running, Reason: marker.Fix}.Format())
+	w.gh.SetChange("o", "r", 9, fake.Change{Head: "def"})
 	w.gh.PostComment(ctx, ref50, "### Done\n\n"+marker.Marker{Host: "here", Run: "f", State: marker.Done, SHA: "def", CR: 9, Fix: marker.Conflict}.Format())
 	w.gh.PostAs = "me"
 	w.gh.SetLabels(ctx, ref50, []string{"agent:done"})
-	w.gh.SetChange("o", "r", 9, fake.Change{Head: "def"})
 }
 
 func (w *issuesWorld) list(t *testing.T) inboxapi.Inbox {

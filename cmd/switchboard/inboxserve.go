@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -50,12 +51,14 @@ func socketPath(flagValue string) string {
 
 // inboxAPI is the inbox service's handler for cfg: the inbox over forges (the inbox token's clients), the
 // instructions in store, the projects, the opening of new issues, the merges of done change requests and what the
-// merge dialog reads of them, and the interval the forges are read at while a page listens. reload takes
+// merge dialog reads of them, the projects' icons, and the interval the forges are read at while a page listens.
+// reload takes
 // the projects of a new configuration file; the other settings stay as cfg has them until a restart.
 func inboxAPI(cfg *config.Config, forges map[string]forge.Forge, store instructions.Store) (api *inboxserve.Server, reload func([]config.Project)) {
 	repos := map[string]forge.Repos{}
 	issues := map[string]forge.Issues{}
 	merges := map[string]forge.Merges{}
+	avatars := map[string]forge.Avatars{}
 	ci := map[string]forge.CI{}
 	for kind, f := range forges {
 		if r, ok := f.(forge.Repos); ok {
@@ -67,6 +70,9 @@ func inboxAPI(cfg *config.Config, forges map[string]forge.Forge, store instructi
 		if m, ok := f.(forge.Merges); ok {
 			merges[kind] = m
 		}
+		if a, ok := f.(forge.Avatars); ok {
+			avatars[kind] = a
+		}
 		if c, ok := f.(forge.CI); ok {
 			ci[kind] = c
 		}
@@ -76,6 +82,7 @@ func inboxAPI(cfg *config.Config, forges map[string]forge.Forge, store instructi
 		Projects:     &inboxserve.Projects{Config: cfg, Repos: repos},
 		NewIssues:    &inboxserve.NewIssues{Config: cfg, Issues: issues},
 		Merges:       merges,
+		Icons:        &inboxserve.Icons{Config: cfg, Avatars: avatars},
 		CI:           ci,
 	}
 	reload = func(ps []config.Project) {
@@ -170,6 +177,7 @@ func inboxServe(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 	api, reload := inboxAPI(cfg, forges, instructions.For(cfg.Path, d.Audit()))
+	api.Icons.Dir = filepath.Join(d.Path, "project-icons")
 	// The merges refused for a conflict are kept in the state directory and made once the agent fixed them (ADR-048),
 	// whether or not a page listens.
 	if api.AutoMerge, err = automerge.Open(d); err != nil {

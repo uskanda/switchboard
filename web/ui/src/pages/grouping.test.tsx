@@ -54,7 +54,14 @@ const section = async (name: string) => (await screen.findByRole("heading", { le
 /** cards is the card list of a section (the table holds the same items for another width). */
 const cards = (s: HTMLElement) => s.querySelector(":scope > div:last-of-type") as HTMLElement;
 
-const headings = (el: HTMLElement) => within(el).queryAllByRole("heading", { level: 3 }).map((h) => h.textContent);
+/** shown is the text of an element without the parts hidden from assistive technology, such as the project's icon. */
+const shown = (h: HTMLElement) => {
+  const copy = h.cloneNode(true) as HTMLElement;
+  copy.querySelectorAll("[aria-hidden='true']").forEach((n) => n.remove());
+  return copy.textContent;
+};
+
+const headings = (el: HTMLElement) => within(el).queryAllByRole("heading", { level: 3 }).map(shown);
 
 describe("the list grouped by project", () => {
   it("puts each section's rows under their project, the one waiting longest first", async () => {
