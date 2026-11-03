@@ -1,10 +1,13 @@
 import { useEffect, useRef, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
-import { useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import { Header } from "@/components/Header";
 import { InboxErrors } from "@/components/InboxErrors";
 import { InboxList } from "@/components/InboxList";
 import { IssuePane } from "@/components/IssuePane";
-import { isWaiting, issuePath } from "@/lib/api";
+import { IssueRef } from "@/components/IssueRef";
+import { ReasonBadge } from "@/components/ReasonBadge";
+import { Card } from "@/components/ui/card";
+import { isWaiting, issuePath, oldestWaiting, timeText, type Item } from "@/lib/api";
 import { LIST_WIDTH_DEFAULT, LIST_WIDTH_MAX, LIST_WIDTH_MIN, LIST_WIDTH_STEP, useListWidth } from "@/lib/paneWidth";
 import { useInbox } from "@/lib/inbox";
 import { usePageTitle } from "@/lib/title";
@@ -60,9 +63,38 @@ function PaneBorder({ width, setWidth }: { width: number; setWidth: (w: number) 
 }
 
 /**
+ * NothingChosen fills the right pane while no issue is chosen: a card that leads to the issue that has waited longest,
+ * or, while nothing waits, a line that asks to choose one from the list.
+ */
+function NothingChosen({ items }: { items: Item[] | null }) {
+  // The waits as the list shows them: an issue being processed (lib/pending.ts) is not offered.
+  const it = oldestWaiting(items ?? []);
+  if (!it) return <p className="pt-xl text-muted">左の一覧からissueを選んでください</p>;
+  return (
+    <section aria-labelledby="oldest-waiting" className="flex flex-col gap-sm pt-xl">
+      <h2 id="oldest-waiting" className="text-label-md font-semibold text-muted">
+        最も古い待ち
+      </h2>
+      <Link to={issuePath(it.ref)} className="block rounded-md focus-visible:outline-2 focus-visible:outline-primary">
+        <Card className="flex flex-col gap-xs">
+          <IssueRef value={it.ref} className="self-start" />
+          <span className="line-clamp-2 font-medium break-words" title={it.title}>
+            {it.title}
+          </span>
+          <span className="flex flex-wrap items-center gap-sm text-label-md text-muted">
+            <ReasonBadge reason={it.reason} />
+            <span>{timeText("waiting", it.waiting_since)}</span>
+          </span>
+        </Card>
+      </Link>
+    </section>
+  );
+}
+
+/**
  * InboxLayout draws / and /issue/:ref. From 1024px it puts the list in a left pane and the selected issue in the
  * right one, with a border the user drags to resize the list; below that, / shows the list alone and /issue/:ref the
- * issue alone.
+ * issue alone. With no issue chosen, the right pane leads to the one that has waited longest (NothingChosen).
  * On either, j and k open the wait below and above the open issue (lib/waits.ts), and r moves the focus to the reply;
  * from 1024px, a line under the list tells these keys.
  */
@@ -109,7 +141,7 @@ export function InboxLayout() {
         <main className={cn("px-lg pb-xl lg:overflow-y-auto", !ref && "hidden lg:block")}>
 
           <div className="mx-auto max-w-[720px]">
-            {ref ? <IssuePane issueRef={ref} /> : <p className="pt-xl text-muted">左の一覧からissueを選んでください</p>}
+            {ref ? <IssuePane issueRef={ref} /> : <NothingChosen items={view} />}
           </div>
         </main>
       </div>

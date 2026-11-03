@@ -47,7 +47,7 @@ func (s *Server) issueTargets(w http.ResponseWriter, _ *http.Request) {
 	cfg := s.newIssuesConfig()
 	out := inboxapi.IssueTargets{Items: []inboxapi.IssueTarget{}, Starts: starts(cfg.Labels)}
 	for _, p := range cfg.Projects {
-		out.Items = append(out.Items, inboxapi.IssueTarget{Ref: p.Ref, Host: p.Host})
+		out.Items = append(out.Items, inboxapi.IssueTarget{Ref: p.Ref, Host: p.Host, PlanFirst: p.PlanFirst})
 	}
 	send(w, http.StatusOK, out)
 }

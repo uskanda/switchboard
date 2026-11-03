@@ -144,10 +144,13 @@ describe("running issues", () => {
     at("/");
     const heading = await screen.findByRole("heading", { level: 2, name: "実行中" });
     expect(heading).toBeInTheDocument();
-    const progress = screen.getAllByText("13:41 7分 Bash 12・Edit 5 ｜ テストを直している")[0];
+    // What the run is doing, without the time and the tools before it.
+    const progress = screen.getAllByText("テストを直している")[0];
     expect(heading.compareDocumentPosition(progress) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(progress.closest("a")).toHaveAttribute("href", "/issue/gh%3Ao%2Fr%2330");
+    expect(screen.queryByText(/Bash 12/)).toBeNull();
     expect(screen.getAllByText("7分")[0]).toBeInTheDocument();
+    expect(screen.getAllByText("7分経過")[0]).toBeInTheDocument();
     expect(screen.getAllByText("desk")[0]).toBeInTheDocument();
     expect(screen.getAllByText("Which default should --dry-run have?")[0]).toBeInTheDocument();
   });
@@ -171,6 +174,6 @@ describe("running issues", () => {
     expect(screen.getByText("実行中のため返答できません")).toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "返答" })).toBeNull();
     expect(screen.queryByText("?")).toBeNull(); // no reason badge
-    expect(screen.getByText("7分")).toBeInTheDocument();
+    expect(screen.getByText("7分経過")).toBeInTheDocument();
   });
 });
