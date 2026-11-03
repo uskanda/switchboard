@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -85,7 +86,7 @@ func (s *Space) Prepare(ctx context.Context) (string, error) {
 	}
 	dir := s.Dir()
 	if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
-		return dir, nil
+		return dir, s.clearPlaceholders(ctx, dir)
 	}
 	if err := os.MkdirAll(s.Root, 0o700); err != nil {
 		return "", err
@@ -94,8 +95,87 @@ func (s *Space) Prepare(ctx context.Context) (string, error) {
 		_, err = s.git(ctx, s.Repo, nil, "worktree", "add", "-q", dir, s.branch())
 		return dir, err
 	}
-	_, err = s.git(ctx, s.Repo, nil, "worktree", "add", "-q", "-b", s.branch(), dir, s.base())
+	// --no-track: the upstream would be written to .git/config, which a running sandbox of another run may hold
+	// locked (#128); the push names its refspec and needs none.
+	_, err = s.git(ctx, s.Repo, nil, "worktree", "add", "-q", "--no-track", "-b", s.branch(), dir, s.base())
 	return dir, err
+}
+
+// isPlaceholder reports whether fi looks like what Claude Code's sandbox puts at a path it denies writes to: an
+// empty regular file nobody may write. The sandbox removes it when the command ends; a run killed before that
+// leaves it behind (#128).
+func isPlaceholder(fi fs.FileInfo) bool {
+	return fi.Mode().IsRegular() && fi.Size() == 0 && fi.Mode().Perm()&0o222 == 0
+}
+
+// placeholderDirs are where the sandbox puts its placeholders in a worktree, relative to it.
+var placeholderDirs = []string{".", ".claude"}
+
+// clearPlaceholders removes the sandbox placeholders a killed run left in the worktree dir: the files in
+// placeholderDirs that isPlaceholder matches and git does not track. Only one run of an issue goes at a time, so
+// when the run prepares, no running sandbox owns a placeholder in its worktree.
+func (s *Space) clearPlaceholders(ctx context.Context, dir string) error {
+	var found []string
+	for _, sub := range placeholderDirs {
+		entries, err := os.ReadDir(filepath.Join(dir, sub))
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		for _, e := range entries {
+			if fi, err := e.Info(); err == nil && isPlaceholder(fi) {
+				found = append(found, filepath.ToSlash(filepath.Join(sub, e.Name())))
+			}
+		}
+	}
+	if len(found) == 0 {
+		return nil
+	}
+	tracked, err := s.git(ctx, dir, nil, append([]string{"ls-files", "--"}, found...)...)
+	if err != nil {
+		return err
+	}
+	keep := map[string]bool{}
+	for _, f := range strings.Split(tracked, "\n") {
+		keep[f] = true
+	}
+	for _, f := range found {
+		if keep[f] {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, f)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
+}
+
+// ClearConfigLock removes the config.lock of the clone repo when it is a sandbox placeholder, and reports whether
+// it did. Call it only when no run uses the clone: the placeholder of a running sandbox is what keeps that sandbox
+// from writing the clone's config.
+func ClearConfigLock(ctx context.Context, repo string) (bool, error) {
+	s := &Space{Repo: repo}
+	common, err := s.git(ctx, repo, nil, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return false, err
+	}
+	lock := filepath.Join(common, "config.lock")
+	fi, err := os.Lstat(lock)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !isPlaceholder(fi) {
+		return false, nil
+	}
+	if err := os.Remove(lock); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // claudeConfig are the paths Claude Code reads its project configuration and instructions from.
@@ -209,6 +289,9 @@ func (s *Space) CheckOutput(ctx context.Context, extraProtected, texts []string)
 	for _, f := range nonEmpty(strings.Split(names, "\n")) {
 		if isProtected(f, extraProtected) {
 			problems = append(problems, fmt.Sprintf("the change touches the protected path %s", f))
+		}
+		if strings.HasPrefix(f, ScreenshotDir+"/") {
+			problems = append(problems, fmt.Sprintf("the change commits %s; images in %s/ are attached to the issue and must not be committed", f, ScreenshotDir))
 		}
 		diff, err := s.git(ctx, dir, nil, "diff", s.base()+"...HEAD", "--", f)
 		if err != nil {

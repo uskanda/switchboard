@@ -78,6 +78,34 @@ func TestAConflictAfterTheCIStartsAFixRun(t *testing.T) {
 	}
 }
 
+// The done post of a fix run names what it fixed, so that the inbox service can tell it from the done post of a run a
+// person asked for (issue #119); the first run's done post names nothing.
+func TestTheDonePostOfAFixRunNamesTheFix(t *testing.T) {
+	w := newCI(t, "", nil)
+	w.f.SetChecks("o", "r", w.syncHead(), failedCheck("test", 7))
+	w.step(2, commit("fix.txt", "fixed")+done("Fixed."))
+	w.poll()
+	w.settle()
+	w.passCI()
+	w.f.SetConflict(0, true)
+	w.step(3, commit("merge.txt", "merged")+done("Merged main."))
+	w.later(w.cfg.Agent.ReconcileInterval)
+	w.poll()
+	w.settle()
+	var fixes []string
+	for _, p := range w.posts(w.ref) {
+		if p.Marker != nil && p.Marker.State == marker.Done {
+			fixes = append(fixes, p.Marker.Fix)
+		}
+	}
+	if strings.Join(fixes, ",") != ",ci,conflict" {
+		for _, p := range w.posts(w.ref) {
+			t.Log(p.Body)
+		}
+		t.Fatalf("the fix of each done post = %q, want the first run's empty, then ci, then conflict", fixes)
+	}
+}
+
 func TestAConflictOnAnOldDonePostIsFoundAfterARestart(t *testing.T) {
 	w := newCI(t, "", nil)
 	w.later(7 * time.Hour)

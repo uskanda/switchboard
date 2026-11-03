@@ -307,8 +307,8 @@ func TestMergePostsJSONAndTypesTheRefusals(t *testing.T) {
 		}
 		reply(w, status, Error{Code: code, Message: "refused"})
 	})
-	if err := c.Merge(ctx, "gh:o/r#5", "abc"); err != nil {
-		t.Fatal(err)
+	if res, err := c.Merge(ctx, "gh:o/r#5", "abc"); err != nil || res.AutoMerge {
+		t.Fatalf("%+v, %v", res, err)
 	}
 	if got != (MergeRequest{Ref: "gh:o/r#5", SHA: "abc"}) {
 		t.Errorf("sent %+v", got)
@@ -323,9 +323,70 @@ func TestMergePostsJSONAndTypesTheRefusals(t *testing.T) {
 		{http.StatusForbidden, CodeForbidden, ErrForbidden},
 	} {
 		status, code = tc.status, tc.code
-		if err := c.Merge(ctx, "gh:o/r#5", "abc"); !errors.Is(err, tc.want) {
+		if _, err := c.Merge(ctx, "gh:o/r#5", "abc"); !errors.Is(err, tc.want) {
 			t.Errorf("%s: err = %v, want %v", tc.code, err, tc.want)
 		}
+	}
+}
+
+func TestMergeStatusGetsTheStatusOfTheChange(t *testing.T) {
+	stale := false
+	c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/merge-status" ||
+			r.URL.Query().Get("ref") != "gl:g/sub/p#5" || r.URL.Query().Get("sha") != "abc" {
+			t.Errorf("%s %s", r.Method, r.URL)
+		}
+		if stale {
+			reply(w, http.StatusConflict, Error{Code: CodeStale, Message: "open it again"})
+			return
+		}
+		reply(w, http.StatusOK, MergeStatus{State: "open", HeadMoved: true, Mergeable: MergeConflict, CI: CIRead,
+			Checks: []CheckStatus{{Name: "lint", Status: CheckFailure, URL: "https://ci/2"}}})
+	})
+	st, err := c.MergeStatus(ctx, "gl:g/sub/p#5", "abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.State != "open" || !st.HeadMoved || st.Mergeable != MergeConflict || st.CI != CIRead || len(st.Checks) != 1 ||
+		st.Checks[0] != (CheckStatus{Name: "lint", Status: CheckFailure, URL: "https://ci/2"}) {
+		t.Fatalf("status = %+v", st)
+	}
+	stale = true
+	if _, err := c.MergeStatus(ctx, "gl:g/sub/p#5", "abc"); !errors.Is(err, ErrStale) {
+		t.Fatalf("err = %v, want ErrStale", err)
+	}
+}
+
+// A merge refused for a conflict is answered with 202: the inbox service makes it once the agent has fixed it.
+func TestMergeReportsAMergeThatWaitsForTheFix(t *testing.T) {
+	c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		reply(w, http.StatusAccepted, MergeAnswer{Code: CodeAutoMergePending, Message: "later"})
+	})
+	if res, err := c.Merge(ctx, "gh:o/r#5", "abc"); err != nil || !res.AutoMerge {
+		t.Fatalf("%+v, %v", res, err)
+	}
+}
+
+func TestCancelAutoMerge(t *testing.T) {
+	var got CancelAutoMergeRequest
+	found := true
+	c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/automerge/cancel" || r.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("%s %s %s", r.Method, r.URL, r.Header.Get("Content-Type"))
+		}
+		json.NewDecoder(r.Body).Decode(&got)
+		if !found {
+			reply(w, http.StatusNotFound, Error{Code: CodeNotFound, Message: "none"})
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	if err := c.CancelAutoMerge(ctx, "gh:o/r#5"); err != nil || got.Ref != "gh:o/r#5" {
+		t.Fatalf("%+v, %v", got, err)
+	}
+	found = false
+	if err := c.CancelAutoMerge(ctx, "gh:o/r#5"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("err = %v", err)
 	}
 }
 

@@ -20,6 +20,8 @@ export type Item = {
   progress?: string;
   /** When the issue was queued for a free slot; reason then names the limit reached. */
   queued_since?: string | null;
+  /** When the pause of the host ends, for an issue queued on one (reason limit or quota). */
+  queued_until?: string | null;
   /** When the agent finished an issue still open (it waits to be closed), and the pull or merge request it names. */
   done_since?: string | null;
   change_url?: string;
@@ -29,7 +31,51 @@ export type Item = {
   /** The forge's update time and count of people's comments (GitLab's; 0 on GitHub): a move in either means the issue changed. */
   updated_at?: string | null;
   notes?: number;
+  /** Set while the inbox service waits to merge the change request once the agent has fixed its conflict. */
+  auto_merge?: AutoMerge;
 };
+
+/** AutoMerge is a merge the inbox service waits to make: the commit the merge was pressed on, and when. */
+export type AutoMerge = { sha: string; since: string };
+
+/** AutoMergeResult is a merge the inbox service waited to make and finished within the last day. */
+export type AutoMergeResult = {
+  ref: string;
+  number: number;
+  outcome: "merged" | "cancelled";
+  reason?: string;
+  at: string;
+};
+
+/** changeName is how the forge names the change request: "PR #9" on GitHub, "MR !9" on GitLab. */
+export function changeName(ref: string, number: number) {
+  return ref.startsWith("gl:") ? `MR !${number}` : `PR #${number}`;
+}
+
+/** autoMergeReason says why the inbox service stopped waiting to merge. */
+export function autoMergeReason(reason: string | undefined): string {
+  switch (reason) {
+    case "closed":
+      return "issueがcloseされました。";
+    case "waiting":
+      return "issueが返答待ちになりました。衝突の直しが上限を超えたときもこうなります。";
+    case "instruction":
+      return "人の指示で実行が始まりました。変更を見てからマージしてください。";
+    case "not_fix":
+      return "直す実行でない投稿で、コミットが変わりました。変更を見てからマージしてください。";
+    case "changed":
+      return "完了の投稿が、別のPR/MRを指しています。";
+    case "change_closed":
+      return "PR/MRが閉じられたか、マージ済みです。";
+    case "pushed":
+      return "エージェントのものでないコミットが、PR/MRに足されました。";
+    case "forbidden":
+      return "受信箱のトークンに、マージする権限がありません。";
+    case "user":
+      return "取り消しました。";
+  }
+  return reason ?? "";
+}
 
 export const isRunning = (it: Item) => it.state === "running";
 export const isQueued = (it: Item) => it.state === "queued";
@@ -52,9 +98,20 @@ export function progressText(progress: string | undefined): string {
 /** plainText is the start of a question as one plain line: the bold and code marks of its Markdown left out. */
 export const plainText = (s: string) => s.replace(/\*\*|__|`/g, "").replace(/^#+\s+/, "");
 
-/** queueText says which limit a queued issue waits on. */
-export const queueText = (reason: string) =>
-  reason === "project-max-parallel" ? "プロジェクトの上限に達しています" : "端末の上限に達しています";
+/**
+ * queueText says which limit a queued issue waits on: a full slot of the host or the project, or a pause of the host
+ * on a usage limit or the API quota, with the time the pause ends (local time) when there is one.
+ */
+export function queueText(reason: string, until?: string | null): string {
+  const pause: Record<string, string> = { limit: "利用上限に達しています", quota: "APIのクオータに達しています" };
+  if (reason in pause) {
+    if (!until) return pause[reason];
+    const d = new Date(until);
+    const hm = `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
+    return `${pause[reason]}（${d.getMonth() + 1}/${d.getDate()} ${hm}まで）`;
+  }
+  return reason === "project-max-parallel" ? "プロジェクトの上限に達しています" : "端末の上限に達しています";
+}
 
 /**
  * Inbox is a listing. relay is whether the inbox service follows the relay's events ("" when it is not set up), and
@@ -66,6 +123,8 @@ export type Inbox = {
   fetched_at: string;
   relay?: "connected" | "disconnected" | "";
   refresh_interval_seconds?: number;
+  /** The merges the inbox service waited to make and finished within the last day, oldest first. */
+  auto_merge_results?: AutoMergeResult[];
 };
 
 export type Detail = {
@@ -86,6 +145,7 @@ export type Detail = {
   change_url?: string;
   change_number?: number;
   change_sha?: string;
+  auto_merge?: AutoMerge;
   /** The issue's own author, time and body, and all its comments, oldest first. A back end older than the thread leaves them out. */
   author?: string;
   created_at?: string | null;
@@ -111,9 +171,10 @@ export const watchKey = (it: Item) =>
 
 /**
  * One file of the additional instructions; target "" is the one for every project. kind "plan" is for the plan runs,
- * "run" for the runs that write files; an inbox service older than kinds leaves it out, which means "plan".
+ * "run" for the runs that write files, "implement" for the direct runs and the runs of an approved plan only; an inbox
+ * service older than kinds leaves it out, which means "plan".
  */
-export type InstructionKind = "plan" | "run";
+export type InstructionKind = "plan" | "run" | "implement";
 export type Instruction = { target: string; kind?: InstructionKind; content: string };
 
 /** Instructions are read on host, the machine of the inbox service. */
@@ -185,12 +246,15 @@ export const addProject = (ref: string, planFirst: boolean) =>
     body: JSON.stringify({ ref, plan_first: planFirst }),
   });
 
-/** The kinds of start label a new issue can carry: the configuration's labels.ready, labels.plan and labels.go. */
-export type StartKind = "ready" | "plan" | "go";
+/**
+ * The kinds of start label a new issue can carry: the configuration's labels.ready, labels.plan and labels.go, and
+ * none, no label, whose label is empty.
+ */
+export type StartKind = "ready" | "plan" | "go" | "none";
 
 /**
  * IssueTargets are every configured project, each with host, the machine that runs it, and the start labels the
- * configuration names.
+ * configuration names, then none.
  */
 export type IssueTargets = {
   /** plan_first is whether the project's ready label starts with a plan; an older inbox service leaves it out. */
@@ -198,7 +262,7 @@ export type IssueTargets = {
   starts: { kind: StartKind; label: string }[];
 };
 
-/** NewIssue is what a new issue is opened with; the inbox service turns start into the label. */
+/** NewIssue is what a new issue is opened with; the inbox service turns start into the label, or none. */
 export type NewIssue = { ref: string; title: string; body: string; start: StartKind };
 
 /** CreatedIssue is the issue opened: its reference and its page on the forge. */
@@ -215,14 +279,45 @@ export const createIssue = (issue: NewIssue) =>
 
 /**
  * merge marks the pull or merge request of a done issue ready and merges it with the inbox token, only at sha, the
- * commit the page showed. It is refused with stale, not_mergeable or forbidden.
+ * commit the page showed. It is refused with stale, not_mergeable or forbidden. autoMerge is set when the forge
+ * refused it for a conflict, and the inbox service merges it once the agent has fixed the conflict.
  */
-export const merge = (ref: string, sha: string) =>
-  call<void>("/api/merge", {
+export async function merge(ref: string, sha: string): Promise<{ autoMerge: boolean }> {
+  const out = await call<{ code?: string } | undefined>("/api/merge", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ref, sha }),
   });
+  return { autoMerge: out?.code === "auto_merge_pending" };
+}
+
+/** cancelAutoMerge cancels the merge the inbox service waits to make on the issue; not_found when there is none. */
+export const cancelAutoMerge = (ref: string) =>
+  call<void>("/api/automerge/cancel", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ref }),
+  });
+
+/** CheckStatus is one CI check of the commit. name is the forge's data: show it as text only. */
+export type CheckStatus = { name: string; status: "success" | "failure" | "running" | "other"; url: string };
+
+/**
+ * MergeStatus is where the change request of a done issue stands before the merge (ADR-050): its state on the forge,
+ * whether its head moved from the commit the page showed, whether it conflicts (computing while the forge works it
+ * out), and the checks of that commit. ci is "forbidden" when the inbox token may not read CI, "none" without checks.
+ */
+export type MergeStatus = {
+  state: "open" | "closed" | "merged";
+  head_moved: boolean;
+  mergeable: "clean" | "conflict" | "computing";
+  ci: "ok" | "none" | "forbidden";
+  checks: CheckStatus[];
+};
+
+/** mergeStatus reads the status of the change request of a done issue at sha, for the merge dialog. */
+export const mergeStatus = (ref: string, sha: string) =>
+  call<MergeStatus>(`/api/merge-status?ref=${encodeURIComponent(ref)}&sha=${encodeURIComponent(sha)}`);
 
 /** issuePath is the page of one issue; the ref is one path segment. */
 export const issuePath = (ref: string) => `/issue/${encodeURIComponent(ref)}`;

@@ -19,17 +19,18 @@ func init() {
 }
 
 // instructionsEdit opens the additional instructions in $EDITOR: the global ones, or a project's; those of the plan
-// runs, or with --run those of the runs that write files.
+// runs, with --run those of the runs that write files, or with --implement those of the runs that implement an issue.
 func instructionsEdit(args []string, stdout, stderr io.Writer) int {
-	var run *bool
+	var run, implement *bool
 	cfg, fs, code := parse("instructions edit", args, stderr, func(fs *flag.FlagSet) {
 		run = fs.Bool("run", false, "edit the instructions of the runs that write files instead of the plan runs")
+		implement = fs.Bool("implement", false, "edit the instructions of the direct runs and the runs of an approved plan only")
 	})
 	if code >= 0 {
 		return code
 	}
-	if fs.NArg() > 1 {
-		fmt.Fprintln(stderr, "usage: switchboard instructions edit [--run] [gh:owner/repo|gl:group/project] [--config FILE]")
+	if fs.NArg() > 1 || *run && *implement {
+		fmt.Fprintln(stderr, "usage: switchboard instructions edit [--run|--implement] [gh:owner/repo|gl:group/project] [--config FILE]")
 		return 2
 	}
 	target := fs.Arg(0)
@@ -41,8 +42,11 @@ func instructionsEdit(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 	s := instructions.For(cfg.Path, d.Audit())
-	if *run {
+	switch {
+	case *run:
 		s = s.Of(instructions.Run)
+	case *implement:
+		s = s.Of(instructions.Implement)
 	}
 	path, err := s.Path(target)
 	if err != nil {

@@ -11,7 +11,7 @@ baseとの衝突やCIの失敗を直す実行（fixRun）は順番待ちに入�
 - 直す実行を始める前に、PR/MRとissueを読み直す。衝突が消えた、headが動いた、issueがdoneでなくなったときは始めない。
 - 直す実行には順番待ちのコメント（queuedのマーカー）を付けない。スロットを待ち始めたことは、ログに1回だけ残す。
 - 設定の項目は足さない。動いている実行は止めない。
-- ADR-048を足し、ADR-046の「fixRunは対象外」を補う。DESIGN.mdとREADME.mdの説明を合わせる。
+- ADR-054を足し、ADR-046の「fixRunは対象外」を補う。DESIGN.mdとREADME.mdの説明を合わせる。
 
 ## Capabilities
 
@@ -29,5 +29,5 @@ baseとの衝突やCIの失敗を直す実行（fixRun）は順番待ちに入�
 - コード：`internal/agent/ciwatch.go` に、見張りの待ちの記録と、待つ直す実行の起動を足す。
 - コード：`internal/agent/agent.go` の `drain` と `poll`、`internal/agent/relay.go` の `refresh` から起動を呼ぶ。
 - テスト：`internal/agent` の `queue_order_test.go`、`conflict_test.go`、`ciwatch_test.go`。
-- 文書：`docs/DECISIONS.md`（ADR-048）、`docs/DESIGN.md`（scheduler）、`README.md`（同時実行の節）。
+- 文書：`docs/DECISIONS.md`（ADR-054）、`docs/DESIGN.md`（scheduler）、`README.md`（同時実行の節）。
 - 設定、フォージのAPI、トークンの権限、受信箱の表示は変わらない。

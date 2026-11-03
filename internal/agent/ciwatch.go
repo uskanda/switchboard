@@ -32,7 +32,7 @@ type watch struct {
 	// retry posts it once.
 	giveUp *outcome
 	// fixWaiting is the cause (prompt.FixConflict or prompt.FixCI) of a fix run that found no free slot, or "";
-	// fixSince is when it began to wait. startFixes starts such a fix run before the queue (ADR-048).
+	// fixSince is when it began to wait. startFixes starts such a fix run before the queue (ADR-054).
 	fixWaiting string
 	fixSince   time.Time
 }
@@ -202,7 +202,7 @@ type fixWait struct {
 	since    time.Time
 }
 
-// startFixes starts the fix runs that wait for a slot, before the queue is offered the slots (ADR-048): the
+// startFixes starts the fix runs that wait for a slot, before the queue is offered the slots (ADR-054): the
 // conflicts first, then the failed CIs, each by the time it began to wait, then by ref. Each is read again before it
 // starts, at once, also in the conflict stage before reconcile_interval. It stops when the agent is at
 // agent.max_parallel; a fix run whose project is at its limit keeps waiting and does not hold up the others. Call it
@@ -370,7 +370,7 @@ func (a *Agent) ciError(ref forge.IssueRef, w *watch, err error) {
 }
 
 // ciFailed starts a fix run of the failed CI, or, past the fix limit, makes the issue wait (reason ci). A fix run
-// that finds no free slot waits for one: startFixes starts it as soon as a slot frees, before the queue (ADR-048).
+// that finds no free slot waits for one: startFixes starts it as soon as a slot frees, before the queue (ADR-054).
 func (a *Agent) ciFailed(ctx context.Context, ref forge.IssueRef, w *watch, ci forge.CI, failed []forge.Check) {
 	fix := &fixInfo{cause: prompt.FixCI, checks: checkNames(failed)}
 	pl, err := a.fixPlan(ctx, w.project, ref, a.Config.Labels.Done, fix)
@@ -472,7 +472,7 @@ func ciReport(sha string, failed []forge.Check, logs map[int]string) string {
 
 // conflicted starts a fix run that merges the base into the conflicting change request of w, or, past the fix
 // limit, makes the issue wait (reason conflict). A fix run that finds no free slot waits for one: startFixes starts
-// it as soon as a slot frees, before the queue and before a waiting CI fix (ADR-048).
+// it as soon as a slot frees, before the queue and before a waiting CI fix (ADR-054).
 func (a *Agent) conflicted(ctx context.Context, ref forge.IssueRef, w *watch) {
 	fix := &fixInfo{cause: prompt.FixConflict, report: fmt.Sprintf("Change request %s conflicts with the base branch %s.", crName(ref, w.cr), w.project.BaseBranch)}
 	pl, err := a.fixPlan(ctx, w.project, ref, a.Config.Labels.Done, fix)

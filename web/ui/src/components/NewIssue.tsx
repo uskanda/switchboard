@@ -16,6 +16,7 @@ const startText: Record<StartKind, string> = {
   ready: "プロジェクトの設定どおりに始める",
   plan: "計画から始める",
   go: "計画なしで実装する",
+  none: "ラベルなし（実装開始しない）",
 };
 
 /** The most characters a title may have; the inbox service refuses a longer one. */
@@ -41,9 +42,11 @@ function failure(err: unknown): string {
 
 /**
  * NewIssue is the button above the list that opens a dialog for a new issue in any configured project, with a start
- * label. The ready start says whether the chosen project starts with a plan. The issue is opened with the inbox token,
- * so the agent takes it up (ADR-040). Once it is opened the dialog closes and a success toast links to it on the forge.
- * Until the agent takes it up, the list shows a running row of it, marked as being processed (lib/pending.ts).
+ * label or none; the list puts it in its top row. The ready start says whether the chosen project starts with a plan. The issue is opened with the inbox
+ * token, so the agent takes it up when it has a start label (ADR-040); one without waits until the person puts one on
+ * it (ADR-049). Once it is opened the dialog closes and a success toast links to it on the forge. Until the agent
+ * takes up an issue with a start label, the list shows a running row of it, marked as being processed
+ * (lib/pending.ts); one without gets no such row, since the agent does not take it up.
  */
 export function NewIssue() {
   const { markPending } = useInbox();
@@ -78,12 +81,14 @@ export function NewIssue() {
     try {
       const out = await createIssue({ ref: project, title: title.trim(), body, start });
       const hash = out.ref.lastIndexOf("#");
-      markPending(out.ref, "create", {
-        title: title.trim(),
-        url: out.url,
-        project: splitRef(hash < 0 ? out.ref : out.ref.slice(0, hash)).path,
-        number: hash < 0 ? 0 : Number(out.ref.slice(hash + 1)) || 0,
-      });
+      if (start !== "none") {
+        markPending(out.ref, "create", {
+          title: title.trim(),
+          url: out.url,
+          project: splitRef(hash < 0 ? out.ref : out.ref.slice(0, hash)).path,
+          number: hash < 0 ? 0 : Number(out.ref.slice(hash + 1)) || 0,
+        });
+      }
       toast.success(
         <>
           <IssueRef value={out.ref} /> を作りました
@@ -113,12 +118,10 @@ export function NewIssue() {
   const canSend = ready && title.trim() !== "" && !sending;
 
   return (
-    <div className="flex flex-col gap-sm">
-      <div className="flex justify-end">
-        <Button type="button" variant="secondary" onClick={open}>
-          新規issue
-        </Button>
-      </div>
+    <>
+      <Button type="button" variant="secondary" onClick={open}>
+        新規issue
+      </Button>
       <Dialog ref={dialog} aria-labelledby={`${id}-heading`}>
         <form onSubmit={submit} className="flex flex-col gap-md">
           <h2 id={`${id}-heading`} className="text-headline-md font-semibold">
@@ -169,7 +172,12 @@ export function NewIssue() {
                   className="size-5 accent-primary"
                 />
                 <span>
-                  {startText[st.kind]}（<span className="font-mono text-mono-sm">{st.label}</span>）
+                  {startText[st.kind]}
+                  {st.label !== "" && (
+                    <>
+                      （<span className="font-mono text-mono-sm">{st.label}</span>）
+                    </>
+                  )}
                   {st.kind === "ready" && readyNote && <span className="text-muted">{readyNote}</span>}
                 </span>
               </label>
@@ -186,6 +194,6 @@ export function NewIssue() {
           </div>
         </form>
       </Dialog>
-    </div>
+    </>
   );
 }
