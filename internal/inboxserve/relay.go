@@ -35,6 +35,8 @@ func (s *Server) RelayState(connected bool) {
 // sooner than the gap (config.MinRefreshInterval) after the last listing; the events arriving meanwhile join that
 // read. With no page listening, the cached listing is dropped so that the next page reads the forges.
 func (s *Server) RelayEvent() {
+	// An event may be the done post of a fix run that a waiting merge needs (ADR-047).
+	s.kickAutoMerge()
 	s.subMu.Lock()
 	if len(s.subs) == 0 {
 		s.subMu.Unlock()

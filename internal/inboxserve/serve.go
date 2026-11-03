@@ -13,10 +13,12 @@ import (
 	"time"
 
 	"github.com/uskanda/switchboard/inboxapi"
+	"github.com/uskanda/switchboard/internal/automerge"
 	"github.com/uskanda/switchboard/internal/config"
 	"github.com/uskanda/switchboard/internal/forge"
 	"github.com/uskanda/switchboard/internal/inbox"
 	"github.com/uskanda/switchboard/internal/instructions"
+	"github.com/uskanda/switchboard/internal/state"
 )
 
 // Inbox is what the server needs of *inbox.Inbox.
@@ -65,6 +67,16 @@ type Server struct {
 	// Relay reports that the service follows the relay's events (inbox.relay is set): the listings then say
 	// whether it is connected, and RelayState and RelayEvent are called as the stream goes.
 	Relay bool
+	// AutoMerge, when set with Merges, keeps the merges the forge refused for a conflict, which the inbox service
+	// makes once the agent has fixed it (ADR-047), and serves /v1/automerge/cancel. RunAutoMerge looks at them.
+	AutoMerge *automerge.Store
+	// Audit, when set, records what happens to those merges; Logf, when set, what went wrong looking at them.
+	Audit state.Auditor
+	Logf  func(format string, args ...any)
+
+	// kick wakes RunAutoMerge; made once.
+	kickOnce sync.Once
+	kick     chan struct{}
 
 	// vmu guards Inbox, Instructions.Projects, Projects.Config and NewIssues.Config, which Reload replaces while
 	// requests read them.
@@ -153,6 +165,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.Merges != nil {
 		routes["/v1/merge"] = route{http.MethodPost, s.merge}
+		if s.AutoMerge != nil {
+			routes["/v1/automerge/cancel"] = route{http.MethodPost, s.cancelAutoMerge}
+		}
 	}
 	rt := routes[r.URL.Path]
 	switch {
@@ -200,6 +215,7 @@ func (s *Server) fetchLocked(ctx context.Context) *inboxapi.Inbox {
 	for _, it := range items {
 		out.Items = append(out.Items, inboxapi.Item(it))
 	}
+	s.withAutoMerge(out)
 	for _, e := range errs {
 		out.Errors = append(out.Errors, inboxapi.ForgeError{Forge: e.Forge, Message: e.Err.Error()})
 	}
@@ -242,8 +258,8 @@ func offer(ch chan *inboxapi.Inbox, in *inboxapi.Inbox) {
 }
 
 func same(a, b *inboxapi.Inbox) bool {
-	x, _ := json.Marshal(inboxapi.Inbox{Items: a.Items, Errors: a.Errors, Relay: a.Relay})
-	y, _ := json.Marshal(inboxapi.Inbox{Items: b.Items, Errors: b.Errors, Relay: b.Relay})
+	x, _ := json.Marshal(inboxapi.Inbox{Items: a.Items, Errors: a.Errors, Relay: a.Relay, AutoMergeResults: a.AutoMergeResults})
+	y, _ := json.Marshal(inboxapi.Inbox{Items: b.Items, Errors: b.Errors, Relay: b.Relay, AutoMergeResults: b.AutoMergeResults})
 	return string(x) == string(y)
 }
 
@@ -364,7 +380,11 @@ func (s *Server) issue(w http.ResponseWriter, r *http.Request) {
 		failWith(w, err)
 		return
 	}
-	send(w, http.StatusOK, detailOf(d))
+	out := detailOf(d)
+	if d.Done {
+		out.AutoMerge = s.autoMergeOf(out.Ref)
+	}
+	send(w, http.StatusOK, out)
 }
 
 // detailOf is d as the API's type: the same fields, the comments copied one by one.
