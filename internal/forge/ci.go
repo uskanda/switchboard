@@ -53,7 +53,7 @@ const (
 )
 
 // CI reads the CI of a commit. It is kept apart from Forge: the agent watches CI with its token, and the inbox service
-// reads it with the inbox token only for the merge dialog (ADR-047). It needs Actions: Read and Commit statuses: Read
+// reads it with the inbox token only for the merge dialog (ADR-050). It needs Actions: Read and Commit statuses: Read
 // on GitHub; ErrForbidden reports a token without them.
 type CI interface {
 	// CommitChecks lists the checks of the commit sha: the jobs of its runs or pipelines and its commit statuses.

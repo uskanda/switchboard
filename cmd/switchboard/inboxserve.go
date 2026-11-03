@@ -14,14 +14,17 @@ import (
 	"time"
 
 	"github.com/uskanda/switchboard/inboxapi"
+	"github.com/uskanda/switchboard/internal/automerge"
 	"github.com/uskanda/switchboard/internal/config"
 	"github.com/uskanda/switchboard/internal/forge"
 	"github.com/uskanda/switchboard/internal/inbox"
 	"github.com/uskanda/switchboard/internal/inboxserve"
 	"github.com/uskanda/switchboard/internal/instructions"
+	"github.com/uskanda/switchboard/internal/push"
 	"github.com/uskanda/switchboard/internal/relay"
 	"github.com/uskanda/switchboard/internal/relayclient"
 	"github.com/uskanda/switchboard/internal/secret"
+	"github.com/uskanda/switchboard/internal/state"
 )
 
 // serveInbox is the inbox the API serves: every configured forge, each read and written with its inbox token.
@@ -104,6 +107,29 @@ func inboxRelay(cfg *config.Config, r *config.AgentRelay, stderr io.Writer) (*re
 	}}, nil
 }
 
+// inboxPush is the notifier of the inbox service's push notifications, with the Firebase service account key read
+// by token (inbox.notify.fcm.credentials_ref); nil without inbox.notify.fcm. Its errors name the key, never its content.
+func inboxPush(cfg *config.Config, token func(ref string) (string, error), d state.Dir) (*push.Notifier, error) {
+	f := cfg.Inbox.Notify.FCM
+	if f == nil {
+		return nil, nil
+	}
+	key, err := token(f.CredentialsRef)
+	if err != nil {
+		return nil, fmt.Errorf("inbox.notify.fcm: %w", err)
+	}
+	creds, err := push.ParseCredentials([]byte(key))
+	if err != nil {
+		return nil, fmt.Errorf("inbox.notify.fcm: the key %s: %w", f.CredentialsRef, err)
+	}
+	return &push.Notifier{
+		Sender:  &push.Client{ProjectID: f.ProjectID, Credentials: creds},
+		Devices: &push.Devices{Dir: d},
+		Dir:     d,
+		Audit:   d.Audit(),
+	}, nil
+}
+
 // followRelay passes the relay's events and state to api until ctx ends. An event is only a cue to read the forges
 // again; which issue it names does not matter, since the listing is read whole.
 func followRelay(ctx context.Context, rc *relayclient.Client, api *inboxserve.Server, stderr io.Writer) {
@@ -144,11 +170,29 @@ func inboxServe(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 	api, reload := inboxAPI(cfg, forges, instructions.For(cfg.Path, d.Audit()))
+	// The merges refused for a conflict are kept in the state directory and made once the agent fixed them (ADR-048),
+	// whether or not a page listens.
+	if api.AutoMerge, err = automerge.Open(d); err != nil {
+		return fail(stderr, err)
+	}
+	api.Audit = d.Audit()
+	api.Logf = func(format string, args ...any) { fmt.Fprintf(stderr, "switchboard: inbox: "+format+"\n", args...) }
+	go api.RunAutoMerge(ctx)
 	w, err := config.NewWatcher(cfg)
 	if err != nil {
 		return fail(stderr, err)
 	}
 	go w.Run(ctx, stderr, func(ch *config.Change) { reload(ch.Projects) })
+	res := secret.Resolver{Store: secret.Keyring{}, AllowEnv: cfg.Secrets.AllowEnv}
+	notifier, err := inboxPush(cfg, res.Token, d)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	if notifier != nil {
+		api.Devices, api.Observer = notifier.Devices, notifier
+		api.Watch(ctx)
+		fmt.Fprintln(stderr, "switchboard: inbox: push notifications on: reading the forges every", cfg.Inbox.RefreshInterval)
+	}
 	if r := cfg.Inbox.Relay; r != nil {
 		rc, err := inboxRelay(cfg, r, stderr)
 		if err != nil {

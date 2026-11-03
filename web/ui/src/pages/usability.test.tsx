@@ -110,7 +110,7 @@ describe("the list", () => {
     expect(await screen.findByRole("heading", { level: 2, name: "返答待ち" })).toBeInTheDocument();
   });
 
-  it("says a run has no progress yet instead of a question mark", async () => {
+  it("says a run is working while it has no words yet, instead of a question mark", async () => {
     answer({
       "GET /api/inbox": listing(
         item({ state: "running", running_since: t0, progress: "?" }),
@@ -118,8 +118,9 @@ describe("the list", () => {
       ),
     });
     at("/");
-    expect((await screen.findAllByText("進捗はまだありません"))[0]).toBeInTheDocument();
-    expect(screen.getAllByText("14:24 2分 Bash 1")[0]).toBeInTheDocument();
+    // A table row and a card of each of the two.
+    expect(await screen.findAllByText("作業しています")).toHaveLength(4);
+    expect(screen.queryByText(/Bash 1/)).toBeNull();
     expect(screen.queryByText("?")).toBeNull();
   });
 
@@ -167,6 +168,23 @@ describe("the page title", () => {
     answer({ "GET /api/inbox": listing(), "GET /api/projects": "never", "GET /api/instructions": "never" });
     at("/settings");
     await waitFor(() => expect(document.title).toBe("設定 - SwitchBoard Inbox"));
+  });
+});
+
+describe("the favicon", () => {
+  const icon = () => document.querySelector<HTMLLinkElement>('link[rel="icon"]')?.getAttribute("href");
+
+  it("is marked while an issue waits", async () => {
+    answer({ "GET /api/inbox": listing(item()) });
+    at("/");
+    await waitFor(() => expect(icon()).toBe("/favicon-waiting.svg"));
+  });
+
+  it("is the plain one while nothing waits", async () => {
+    answer({ "GET /api/inbox": listing(item({ n: undefined, state: "running", progress: "p" })) });
+    at("/");
+    await screen.findByText("待ち0件、実行中1件");
+    expect(icon()).toBe("/favicon.svg");
   });
 });
 

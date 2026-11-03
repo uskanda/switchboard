@@ -112,7 +112,7 @@ func (d *Doctor) forge(ctx context.Context, kind string) {
 		d.fail("inbox token (%s %s): %v", inboxLabel, ref, err)
 	} else {
 		// The token's permissions are not read: a fine-grained PAT does not tell them. Merging is refused with 403
-		// until they are given (ADR-043). Only the CI is tried, as the merge dialog reads it (ADR-047).
+		// until they are given (ADR-043). Only the CI is tried, as the merge dialog reads it (ADR-050).
 		needs := "Issues, Pull requests and Contents write, and Actions and Commit statuses read"
 		if kind == forge.GitLab {
 			needs = "the api scope"
@@ -237,7 +237,7 @@ func (d *Doctor) ci(ctx context.Context, f forge.Forge, p config.Project) {
 }
 
 // inboxCI checks that the inbox token can read the CI of the first project on the forge, which the merge dialog of
-// the web inbox shows (ADR-047). Without it the dialog shows no CI; nothing else changes, so it is only a warning.
+// the web inbox shows (ADR-050). Without it the dialog shows no CI; nothing else changes, so it is only a warning.
 func (d *Doctor) inboxCI(ctx context.Context, f forge.Forge, kind string) {
 	c, ok := f.(forge.CI)
 	if !ok {

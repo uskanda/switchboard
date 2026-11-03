@@ -4,7 +4,7 @@
 
 - [x] 1.1 `forge.ChangeRequestState` に `Computing` を足す。GitHubは `mergeable` が `null`、GitLabは `detailed_merge_status` が `checking` か `unchecked` のときに立てる。両方の `TestChangeRequestConflict` で確かめる
 - [x] 1.2 `SetChange` で記録したPR/MRの状態（衝突、計算中、閉じた、マージ済み）を、偽物の `ChangeRequestHead` が返すようにする。`TestChangeRequestHeadReportsASetChange` で確かめる
-- [x] 1.3 `forge.CI` のコメントの「受信箱のサービスはCIを見ない」を、ADR-047に合わせて直す
+- [x] 1.3 `forge.CI` のコメントの「受信箱のサービスはCIを見ない」を、ADR-050に合わせて直す
 
 ## 2. 受信箱
 
@@ -25,7 +25,7 @@
 
 ## 5. 権限の文書とdoctor
 
-- [x] 5.1 `docs/DECISIONS.md` にADR-047を足す
+- [x] 5.1 `docs/DECISIONS.md` にADR-050を足す
 - [x] 5.2 `docs/SECURITY.md` と `README.md` の受信箱のトークンの権限に、ActionsとCommit statusesの読み取りを足す
 - [x] 5.3 `switchboard doctor` で、受信箱のトークンがCIを読めないときに警告する。`TestInboxTokenThatCannotReadCIWarns` で確かめる
 

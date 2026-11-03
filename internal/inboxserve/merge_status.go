@@ -17,7 +17,7 @@ type MergeStatusReader interface {
 }
 
 // mergeStatus serves GET /v1/merge-status?ref=…&sha=…: the state, the conflict and the CI of the change request of a
-// done issue, read with the inbox token for the merge dialog (ADR-047).
+// done issue, read with the inbox token for the merge dialog (ADR-050).
 func (s *Server) mergeStatus(w http.ResponseWriter, r *http.Request) {
 	b := s.inbox()
 	ref, err := b.ParseRef(r.URL.Query().Get("ref"))

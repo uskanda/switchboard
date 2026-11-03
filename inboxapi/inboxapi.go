@@ -40,6 +40,32 @@ type Item struct {
 	// on GitHub): a page watching one issue reads it again when either moves.
 	UpdatedAt *time.Time `json:"updated_at"`
 	Notes     int        `json:"notes"`
+	// AutoMerge is set on a done issue while the inbox service waits to merge its change request: the person pressed
+	// merge, the forge refused it for a conflict, and the merge is made once the agent has fixed it (ADR-048).
+	AutoMerge *AutoMerge `json:"auto_merge,omitempty"`
+}
+
+// AutoMerge is a merge the inbox service waits to make: the commit the person pressed merge on, and when.
+type AutoMerge struct {
+	SHA   string    `json:"sha"`
+	Since time.Time `json:"since"`
+}
+
+// The outcomes of an AutoMergeResult.
+const (
+	AutoMergeMerged    = "merged"
+	AutoMergeCancelled = "cancelled"
+)
+
+// AutoMergeResult is a merge the inbox service waited to make and finished: merged, or cancelled for Reason (closed,
+// waiting, instruction, not_fix, changed, change_closed, pushed, forbidden, or user for a cancel). Number is the
+// change request, At when it finished.
+type AutoMergeResult struct {
+	Ref     string    `json:"ref"`
+	Number  int       `json:"number"`
+	Outcome string    `json:"outcome"`
+	Reason  string    `json:"reason,omitempty"`
+	At      time.Time `json:"at"`
 }
 
 // ForgeError is a forge that could not be read while listing.
@@ -57,6 +83,9 @@ type Inbox struct {
 	FetchedAt              time.Time    `json:"fetched_at"`
 	Relay                  string       `json:"relay"`
 	RefreshIntervalSeconds int          `json:"refresh_interval_seconds"`
+	// AutoMergeResults are the merges the inbox service finished within the last 24 hours, oldest first, for a page
+	// to tell the person how they ended.
+	AutoMergeResults []AutoMergeResult `json:"auto_merge_results,omitempty"`
 }
 
 // The states of Inbox.Relay. While disconnected (or connecting), changes show at the refresh interval.
@@ -92,6 +121,8 @@ type Detail struct {
 	ChangeURL    string `json:"change_url,omitempty"`
 	ChangeNumber int    `json:"change_number,omitempty"`
 	ChangeSHA    string `json:"change_sha,omitempty"`
+	// AutoMerge is set as on its Item.
+	AutoMerge *AutoMerge `json:"auto_merge,omitempty"`
 	// Author, CreatedAt and Body are the issue's own; Comments are all its comments, oldest first.
 	Author    string     `json:"author"`
 	CreatedAt *time.Time `json:"created_at"`
@@ -174,27 +205,32 @@ type AddProjectResponse struct {
 	Webhook string  `json:"webhook,omitempty"`
 }
 
-// The kinds of start label an issue can be opened with: the configuration's labels.ready, labels.plan and labels.go.
+// The kinds of start label an issue can be opened with: the configuration's labels.ready, labels.plan and labels.go,
+// and StartNone, no label at all, which the agent does not take up until a start label is put on (ADR-049).
 const (
 	StartReady = "ready"
 	StartPlan  = "plan"
 	StartGo    = "go"
+	StartNone  = "none"
 )
 
-// IssueTarget is a project an issue can be opened in, with Host, the machine that runs it.
+// IssueTarget is a project an issue can be opened in, with Host, the machine that runs it, and PlanFirst, whether its
+// ready label starts with a plan. An older inbox service leaves PlanFirst out.
 type IssueTarget struct {
-	Ref  string `json:"ref"`
-	Host string `json:"host"`
+	Ref       string `json:"ref"`
+	Host      string `json:"host"`
+	PlanFirst bool   `json:"plan_first"`
 }
 
-// IssueStart is a kind of start label (StartReady, StartPlan, StartGo) and the label it stands for.
+// IssueStart is a kind of start label (StartReady, StartPlan, StartGo, StartNone) and the label it stands for, which
+// is empty for StartNone.
 type IssueStart struct {
 	Kind  string `json:"kind"`
 	Label string `json:"label"`
 }
 
 // IssueTargets is the answer to GET /v1/issue-targets: every configured project, whatever machine runs it, in the
-// order of the configuration, and the start labels the configuration names.
+// order of the configuration, and the start labels the configuration names, then StartNone.
 type IssueTargets struct {
 	Items  []IssueTarget `json:"items"`
 	Starts []IssueStart  `json:"starts"`
@@ -207,7 +243,7 @@ const (
 )
 
 // CreateIssueRequest is the body of POST /v1/issues. Start is a kind of IssueStart; the inbox service puts the label
-// it stands for on the issue, and no other.
+// it stands for on the issue, and no other, or no label for StartNone. An empty Start is refused.
 type CreateIssueRequest struct {
 	Ref   string `json:"ref"`
 	Title string `json:"title"`
@@ -229,7 +265,7 @@ type MergeRequest struct {
 }
 
 // MergeStatus is the answer to GET /v1/merge-status: where the change request of a done issue stands before the merge
-// dialog's merge (ADR-047). It is information only; the forge still decides whether the merge goes through.
+// dialog's merge (ADR-050). It is information only; the forge still decides whether the merge goes through.
 type MergeStatus struct {
 	// State is the change request's state on the forge: "open", "closed" or "merged".
 	State string `json:"state"`
@@ -264,6 +300,38 @@ const (
 	CheckRunning = "running"
 	CheckOther   = "other"
 )
+
+// MergeAnswer is the body of a POST /v1/merge answered with 202: Code is CodeAutoMergePending, and the inbox service
+// merges the change request once the agent has fixed its conflict (ADR-048).
+type MergeAnswer struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// CodeAutoMergePending is the code of a merge the forge refused for a conflict, which the inbox service makes later.
+const CodeAutoMergePending = "auto_merge_pending" // 202
+
+// MergeResult is what a merge came to: AutoMerge is set when the inbox service waits to make it.
+type MergeResult struct {
+	AutoMerge bool
+}
+
+// CancelAutoMergeRequest is the body of POST /v1/automerge/cancel: the issue whose waiting merge to cancel.
+type CancelAutoMergeRequest struct {
+	Ref string `json:"ref"`
+}
+
+// RegisterDeviceRequest is the body of POST /v1/devices: the FCM token of an app that wants the push notifications.
+type RegisterDeviceRequest struct {
+	Token string `json:"token"`
+}
+
+// ApproveRequest is the body of POST /v1/approve: the issue, and the start of the wait the notification reported
+// (its waiting_since). The inbox service posts the approve word only while the issue still waits on that plan.
+type ApproveRequest struct {
+	Ref   string    `json:"ref"`
+	Since time.Time `json:"since"`
+}
 
 // The codes of Error.
 const (

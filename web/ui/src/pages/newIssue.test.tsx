@@ -36,6 +36,7 @@ const targets = {
       { kind: "ready", label: "agent:ready" },
       { kind: "plan", label: "agent:plan" },
       { kind: "go", label: "agent:go" },
+      { kind: "none", label: "" },
     ],
   },
 };
@@ -62,6 +63,34 @@ describe("a new issue", () => {
     expect(ready).toBeChecked();
     expect(within(dialog).getByRole("radio", { name: /agent:plan/ })).not.toBeChecked();
     expect(within(dialog).getByRole("radio", { name: /agent:go/ })).not.toBeChecked();
+  });
+
+  it("offers no label as the last start, without a label name", async () => {
+    answer({ "GET /api/issue-targets": targets });
+    const dialog = await openDialog();
+    const radios = within(dialog).getAllByRole("radio");
+    const none = radios[radios.length - 1];
+    expect(none).toHaveAccessibleName("ラベルなし（実装開始しない）");
+    expect(none).not.toBeChecked();
+    expect(none.closest("label")?.querySelector(".font-mono")).toBeNull();
+  });
+
+  it("sends none as the kind of start when no label is chosen", async () => {
+    const calls = answer({
+      "GET /api/issue-targets": targets,
+      "POST /api/issues": { status: 201, body: { ref: "gh:o/r#3", url: "https://github.test/o/r/issues/3" } },
+    });
+    const dialog = await openDialog();
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "タイトル" }), "Later");
+    await userEvent.click(within(dialog).getByRole("radio", { name: "ラベルなし（実装開始しない）" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "作成する" }));
+
+    expect((await screen.findByText(/を作りました/)).closest("[role=status]")).toHaveTextContent("o/r#3 GitHub を作りました");
+    const post = calls.find((c) => c.key === "POST /api/issues");
+    expect(JSON.parse(String(post?.init?.body))).toEqual({ ref: "gh:o/r", title: "Later", body: "", start: "none" });
+    // The agent does not take it up, so the list gets no row of it being processed.
+    expect(screen.queryByText("実行の開始を待っています")).toBeNull();
+    expect(screen.queryByRole("link", { name: /Later/ })).toBeNull();
   });
 
   it("cannot be sent without a title", async () => {

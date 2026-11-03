@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 var ctx = context.Background()
@@ -257,10 +258,10 @@ func TestIssueTargets(t *testing.T) {
 		if r.Method != http.MethodGet || r.URL.Path != "/v1/issue-targets" {
 			t.Errorf("%s %s", r.Method, r.URL)
 		}
-		reply(w, 200, IssueTargets{Items: []IssueTarget{{Ref: "gh:o/r", Host: "nas"}}, Starts: []IssueStart{{Kind: StartReady, Label: "agent:ready"}}})
+		reply(w, 200, IssueTargets{Items: []IssueTarget{{Ref: "gh:o/r", Host: "nas", PlanFirst: true}}, Starts: []IssueStart{{Kind: StartReady, Label: "agent:ready"}}})
 	})
 	got, err := c.IssueTargets(ctx)
-	if err != nil || len(got.Items) != 1 || got.Items[0].Host != "nas" || len(got.Starts) != 1 || got.Starts[0].Label != "agent:ready" {
+	if err != nil || len(got.Items) != 1 || got.Items[0].Host != "nas" || !got.Items[0].PlanFirst || len(got.Starts) != 1 || got.Starts[0].Label != "agent:ready" {
 		t.Fatalf("IssueTargets = %+v, %v", got, err)
 	}
 }
@@ -306,8 +307,8 @@ func TestMergePostsJSONAndTypesTheRefusals(t *testing.T) {
 		}
 		reply(w, status, Error{Code: code, Message: "refused"})
 	})
-	if err := c.Merge(ctx, "gh:o/r#5", "abc"); err != nil {
-		t.Fatal(err)
+	if res, err := c.Merge(ctx, "gh:o/r#5", "abc"); err != nil || res.AutoMerge {
+		t.Fatalf("%+v, %v", res, err)
 	}
 	if got != (MergeRequest{Ref: "gh:o/r#5", SHA: "abc"}) {
 		t.Errorf("sent %+v", got)
@@ -322,7 +323,7 @@ func TestMergePostsJSONAndTypesTheRefusals(t *testing.T) {
 		{http.StatusForbidden, CodeForbidden, ErrForbidden},
 	} {
 		status, code = tc.status, tc.code
-		if err := c.Merge(ctx, "gh:o/r#5", "abc"); !errors.Is(err, tc.want) {
+		if _, err := c.Merge(ctx, "gh:o/r#5", "abc"); !errors.Is(err, tc.want) {
 			t.Errorf("%s: err = %v, want %v", tc.code, err, tc.want)
 		}
 	}
@@ -353,5 +354,82 @@ func TestMergeStatusGetsTheStatusOfTheChange(t *testing.T) {
 	stale = true
 	if _, err := c.MergeStatus(ctx, "gl:g/sub/p#5", "abc"); !errors.Is(err, ErrStale) {
 		t.Fatalf("err = %v, want ErrStale", err)
+	}
+}
+
+// A merge refused for a conflict is answered with 202: the inbox service makes it once the agent has fixed it.
+func TestMergeReportsAMergeThatWaitsForTheFix(t *testing.T) {
+	c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		reply(w, http.StatusAccepted, MergeAnswer{Code: CodeAutoMergePending, Message: "later"})
+	})
+	if res, err := c.Merge(ctx, "gh:o/r#5", "abc"); err != nil || !res.AutoMerge {
+		t.Fatalf("%+v, %v", res, err)
+	}
+}
+
+func TestCancelAutoMerge(t *testing.T) {
+	var got CancelAutoMergeRequest
+	found := true
+	c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/automerge/cancel" || r.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("%s %s %s", r.Method, r.URL, r.Header.Get("Content-Type"))
+		}
+		json.NewDecoder(r.Body).Decode(&got)
+		if !found {
+			reply(w, http.StatusNotFound, Error{Code: CodeNotFound, Message: "none"})
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	if err := c.CancelAutoMerge(ctx, "gh:o/r#5"); err != nil || got.Ref != "gh:o/r#5" {
+		t.Fatalf("%+v, %v", got, err)
+	}
+	found = false
+	if err := c.CancelAutoMerge(ctx, "gh:o/r#5"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestRegisterDevicePostsJSON(t *testing.T) {
+	var got RegisterDeviceRequest
+	c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/devices" || r.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("%s %s %s", r.Method, r.URL, r.Header.Get("Content-Type"))
+		}
+		json.NewDecoder(r.Body).Decode(&got)
+		w.WriteHeader(http.StatusNoContent)
+	})
+	if err := c.RegisterDevice(ctx, "fcm-token"); err != nil {
+		t.Fatal(err)
+	}
+	if got != (RegisterDeviceRequest{Token: "fcm-token"}) {
+		t.Errorf("sent %+v", got)
+	}
+}
+
+func TestApprovePostsJSONAndTypesStale(t *testing.T) {
+	var got ApproveRequest
+	since := time.Date(2026, 11, 2, 9, 30, 0, 0, time.UTC)
+	stale := false
+	c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/approve" {
+			t.Errorf("%s %s", r.Method, r.URL)
+		}
+		json.NewDecoder(r.Body).Decode(&got)
+		if stale {
+			reply(w, http.StatusConflict, Error{Code: CodeStale, Message: "a newer plan"})
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	if err := c.Approve(ctx, "gh:o/r#5", since); err != nil {
+		t.Fatal(err)
+	}
+	if got.Ref != "gh:o/r#5" || !got.Since.Equal(since) {
+		t.Errorf("sent %+v", got)
+	}
+	stale = true
+	if err := c.Approve(ctx, "gh:o/r#5", since); !errors.Is(err, ErrStale) {
+		t.Errorf("err = %v, want ErrStale", err)
 	}
 }

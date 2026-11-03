@@ -16,6 +16,52 @@ export function shown(comments: Comment[]) {
     .filter(({ c, i }) => !(c.agent && c.kind === "progress" && i !== lastProgress));
 }
 
+/** Shown is one item shown picks. */
+export type Shown = ReturnType<typeof shown>[number];
+
+/**
+ * Round is an answered round of the thread, folded to one line: a wait of the agent's before its latest one, and the
+ * people's comments after it up to the agent's next post.
+ */
+export type Round = { kind: "round"; question: Shown; replies: Shown[] };
+
+/** ThreadItem is one item of the thread: a comment shown picks, or an answered round. */
+export type ThreadItem = (Shown & { kind?: undefined }) | Round;
+
+/**
+ * threadOf lays out what the thread draws, oldest first: the items of shown, with every wait of the agent's before
+ * its latest one gathered with the people's replies after it into a Round. A round ends at the agent's next post,
+ * whatever its kind: the one-line claim of a run and the progress card stay outside it. The latest wait is never
+ * folded, whatever the state of the issue.
+ */
+export function threadOf(comments: Comment[]): ThreadItem[] {
+  const out: ThreadItem[] = [];
+  let round: Round | null = null;
+  for (const s of shown(comments)) {
+    if (round && !s.c.agent) {
+      round.replies.push(s);
+      continue;
+    }
+    round = null;
+    if (s.c.agent && s.c.kind === "waiting" && !s.latest) {
+      round = { kind: "round", question: s, replies: [] };
+      out.push(round);
+    } else out.push(s);
+  }
+  return out;
+}
+
+/**
+ * revealAndScroll scrolls the thread's card of the comment at index into view, below the pinned head. A card inside
+ * a folded round opens the round first: a closed details hides it.
+ */
+export function revealAndScroll(root: ParentNode | null, index: number) {
+  const el = root?.querySelector(`[data-index="${index}"]`);
+  if (!el) return;
+  for (let d = el.parentElement?.closest("details"); d; d = d.parentElement?.closest("details")) d.open = true;
+  el.scrollIntoView({ block: "start" });
+}
+
 /**
  * Card is one card the thread draws: index is its comment's index, key tells it from every other card. The key comes
  * from the author, the time and the text, so a rewritten progress comment is a new card.

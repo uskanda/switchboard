@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Client calls the inbox service on its Unix socket.
@@ -59,9 +60,30 @@ func (c *Client) Reply(ctx context.Context, ref, text string, force bool) error 
 }
 
 // Merge marks the change request of a done issue ready and merges it with the inbox token, only at sha. It is
-// refused with ErrStale, ErrNotMergeable or ErrForbidden.
-func (c *Client) Merge(ctx context.Context, ref, sha string) error {
-	return c.do(ctx, http.MethodPost, "/v1/merge", MergeRequest{Ref: ref, SHA: sha}, nil)
+// refused with ErrStale, ErrNotMergeable or ErrForbidden. When the forge refused it for a conflict, the result says
+// that the inbox service merges it once the agent has fixed the conflict.
+func (c *Client) Merge(ctx context.Context, ref, sha string) (*MergeResult, error) {
+	var out MergeAnswer
+	if err := c.do(ctx, http.MethodPost, "/v1/merge", MergeRequest{Ref: ref, SHA: sha}, &out); err != nil {
+		return nil, err
+	}
+	return &MergeResult{AutoMerge: out.Code == CodeAutoMergePending}, nil
+}
+
+// CancelAutoMerge cancels the merge the inbox service waits to make on the issue; ErrNotFound when there is none.
+func (c *Client) CancelAutoMerge(ctx context.Context, ref string) error {
+	return c.do(ctx, http.MethodPost, "/v1/automerge/cancel", CancelAutoMergeRequest{Ref: ref}, nil)
+}
+
+// RegisterDevice adds an app's FCM token to the devices the inbox service sends push notifications to.
+func (c *Client) RegisterDevice(ctx context.Context, token string) error {
+	return c.do(ctx, http.MethodPost, "/v1/devices", RegisterDeviceRequest{Token: token}, nil)
+}
+
+// Approve posts the approve word on an issue waiting on a plan, only while the wait started at since; else it is
+// refused with ErrStale.
+func (c *Client) Approve(ctx context.Context, ref string, since time.Time) error {
+	return c.do(ctx, http.MethodPost, "/v1/approve", ApproveRequest{Ref: ref, Since: since}, nil)
 }
 
 // MergeStatus reads where the change request of a done issue stands, for the merge dialog: its state, whether its
@@ -202,7 +224,7 @@ func (c *Client) do(ctx context.Context, method, path string, in, out any) error
 	if resp.StatusCode >= 300 {
 		return answerError(resp)
 	}
-	if out == nil {
+	if out == nil || resp.StatusCode == http.StatusNoContent {
 		return nil
 	}
 	return json.NewDecoder(resp.Body).Decode(out)

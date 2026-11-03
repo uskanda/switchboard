@@ -49,7 +49,7 @@ type MergeStatus struct {
 }
 
 // MergeStatus reads the change request the agent's latest done post names, under the same conditions as Merge: the
-// issue is open and done, and that post's commit is sha (ErrStale otherwise). c reads with the inbox token (ADR-047).
+// issue is open and done, and that post's commit is sha (ErrStale otherwise). c reads with the inbox token (ADR-050).
 // A token that may not read CI is not an error: CI is then CIForbidden and only the change request is reported.
 func (b *Inbox) MergeStatus(ctx context.Context, c forge.CI, ref forge.IssueRef, sha string) (*MergeStatus, error) {
 	if strings.TrimSpace(sha) == "" {

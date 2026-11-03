@@ -58,7 +58,7 @@ describe("queued issues", () => {
     at("/issue/gh%3Ao%2Fr%2340");
     expect(await screen.findByText("順番待ちになりました")).toBeInTheDocument();
     expect(screen.getAllByText("順番待ち")[0]).toBeInTheDocument();
-    expect(screen.getByText("5分前")).toBeInTheDocument();
+    expect(screen.getByText("5分前から順番待ち")).toBeInTheDocument();
     expect(screen.queryByText(/runs as many issues/)).toBeNull();
     expect(screen.getByText("順番待ちのため、まだ返答は要りません")).toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "返答" })).toBeNull();

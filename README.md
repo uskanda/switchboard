@@ -95,7 +95,7 @@ secret-tool store --label='switchboard github inbox' service switchboard/github-
 
 受信箱のトークンのPull requestsとContentsの書き込みは、受信箱のWeb表示から完了のPRをマージするために使う（ADR-043）。マージは人の身元で行い、フォージにも人のマージとして残る。今のトークンに足すときは、GitHubのトークンの設定で、Pull requestsとContentsを「Read and write」にして保存する。トークンの値は変わらないので、登録し直さなくてよい。足さないうちは、マージだけが「権限がありません」で断られる。
 
-受信箱のトークンのActionsとCommit statusesの読み取りは、マージの確認ダイアログにCIの結果を出すために使う（ADR-047）。足し方は上と同じで、ActionsとCommit statusesを「Read-only」にする。足さないうちは、ダイアログに「CIを読む権限がありません」と出るだけで、マージはできる。`switchboard doctor` が警告を出す。
+受信箱のトークンのActionsとCommit statusesの読み取りは、マージの確認ダイアログにCIの結果を出すために使う（ADR-050）。足し方は上と同じで、ActionsとCommit statusesを「Read-only」にする。足さないうちは、ダイアログに「CIを読む権限がありません」と出るだけで、マージはできる。`switchboard doctor` が警告を出す。
 
 GitLabのプロジェクトを使うときは、GitLabのpersonal access tokenを `api` スコープで作り、同じように登録する。エージェント用と受信箱用に、同じトークンを登録してもよい。このトークンは自分の全プロジェクトを操作できる。エージェントの影響を1つのプロジェクトに限りたいときは、後述のプロジェクトごとの上書きで、Project Access Tokenを使う。GitLab 19.2以降のfine-grainedのトークンでも絞れるが、switchboardが使うすべてのAPIで動くかは確かめていない。
 
@@ -263,7 +263,7 @@ OpenSpecを使うプロジェクトでの書き方の例は、[docs/examples/ope
 
 ログインしていなくてもエージェントが動き続けるように、systemdのサービスとして常駐させられる。サービスは自分のOSユーザーで動き、異常に終わると自動で再起動する。トークンは、ホストの鍵で暗号化したsystemdのクレデンシャルとして置く。置くのは、この端末の担当プロジェクトのエージェント用トークンだけで、受信箱のトークンは置かない。
 
-設置するときは、Secret Serviceからトークンを読むので、keyringを解錠しておく。まず、何をsudoで実行するかを確かめる。
+設置するときは、Secret Serviceからトークンを読むので、keyringを解錠しておく。unitには、実行した `switchboard` の場所を書く。`make install` で `~/.local/bin` に置いたものを使う。`go run` で作ったものはビルドキャッシュにあり、古い版のまま動くか消えるので、設置を断る。まず、何をsudoで実行するかを確かめる。
 
 ```bash
 switchboard service install --dry-run
@@ -395,14 +395,15 @@ issueが待ちになったときと完了したときに、エージェントが
 - 実行中の欄には、端末、経過時間、最新の進捗の1行が出る。実行中のissueには返答できない
 - 順番待ちの欄は実行中の欄の下にあり、当たった上限と、順番待ちになってからの時間が出る。返答の待ちから順番待ちになったissueには、今までどおり返答できる
 - 「完了（close待ち）」の欄は順番待ちの欄の下にあり、端末、完了からの時間、PR/MRへのリンクが出る。ヘッダの完了の件数は、1件以上のときだけ出る。完了のissueにも返答でき、返答すると同じPR/MRで作業を再開する。issueをcloseすると欄から消える
-- 完了の行と1件の表示には「マージ」のボタンが出る。確認のダイアログには、PR/MRの衝突の有無と、CIの結果（成功・失敗・実行中の数と、失敗中・実行中のチェックへのリンク）が出る。どちらも情報だけで、マージは止めない（ADR-047）。ダイアログで「マージする」を押すと、受信箱のトークンでPR/MRのdraftを解除してマージする。マージするのは、エージェントが完了を知らせたときのコミットだけで、その後にPR/MRへコミットが足されていれば断る。CIの結果やコンフリクトでフォージが断ったときは、その理由がトーストに出る。issueは、PR/MRの本文の `Closes #N` でcloseされ、一覧から消える。baseが既定のブランチでないときはissueが閉じないので、手でcloseする（ADR-043）
+- 完了の行と1件の表示には「マージ」のボタンが出る。確認のダイアログには、PR/MRの衝突の有無と、CIの結果（成功・失敗・実行中の数と、失敗中・実行中のチェックへのリンク）が出る。どちらも情報だけで、マージは止めない（ADR-050）。ダイアログで「マージする」を押すと、受信箱のトークンでPR/MRのdraftを解除してマージする。マージするのは、エージェントが完了を知らせたときのコミットだけで、その後にPR/MRへコミットが足されていれば断る。CIの結果でフォージが断ったときは、その理由がトーストに出る。issueは、PR/MRの本文の `Closes #N` でcloseされ、一覧から消える。baseが既定のブランチでないときはissueが閉じないので、手でcloseする（ADR-043）
+- PR/MRがbaseと衝突していて断られたときは、エージェントが衝突を直したあとに、受信箱のサービスが自動でマージする。待っている間は、行と1件の表示に「自動マージ待ち」の印が出て、1件の表示の「自動マージを取り消す」でやめられる。自動でマージするのは、押したあとにエージェントの直す実行（衝突、CIの失敗、pushの拒否）がpushしたコミットだけである。その間に人がコメントしたか、PR/MRへpushしたときは、自動のマージをやめる。結果は、次に画面を開いたときにトーストで出る（ADR-048）
 - 実行の失敗（理由が `error`）の待ちには「再実行する」のボタンが出る。返答の欄が空のときに押すと再実行を頼む決まった文を返答し、エージェントが同じ作業をやり直す
 - 画面を開いている間は、一覧と選んだissueが自動で更新される。返答の書きかけは、更新されても消えない
-- 一覧の上の「新規issue」から、設定にあるどのプロジェクトにもissueを作れる。開始ラベルは、設定の `labels.ready`、`labels.plan`、`labels.go` から1つを選ぶ（初期値はready）。issueは受信箱のトークンで作るので、エージェントがそのまま着手する（ADR-040）
+- 一覧の上の「新規issue」から、設定にあるどのプロジェクトにもissueを作れる。開始ラベルは、設定の `labels.ready`、`labels.plan`、`labels.go` から1つを選ぶか、「ラベルなし（実装開始しない）」を選ぶ（初期値はready）。issueは受信箱のトークンで作るので、開始ラベルがあればエージェントがそのまま着手する（ADR-040）。ラベルなしのissueには着手しない。あとで開始ラベルを付ければ着手する（ADR-049）
 
 仕組みは次の2つのサービスに分かれる。
 
-- `switchboard inbox serve`：受信箱のトークンを持つ。Unixソケット（`/run/switchboard/inbox.sock`）で、一覧、1件、返答のAPIと、一覧の変化を知らせるSSEを出す。一覧は60秒キャッシュする。SSEでつないでいる画面がある間だけ、フォージから一覧を取り直し、変わったときに知らせる。取り直す間隔は `inbox.refresh_interval` で、既定は30秒、下限は10秒である
+- `switchboard inbox serve`：受信箱のトークンを持つ。Unixソケット（`/run/switchboard/inbox.sock`）で、一覧、1件、返答のAPIと、一覧の変化を知らせるSSEを出す。一覧は60秒キャッシュする。SSEでつないでいる画面がある間だけ、フォージから一覧を取り直し、変わったときに知らせる。プッシュ通知の設定（`inbox.notify.fcm`）があるときは、画面が無くても取り直す。取り直す間隔は `inbox.refresh_interval` で、既定は30秒、下限は10秒である
 - `switchboard-web serve`：そのAPIを呼び、LANのアドレスで画面を出す。SSEはブラウザへ中継する。フォージのトークンは持たない
 
 画面が見えている間は、フォージへの問い合わせが続く。待ちが5件で間隔が30秒なら、GitHubのREST APIを1時間に約600回、検索を約120回使う。タブが裏に回ると、画面はSSEを閉じる。見えている画面が無くなれば、問い合わせも止まる。減らしたいときは、設定ファイルで間隔を延ばす。
@@ -491,6 +492,53 @@ inbox:
 
 スロットが空くと、順番待ちに入った順にissueを始める。`agent.prefer_plan: true`（既定はfalse）にすると、順番待ちのうち計画の実行（計画を先に立てるモードで、質問か計画を出す実行）を先に始め、実装の実行は後に回す。並べ替えるのは順番待ちから取り出すときだけで、スロットが空いていれば実装もすぐに始まる。エージェントを再起動すると、順番待ちに入った時刻は消え、再評価で入り直した順になる。
 
+### Androidのアプリで見て、通知を受ける
+
+`app/` のAndroidのアプリは、受信箱のWeb表示をWebViewで開く。画面はWeb表示と同じで、Web表示を新しくすればアプリにも反映される。アプリが足すのは次のものである（ADR-047）。
+
+- ホーム画面から全画面で開ける。Web表示の外のリンク（フォージのページなど）は、既定のブラウザで開く
+- 待ちと完了のプッシュ通知が届く。通知を押すと、そのissueが開く
+- 計画の承認待ちの通知には「承認」のボタンが付き、アプリを開かずに承認の語を返答する。通知を受けた後に計画が出し直されていれば、承認せずにそのことを知らせる
+- 完了の通知には「マージ」のボタンが付き、アプリでマージの確認のダイアログが開く
+
+通知は受信箱のサービスがFCMで送る。Telegramの通知はエージェントが送るので、両方を設定すれば両方に届く。通知に載るのは、issueの参照、待ちの理由、タイトルだけで、質問の本文は載らない。これらはGoogleのサーバーを通る。家のWi-Fiの外では、通知は届いても、アプリからWeb表示は開けない。
+
+1. Firebaseのプロジェクトを作り、Androidのアプリを、パッケージ名 `io.github.uskanda.switchboard` で登録する。`google-services.json` を、リポジトリの外に保存する
+2. Firebaseのコンソールの「サービスアカウント」で秘密鍵（JSON）を作り、Secret Serviceに置く。鍵は標準入力から読む
+
+   ```bash
+   secret-tool store --label='switchboard fcm' service switchboard/fcm username token < firebase-adminsdk.json
+   ```
+
+3. 設定に `inbox.notify.fcm` を足し、`switchboard service install --inbox` で受信箱のサービスを置き直す。鍵も、暗号化したクレデンシャルとしてサービスに渡る。設定があると、受信箱のサービスは画面が無くても `inbox.refresh_interval` ごとに一覧を取り直す
+
+   ```yaml
+   inbox:
+     notify:
+       fcm:
+         project_id: <Firebaseのプロジェクトのid>
+         credentials_ref: switchboard/fcm
+   ```
+
+4. 署名の鍵を作る。鍵とパスワードは、リポジトリの外に置く
+
+   ```bash
+   keytool -genkeypair -v -keystore ~/keys/switchboard-app.keystore -alias switchboard -keyalg RSA -keysize 2048 -validity 10000
+   ```
+
+5. APKを作る。JDK 17と、Android SDKのplatform 37（パッケージ名は `platforms;android-37.0`）とbuild-tools 37.0.0、NDK 27.1が要る。足りなければ `sdkmanager "platforms;android-37.0" "build-tools;37.0.0" "ndk;27.1.12297006"` で入れる。`ANDROID_HOME` と `JAVA_HOME` を設定し、鍵と `google-services.json` の場所を環境変数で渡す。足りない変数があれば、Gradleの前で止まる。できたAPKは `bin/switchboard.apk` に置かれる
+
+   ```bash
+   export SWITCHBOARD_APP_KEYSTORE=~/keys/switchboard-app.keystore SWITCHBOARD_APP_KEY_ALIAS=switchboard
+   export SWITCHBOARD_APP_KEYSTORE_PASSWORD=... SWITCHBOARD_APP_KEY_PASSWORD=...
+   export SWITCHBOARD_APP_GOOGLE_SERVICES=~/keys/google-services.json
+   make app-apk
+   ```
+
+6. APKをスマホに入れて開き、Web表示のURLを入力する。`web.yaml` の `listen` と同じIPアドレスとポートを、`http://` を付けて入力する（例：`http://192.168.0.82:8783`）。ホスト名で入力すると、`Host` の検査で返答と承認が拒まれる。URLは、画面の上の「接続先」から変えられる
+
+アプリは、受信箱のWeb表示に、通知のトークンの登録と承認をPOSTで送る。どちらも、返答と同じ `Origin` と `Host` の検査を通る。アプリは、入力したURLを `Origin` として付ける。
+
 ### pushとCIの失敗
 
 エージェントは、PRかMRを作って `agent:done` にした後も、自分がpushしたコミットのCIを `poll_interval` ごとに見張る。中継につながっていても同じ間隔で見る。CIが全部終わって失敗が1つも無ければ、何も書かずに見張りをやめる。結論が `failure` か `timed_out` のものがあれば、issueを `agent:running` に戻し、「CIが失敗したので直します（1/2）」のコメントを付けて直す実行を始める。直す実行には、失敗したjob（最大3つ）のログの末尾200行を、非信頼のデータとして渡す。直した結果は同じPRにpushし、もう一度見張る。
@@ -534,7 +582,7 @@ projects:
 make verify
 ```
 
-`make verify` は、`web/` の検査（型の検査、lint、テスト、ビルド）も実行するので、Node.jsとpnpmが要る。画面の見た目の基準は [DESIGN.md](DESIGN.md)、使う人と目的は [PRODUCT.md](PRODUCT.md) にある。
+`make verify` は、`web/` の検査（型の検査、lint、テスト、ビルド）と、`app/` の検査（型の検査、lint、テスト）も実行するので、Node.jsとpnpmが要る。AndroidのAPKを作る `make app-apk` だけは、JDKとAndroid SDKも要る。画面の見た目の基準は [DESIGN.md](DESIGN.md)、使う人と目的は [PRODUCT.md](PRODUCT.md) にある。
 
 実物の `claude` で、着手から質問、返答、完了までを通す確認もある。モデルを呼ぶため、`make verify` とCIでは動かない。
 

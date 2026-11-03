@@ -16,9 +16,10 @@ type Change struct {
 	Merged bool
 	// Refuse, when set, is the reason the forge refuses to merge it.
 	Refuse string
-	// Closed, Conflict and Computing are what ChangeRequestHead reports of it.
-	Closed    bool
+	// Conflict is whether it conflicts with its base, which the forge refuses to merge; Closed whether it was closed
+	// without a merge; Computing whether the forge still computes the conflict, which ChangeRequestHead reports.
 	Conflict  bool
+	Closed    bool
 	Computing bool
 }
 
@@ -60,11 +61,32 @@ func (f *Forge) MergeChangeRequest(_ context.Context, owner, repo string, number
 		return forge.ErrNotFound
 	case c.Merged:
 		return &forge.NotMergeableError{Reason: fmt.Sprintf("#%d is already merged", number)}
+	case c.Closed:
+		return &forge.NotMergeableError{Reason: fmt.Sprintf("#%d is closed", number)}
 	case c.Head != sha:
 		return forge.ErrHeadMoved
 	case c.Refuse != "":
 		return &forge.NotMergeableError{Reason: c.Refuse}
+	case c.Conflict:
+		return &forge.NotMergeableError{Reason: "Pull Request is not mergeable"}
 	}
 	c.Draft, c.Merged = false, true
 	return nil
+}
+
+// changeHead is the state of a change request recorded with SetChange, for ChangeRequestHead; nil when there is none.
+// Call it with f.mu held.
+func (f *Forge) changeHead(owner, repo string, number int) *forge.ChangeRequestState {
+	c, ok := f.changes[changeKey(owner, repo, number)]
+	if !ok {
+		return nil
+	}
+	st := &forge.ChangeRequestState{State: forge.CROpen, Head: c.Head, Conflict: c.Conflict, Computing: c.Computing}
+	switch {
+	case c.Merged:
+		st.State = forge.CRMerged
+	case c.Closed:
+		st.State = forge.CRClosed
+	}
+	return st
 }

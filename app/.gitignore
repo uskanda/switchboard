@@ -1,0 +1,5 @@
+node_modules/
+.expo/
+# Made by expo prebuild on every build (make app-apk); never committed.
+android/
+ios/
