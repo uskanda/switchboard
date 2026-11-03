@@ -1,6 +1,7 @@
 import { useRef, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
 import { useParams } from "react-router";
 import { Header } from "@/components/Header";
+import { InboxErrors } from "@/components/InboxErrors";
 import { InboxList } from "@/components/InboxList";
 import { IssuePane } from "@/components/IssuePane";
 import { LIST_WIDTH_DEFAULT, LIST_WIDTH_MAX, LIST_WIDTH_MIN, LIST_WIDTH_STEP, useListWidth } from "@/lib/paneWidth";
@@ -69,6 +70,7 @@ export function InboxLayout() {
   return (
     <div className="flex min-h-dvh flex-col lg:h-dvh">
       <Header />
+      <InboxErrors className="px-lg pt-lg" />
       <div
         style={{ "--list-width": `${width}px` } as CSSProperties}
         className="flex-1 lg:relative lg:grid lg:min-h-0 lg:grid-cols-[var(--list-width)_minmax(0,1fr)]"
