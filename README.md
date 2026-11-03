@@ -261,7 +261,7 @@ OpenSpecを使うプロジェクトでの書き方の例は、[docs/examples/ope
 
 ログインしていなくてもエージェントが動き続けるように、systemdのサービスとして常駐させられる。サービスは自分のOSユーザーで動き、異常に終わると自動で再起動する。トークンは、ホストの鍵で暗号化したsystemdのクレデンシャルとして置く。置くのは、この端末の担当プロジェクトのエージェント用トークンだけで、受信箱のトークンは置かない。
 
-設置するときは、Secret Serviceからトークンを読むので、keyringを解錠しておく。まず、何をsudoで実行するかを確かめる。
+設置するときは、Secret Serviceからトークンを読むので、keyringを解錠しておく。unitには、実行した `switchboard` の場所を書く。`make install` で `~/.local/bin` に置いたものを使う。`go run` で作ったものはビルドキャッシュにあり、古い版のまま動くか消えるので、設置を断る。まず、何をsudoで実行するかを確かめる。
 
 ```bash
 switchboard service install --dry-run
