@@ -3,6 +3,7 @@ package doctor
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -60,13 +61,45 @@ func newWorld(t *testing.T) *world {
 	}
 	w := &world{f: f, out: &bytes.Buffer{}, cfg: cfg}
 	w.d = &Doctor{
-		Config:  cfg,
-		State:   state.Dir{Path: t.TempDir()},
-		Secrets: secret.Resolver{Store: store{"agent": "a", "inbox": "i"}},
-		Forge:   func(_, _ string) forge.Forge { return f },
-		Out:     w.out,
+		Config:    cfg,
+		State:     state.Dir{Path: t.TempDir()},
+		Secrets:   secret.Resolver{Store: store{"agent": "a", "inbox": "i"}},
+		Forge:     func(_, _ string) forge.Forge { return f },
+		Out:       w.out,
+		GHVersion: func(context.Context) (string, error) { return "2.99.0", nil },
 	}
 	return w
+}
+
+func TestGHIsChecked(t *testing.T) {
+	w := newWorld(t)
+	if n := w.run(t); n != 0 {
+		t.Fatalf("%d failures:\n%s", n, w.out.String())
+	}
+	w.expect(t, "ok", "gh 2.99.0")
+	for _, c := range []struct {
+		version string
+		err     error
+		want    string
+	}{
+		{"2.40.0", nil, "gh 2.40.0 is older than 2.99.0"},
+		{"", errors.New(`exec: "gh": executable file not found in $PATH`), "executable file not found"},
+	} {
+		w := newWorld(t)
+		w.d.GHVersion = func(context.Context) (string, error) { return c.version, c.err }
+		if n := w.run(t); n != 0 {
+			t.Fatalf("%d failures:\n%s", n, w.out.String())
+		}
+		w.expect(t, "warn", c.want)
+		w.expect(t, "warn", "screenshots")
+	}
+}
+
+func TestGHIsNotCheckedWithoutAGitHubProject(t *testing.T) {
+	w := newWorld(t)
+	w.cfg.Projects[0].Host = "elsewhere"
+	w.d.GHVersion = func(context.Context) (string, error) { t.Fatal("gh was checked"); return "", nil }
+	w.run(t)
 }
 
 func (w *world) run(t *testing.T) int {
@@ -135,6 +168,25 @@ func TestInboxTokenNamesThePermissionsOfAMerge(t *testing.T) {
 	}
 	w.expect(t, "ok", "inbox token (inbox_token_ref")
 	w.expect(t, "ok", "Pull requests and Contents write")
+	w.expect(t, "ok", "Actions and Commit statuses read")
+	w.expect(t, "ok", "gh:o/r: the inbox token can read the CI")
+}
+
+func TestInboxTokenThatCannotReadCIWarns(t *testing.T) {
+	w := newWorld(t)
+	inbox := fake.New(nil)
+	inbox.FailCI = forge.ErrForbidden
+	w.d.Forge = func(_, token string) forge.Forge {
+		if token == "i" {
+			return inbox
+		}
+		return w.f
+	}
+	if n := w.run(t); n != 0 {
+		t.Fatalf("%d failures:\n%s", n, w.out.String())
+	}
+	w.expect(t, "warn", "gh:o/r: the inbox token cannot read the CI, so the merge dialog of the web inbox shows none")
+	w.expect(t, "ok", "gh:o/r: the agent token can read the CI")
 }
 
 func TestOldClaudeWarns(t *testing.T) {

@@ -27,6 +27,11 @@ type fakeInbox struct {
 	merged   []inboxapi.MergeRequest
 	devices  []string
 	approved []inboxapi.ApproveRequest
+	// later makes a merge wait for the fix of a conflict; cancelled lists the cancels of such merges.
+	later     bool
+	cancelled []string
+	// statusOf are the issues and commits whose merge status was asked for.
+	statusOf []inboxapi.MergeRequest
 	err      error
 }
 
@@ -164,6 +169,22 @@ func TestPagesAndHeaders(t *testing.T) {
 	}
 	if w := do(s, "GET", "/api/nothing", "", nil); w.Code != http.StatusNotFound {
 		t.Fatalf("unknown api: %d", w.Code)
+	}
+}
+
+// The icons and the manifest are served as files of their own type, so a browser takes them under nosniff, and
+// are not replaced by index.html.
+func TestIconsAndManifest(t *testing.T) {
+	s := &Server{Inbox: &fakeInbox{}, Listen: listen, Assets: fstest.MapFS{
+		"index.html":    {Data: []byte("<!doctype html><title>inbox</title>")},
+		"manifest.json": {Data: []byte(`{"name":"SwitchBoard Inbox"}`)},
+		"favicon.svg":   {Data: []byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`)},
+	}}
+	for path, want := range map[string]string{"/manifest.json": "application/json", "/favicon.svg": "image/svg+xml"} {
+		w := do(s, "GET", path, "", nil)
+		if w.Code != 200 || !strings.HasPrefix(w.Header().Get("Content-Type"), want) || strings.Contains(w.Body.String(), "<title>") {
+			t.Fatalf("%s: %d %q %s", path, w.Code, w.Header().Get("Content-Type"), w.Body)
+		}
 	}
 }
 

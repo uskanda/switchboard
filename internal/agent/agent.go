@@ -100,7 +100,7 @@ type Agent struct {
 	unwatched map[forge.IssueRef]time.Time
 	scanned   time.Time       // when the done issues were last searched for watches
 	forbidden map[string]bool // by project ref: the CI could not be read, already logged
-	// paused, when set, is the pause of this host on a usage limit or its API quota (ADR-048); pauseTimer takes the
+	// paused, when set, is the pause of this host on a usage limit or its API quota (ADR-053); pauseTimer takes the
 	// queue up again when it ends. cost is what the runs cost today and this month.
 	paused     *pause
 	pauseTimer *time.Timer
@@ -262,6 +262,12 @@ func (a *Agent) Start(ctx context.Context) error {
 		a.private[p.Ref] = private
 		a.projects = append(a.projects, p)
 		a.pmu.Unlock()
+		// No run goes yet, so a sandbox placeholder for the clone's config.lock is one a killed run left (#128).
+		if removed, err := workspace.ClearConfigLock(ctx, p.Path); err != nil {
+			a.logf("%s: check the config.lock of %s: %v", p.FullName(), p.Path, err)
+		} else if removed {
+			a.logf("%s: removed the sandbox placeholder config.lock that a killed run left in %s", p.FullName(), p.Path)
+		}
 	}
 	a.loadLimits()
 	a.clearQueued(ctx)
@@ -635,7 +641,7 @@ func (a *Agent) decide(ctx context.Context, p config.Project, ref forge.IssueRef
 	}
 	if byAgent {
 		// Only the agent's own resume mark lets a start label it put start a run. The run goes on with the cycle the
-		// limited run was in, as a resume on a reply does (ADR-048).
+		// limited run was in, as a resume on a reply does (ADR-053).
 		if pl.resumeNote = pl.limitResume(); pl.resumeNote == 0 {
 			return nil, nil
 		}

@@ -3,9 +3,10 @@
 //	<!-- switchboard v=1 host=<host> session=<id> run=<id> state=<state> reason=<reason> ack=<comment-id> at=<RFC3339> -->
 //
 // A claim made from a start label also carries mode=<plan|direct>, and a post of plan questions q=<last number>.
-// A done post that names a change request carries sha=<the commit pushed> and cr=<its number>. A queued comment on a
-// paused host, and the wait of a fix run that hit a usage limit, carry until=<RFC3339>, when the host starts runs
-// again; the queued comment of a run that hit the limit also names that run (run=), which marks the issue to resume.
+// A done post that names a change request carries sha=<the commit pushed> and cr=<its number>; the done post of a fix
+// run also carries fix=<ci|push|conflict>, what it fixed. A queued comment on a paused host, and the wait of a fix run
+// that hit a usage limit, carry until=<RFC3339>, when the host starts runs again; the queued comment of a run that hit
+// the limit also names that run (run=), which marks the issue to resume.
 // Unknown keys are ignored, so that a newer version's marker still parses.
 package marker
 
@@ -27,7 +28,7 @@ type Marker struct {
 	Host    string
 	Session string
 	Run     string
-	State   string // running (the claim of a run), progress (its progress comment), queued, waiting, done
+	State   string // running (the claim of a run), progress (its progress comment), queued, waiting, done, attachment
 	Reason  string // for waiting: question, permission, error, verify, limit, plan-questions, plan, push, ci, conflict; for queued: the limit or the pause; for running: fix on a fix run's claim
 	Ack     int64  // the last comment ID the run took in
 	At      time.Time
@@ -35,6 +36,7 @@ type Marker struct {
 	Q       int    // on a post of plan questions: the number of its last question
 	SHA     string // on a done post: the commit pushed, whose CI the agent watches
 	CR      int    // on a done post: the number of the change request
+	Fix     string // on the done post of a fix run: what it fixed (CI, Push or Conflict); empty on any other post
 	// Until, on a queued comment of a paused host or the wait of a fix run that hit a limit: when runs start again.
 	Until time.Time
 }
@@ -48,7 +50,7 @@ const (
 	// The limits a queued issue waits on: agent.max_parallel, or its project's max_parallel.
 	QueuedHost    = "max-parallel"
 	QueuedProject = "project-max-parallel"
-	// The pauses of a host: it hit a usage limit of the AI service, or its API quota (ADR-048).
+	// The pauses of a host: it hit a usage limit of the AI service, or its API quota (ADR-053).
 	QueuedLimit = "limit"
 	QueuedQuota = "quota"
 	// Fix marks the claim of a fix run; Push, CI and Conflict the waits a rejected push, a CI failure and a change
@@ -66,12 +68,14 @@ const (
 	Queued   = "queued" // the comment of an issue waiting for a free slot
 	Waiting  = "waiting"
 	Done     = "done"
+	// Attachment marks the comment that attaches the images of a done run, posted after its done post (ADR-051).
+	Attachment = "attachment"
 )
 
-// Transient reports whether m marks a post that lasts only while a run goes on or waits for a slot: its claim, its
-// progress comment, or the queued comment. Such a post says nothing about why an issue waits or how a run ended.
+// Transient reports whether m marks a post that says nothing about why an issue waits or how a run ended: the claim
+// of a run, its progress comment, the queued comment, or the comment that attaches a run's images.
 func (m *Marker) Transient() bool {
-	return m.State == Running || m.State == Progress || m.State == Queued
+	return m.State == Running || m.State == Progress || m.State == Queued || m.State == Attachment
 }
 
 // clean keeps a value on one token: spaces become underscores and the comment terminator cannot appear.
@@ -109,6 +113,7 @@ func (m Marker) Format() string {
 	if m.CR != 0 {
 		fmt.Fprintf(&b, " cr=%d", m.CR)
 	}
+	add("fix", m.Fix)
 	if !m.Until.IsZero() {
 		fmt.Fprintf(&b, " until=%s", m.Until.UTC().Format(time.RFC3339))
 	}
@@ -156,6 +161,8 @@ func Parse(body string) (*Marker, bool) {
 			m.SHA = v
 		case "cr":
 			m.CR, _ = strconv.Atoi(v)
+		case "fix":
+			m.Fix = v
 		case "until":
 			m.Until, _ = time.Parse(time.RFC3339, v)
 		}

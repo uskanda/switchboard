@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/uskanda/switchboard/internal/claudecode"
 )
 
 // Config is the whole configuration file. Field comments name the YAML keys.
@@ -118,6 +120,45 @@ type Agent struct {
 	AllowToolsExtra []string `yaml:"allow_tools_extra"`
 	// LimitWait is how long the host waits after a run hit a usage limit whose reset time is unknown; 30m when unset.
 	LimitWait time.Duration `yaml:"limit_wait"`
+	// Model and Effort are the model and the effort level of every run; Plan and Fix override them for the plan runs
+	// and the fix runs. The names stay free of any one coding agent's terms; empty leaves the choice to it.
+	Model  string   `yaml:"model"`
+	Effort string   `yaml:"effort"`
+	Plan   RunModel `yaml:"plan"`
+	Fix    RunModel `yaml:"fix"`
+}
+
+// RunModel is a model and an effort level; an empty field takes the agent's default.
+type RunModel struct {
+	Model  string `yaml:"model"`
+	Effort string `yaml:"effort"`
+}
+
+// RunKind tells the runs apart that may use another model.
+type RunKind int
+
+const (
+	ImplementRun RunKind = iota // a direct run, or the implementation after an approved plan
+	PlanRun
+	FixRun // fixes a CI failure, a rejected push or a conflict with the base
+)
+
+// ModelFor is the model and the effort level of a run of kind: its override, filled from the defaults.
+func (a Agent) ModelFor(kind RunKind) RunModel {
+	m := RunModel{}
+	switch kind {
+	case PlanRun:
+		m = a.Plan
+	case FixRun:
+		m = a.Fix
+	}
+	if m.Model == "" {
+		m.Model = a.Model
+	}
+	if m.Effort == "" {
+		m.Effort = a.Effort
+	}
+	return m
 }
 
 // Quota caps what the runs of this host may cost a day and a month (local time), in US dollars, when claude uses an
@@ -487,6 +528,13 @@ func (c *Config) validate() error {
 		}
 	}
 	errs = append(errs, checkAllowTools("agent.allow_tools_extra", c.Agent.AllowToolsExtra)...)
+	for _, f := range []struct{ key, effort string }{
+		{"agent.effort", c.Agent.Effort}, {"agent.plan.effort", c.Agent.Plan.Effort}, {"agent.fix.effort", c.Agent.Fix.Effort},
+	} {
+		if key, e := f.key, f.effort; e != "" && !slices.Contains(claudecode.Efforts, e) {
+			errs = append(errs, fmt.Errorf("%s must be one of %s, got %q", key, strings.Join(claudecode.Efforts, ", "), e))
+		}
+	}
 	if len(c.Projects) == 0 {
 		errs = append(errs, errors.New("projects needs at least one project"))
 	}

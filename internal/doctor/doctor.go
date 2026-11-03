@@ -13,6 +13,7 @@ import (
 	"github.com/uskanda/switchboard/internal/claudecode"
 	"github.com/uskanda/switchboard/internal/config"
 	"github.com/uskanda/switchboard/internal/forge"
+	ghforge "github.com/uskanda/switchboard/internal/forge/github"
 	"github.com/uskanda/switchboard/internal/secret"
 	"github.com/uskanda/switchboard/internal/state"
 	"github.com/uskanda/switchboard/internal/trust"
@@ -26,6 +27,8 @@ type Doctor struct {
 	// Forge connects to a forge (forge.GitHub or forge.GitLab) with a token.
 	Forge func(kind, token string) forge.Forge
 	Out   io.Writer
+	// GHVersion reads the version of the GitHub CLI; nil runs gh --version.
+	GHVersion func(ctx context.Context) (string, error)
 
 	failures int
 }
@@ -68,6 +71,7 @@ func (d *Doctor) Run(ctx context.Context) int {
 		}
 	}
 	d.claude(ctx)
+	d.gh(ctx)
 	return d.failures
 }
 
@@ -111,16 +115,17 @@ func (d *Doctor) forge(ctx context.Context, kind string) {
 	}
 	if ref := cfg.InboxTokenRef(kind); ref == "" {
 		d.warn("forges.%s.inbox_token_ref is not set: inbox, show, reply and merging from the web inbox need it", n)
-	} else if _, err := d.Secrets.Token(ref); err != nil {
+	} else if token, err := d.Secrets.Token(ref); err != nil {
 		d.fail("inbox token (%s %s): %v", inboxLabel, ref, err)
 	} else {
 		// The token's permissions are not read: a fine-grained PAT does not tell them. Merging is refused with 403
-		// until they are given (ADR-043).
-		needs := "Issues, Pull requests and Contents write"
+		// until they are given (ADR-043). Only the CI is tried, as the merge dialog reads it (ADR-050).
+		needs := "Issues, Pull requests and Contents write, and Actions and Commit statuses read"
 		if kind == forge.GitLab {
 			needs = "the api scope"
 		}
 		d.ok("inbox token (%s %s) found; merging from the web inbox needs %s", inboxLabel, ref, needs)
+		d.inboxCI(ctx, d.Forge(kind, token), kind)
 	}
 	if v, ok := f.(versioned); ok && kind == forge.GitLab {
 		if ver, err := v.Version(ctx); err != nil {
@@ -238,6 +243,30 @@ func (d *Doctor) ci(ctx context.Context, f forge.Forge, p config.Project) {
 	}
 }
 
+// inboxCI checks that the inbox token can read the CI of the first project on the forge, which the merge dialog of
+// the web inbox shows (ADR-050). Without it the dialog shows no CI; nothing else changes, so it is only a warning.
+func (d *Doctor) inboxCI(ctx context.Context, f forge.Forge, kind string) {
+	c, ok := f.(forge.CI)
+	if !ok {
+		return
+	}
+	for _, p := range d.Config.Projects {
+		if kindOf(p) != kind {
+			continue
+		}
+		_, err := c.CommitChecks(ctx, p.Owner, p.Repo, cmp.Or(p.BaseBranch, "main"))
+		switch {
+		case errors.Is(err, forge.ErrForbidden):
+			d.warn("%s: the inbox token cannot read the CI, so the merge dialog of the web inbox shows none: give the token Actions: Read and Commit statuses: Read (GitHub) (%v)", p.Ref, err)
+		case err != nil:
+			d.warn("%s: the CI could not be read with the inbox token: %v", p.Ref, err)
+		default:
+			d.ok("%s: the inbox token can read the CI", p.Ref)
+		}
+		return
+	}
+}
+
 func (d *Doctor) claude(ctx context.Context) {
 	bin := d.Config.Claude.Binary
 	v, err := claudecode.Version(ctx, bin)
@@ -250,4 +279,29 @@ func (d *Doctor) claude(ctx context.Context) {
 		return
 	}
 	d.ok("claude %s (checked against %s)", v, claudecode.CheckedVersion)
+}
+
+// gh checks the GitHub CLI the agent attaches the images of a done run with (ADR-051), when this host has a GitHub
+// project. Without it the runs and their write-backs work as before; only the images are not attached.
+func (d *Doctor) gh(ctx context.Context) {
+	github := false
+	for _, p := range d.Config.ProjectsFor(d.Config.Host.Name) {
+		github = github || kindOf(p) == forge.GitHub
+	}
+	if !github {
+		return
+	}
+	version := d.GHVersion
+	if version == nil {
+		version = func(ctx context.Context) (string, error) { return ghforge.GHVersion(ctx, "") }
+	}
+	v, err := version(ctx)
+	switch {
+	case err != nil:
+		d.warn("gh: %v: the screenshots of a done run cannot be attached to GitHub issues without gh %s or later", err, ghforge.GHMinVersion)
+	case !ghforge.GHAttaches(v):
+		d.warn("gh %s is older than %s: the screenshots of a done run cannot be attached to GitHub issues", v, ghforge.GHMinVersion)
+	default:
+		d.ok("gh %s (attaches the screenshots of a done run)", v)
+	}
 }

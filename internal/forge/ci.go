@@ -40,6 +40,9 @@ type ChangeRequestState struct {
 	// Conflict is true when the forge found that the change request conflicts with its base. It is false while the
 	// forge still computes it, and for a change request that is only behind its base.
 	Conflict bool
+	// Computing is true while the forge still computes whether the change request can be merged: GitHub's mergeable
+	// is null, or GitLab's detailed_merge_status is checking or unchecked. It does not change Conflict.
+	Computing bool
 }
 
 // The states of a change request.
@@ -49,8 +52,9 @@ const (
 	CRMerged = "merged"
 )
 
-// CI reads the CI of a commit. It is kept apart from Forge: only the agent watches CI, and the inbox service never
-// does. It needs Actions: Read and Commit statuses: Read on GitHub; ErrForbidden reports a token without them.
+// CI reads the CI of a commit. It is kept apart from Forge: the agent watches CI with its token, and the inbox service
+// reads it with the inbox token only for the merge dialog (ADR-050). It needs Actions: Read and Commit statuses: Read
+// on GitHub; ErrForbidden reports a token without them.
 type CI interface {
 	// CommitChecks lists the checks of the commit sha: the jobs of its runs or pipelines and its commit statuses.
 	CommitChecks(ctx context.Context, owner, repo, sha string) ([]Check, error)

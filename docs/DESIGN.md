@@ -133,7 +133,7 @@ GitHubには「XをYに置き換える」操作がない。書き込み系APIも
 
 1. detector：ポーリング（既定）または中継SSEで、更新の可能性があるissueを検出して次の段へ渡す。中継モードでも `reconcile_interval` ごとに全担当プロジェクトをポーリングして照合する。中継イベントはissue単位で3秒程度デバウンスする（ラベル変更とコメントは別イベントで届くため）
 2. evaluator：issueを **自分のトークンで** 取得し直し、6章の信頼判定と5.1の遷移表から「やること」を決める。担当外プロジェクト・非信頼入力は理由付きで監査ログに記録して捨てる
-3. scheduler：端末内の同時実行数（`agent.max_parallel`、既定1）とissue単位のファイルロックを管理する。プロジェクトごとの同時実行数（`projects[].max_parallel`）も、設定にあれば守る。空いたスロットは、順番待ちに入った順に渡す。`agent.prefer_plan` がオンなら、計画の実行を先に渡す（ADR-046）。利用上限か、API利用のクオータ（`quota`）に達したら、その端末の新規実行を解除時刻まで止め、その間のissueは順番待ちとする（ADR-048）〔検証V12〕
+3. scheduler：端末内の同時実行数（`agent.max_parallel`、既定1）とissue単位のファイルロックを管理する。プロジェクトごとの同時実行数（`projects[].max_parallel`）も、設定にあれば守る。空いたスロットは、順番待ちに入った順に渡す。`agent.prefer_plan` がオンなら、計画の実行を先に渡す（ADR-046）。利用上限か、API利用のクオータ（`quota`）に達したら、その端末の新規実行を解除時刻まで止め、その間のissueは順番待ちとする（ADR-053）〔検証V12〕
 4. runner：worktreeを用意し `claude -p` を起動・監視する（4.4）
 5. finalizer：終了プロトコルを解釈し（5章）、出力検査 → push・PR → コメント → ラベルの順で書き戻す。書き戻しは冪等（同じrunの結果を二重投稿しない：コメント本文のマーカーに `run=` を入れ、投稿前に同じrunのマーカーがないか確認する）
 
@@ -156,12 +156,15 @@ claude -p \
   --append-system-prompt-file <run-dir>/system.md \
   --max-turns <agent.max_turns> \
   --json-schema <outcome schema> \
+  --tools <実行の種類のツール> \
+  [--model <モデル>] [--effort <effort>] \
   < <run-dir>/prompt.md
 ```
 
 - 新規起動時は `--session-id` でセッションIDをエージェント側で先に決める〔確認済C17、`-p` との組み合わせはV7〕。フック入力から取り出す必要がなくなり、V1への依存が下がる
 - 再開時は `--fork-session` で毎回新しいIDに分岐させ、新しいIDはstream-jsonの結果から取る。分岐なしで同じセッションを2か所から再開すると発言が1つのtranscriptに混ざる〔確認済C17〕ので、マスターが同じセッションを対話で開いていても衝突しないようにする（V4のリスクを設計で消す）
 - `--permission-mode dontAsk` と明示allowで動かす。`-p` で事前許可のないツールは確認待ちにならず拒否され、最終resultの `permission_denials` に残る〔確認済C15、dontAskの厳密な挙動はV18〕
+- `--tools` で渡すツールを実行の種類ごとに固定する（ADR-052）。ファイルを書く実行は `Bash,Read,Edit,Write,Glob,Grep,WebSearch` に、`allow_tools_extra` の項目のツール名を足す。計画の実行は `Bash,Read,Glob,Grep,WebSearch` とする。`--model` と `--effort` は、`agent.model`、`agent.effort`、`agent.plan`、`agent.fix` の値があるときだけ付ける
 - `--strict-mcp-config` と空に近い `mcp.json` で、対象リポジトリの `.mcp.json` 由来のMCPサーバーを読み込ませない
 - `-p` は `--bare` を付けない限り、対象リポジトリの `.claude/settings.json` のフックと `.mcp.json` を信頼確認なしで読み込む〔確認済C19〕。`--bare` はサブスクリプションのOAuth認証を読まないため使えない〔確認済C19, C21〕。対策は次の3つ。(1) `--strict-mcp-config` でMCPを固定する。(2) `--setting-sources` は付けず、プロジェクト設定も読み込む（ADR-028。V17のとおり、外すと `CLAUDE.md` も読み込まれない）。(3) 実行前にworktreeの `.claude/`・`.mcp.json`・`CLAUDE.md` がベースブランチと一致するか確認し、一致しなければ実行しない（ADR-018）
 - `settings.json` はrunごとにエージェントが生成する（許可ツール・拒否ルール・フック・サンドボックス設定）。フックはこの設定経由でのみ登録するので、マスターが手で開く対話セッションには影響しない
@@ -275,7 +278,7 @@ ADR-007（公開方法）は、当面は公開しないと決めた。公開す�
 | running | 実行終了 | outcome = waiting | 質問をコメント（マーカー付き） | waiting |
 | running | 実行終了 | outcome = done / 出力検査 OK | push → PR 作成 → 結果コメント | done |
 | running | 実行終了 | outcome なし・異常終了・タイムアウト・max-turns・出力検査 NG | 理由をコメント | waiting（reason=error / verify） |
-| running | 実行終了 | 利用上限（直す実行を除く） | 端末の scheduler を解除時刻まで停止、解除予定を順番待ちのコメント（`reason=limit run=<実行> until=<時刻>`）で知らせる（ADR-048） | ready（順番待ち。解除後に同じ周期で再開） |
+| running | 実行終了 | 利用上限（直す実行を除く） | 端末の scheduler を解除時刻まで停止、解除予定を順番待ちのコメント（`reason=limit run=<実行> until=<時刻>`）で知らせる（ADR-053） | ready（順番待ち。解除後に同じ周期で再開） |
 | running | 実行終了 | 直す実行が利用上限 | 端末の scheduler を停止、理由と解除予定をコメント（`until` 付き、直す回数に数えない） | waiting（reason=error） |
 | running | 実行中 | close された / `agent:running` が外された | プロセス停止、キャンセルを記録（ラベルは触らない） | （人間の操作のまま） |
 | waiting | 新着コメント | `ack` より後に信頼済みコメントがある / 担当端末が自分 / worktree の Claude 設定ファイルがベースと一致（ADR-018） / ロック取得 | ラベル付け替え → resume または新規起動 | running |
@@ -304,7 +307,7 @@ Claudeには最終出力として次のどちらかを返させる。
 1. 次のどれかに当たれば `waiting(reason=error)` とする〔確認済C24〕。
    - タイムアウト、exit code ≠ 0、`is_error`
    - `subtype` が `error_max_turns`・`error_during_execution`・`error_max_structured_output_retries` 等
-2. アダプタが利用上限と判定した → 順番待ちに戻す（ADR-048。直す実行なら `waiting(reason=error)`）〔検証V12〕。1より先に判定する
+2. アダプタが利用上限と判定した → 順番待ちに戻す（ADR-053。直す実行なら `waiting(reason=error)`）〔検証V12〕。1より先に判定する
 3. `structured_output` がない・スキーマ不一致 → `waiting(reason=error)`
 4. `status=waiting` のとき、resultの `permission_denials` が空でなければ `reason=permission` とする〔確認済C15、形はV11〕。空なら `reason=question` とする
 5. `status=done` → 6.3の出力検査へ。NGなら `waiting(reason=verify)`
@@ -383,8 +386,8 @@ CI設定の変更を止める理由：pushしただけでCIが走るため、CI�
 |---|---|---|
 | `host` `session` `state` `at` | 既存 | SPEC.md 5 章のとおり |
 | `run` | 追加 | 実行ID（ULID）。finalizer の二重投稿防止と監査ログとの突合 |
-| `reason` | 追加 | waiting の理由：`question` / `permission` / `error` / `verify` ほか。queued の理由：`max-parallel` / `project-max-parallel` / `limit` / `quota`（ADR-048） |
-| `until` | 追加 | 端末が新しい実行を再び始める時刻。上限とクオータの順番待ちと、上限で止まった直す実行の待ちに付く（ADR-048） |
+| `reason` | 追加 | waiting の理由：`question` / `permission` / `error` / `verify` ほか。queued の理由：`max-parallel` / `project-max-parallel` / `limit` / `quota`（ADR-053） |
+| `until` | 追加 | 端末が新しい実行を再び始める時刻。上限とクオータの順番待ちと、上限で止まった直す実行の待ちに付く（ADR-053） |
 | `ack` | 追加 | この実行が取り込んだ最後のコメントID（5.3） |
 
 未知のキーは無視し、`v` が大きい場合は表示のみ行う（前方互換）。
@@ -442,6 +445,10 @@ agent:
   max_parallel: 1
   prefer_plan: false                   # 順番待ちから計画の実行を先に取り出す（ADR-046）
   max_turns: 80
+  model: ""                            # 実行のモデル。空ならCLIとユーザーの設定に任せる（ADR-052）
+  effort: ""                           # low | medium | high | xhigh | max。空ならCLIに任せる
+  plan: { model: "", effort: "" }      # 計画の実行の上書き
+  fix: { model: "", effort: "" }       # 直す実行の上書き
   run_user: ""                         # Phase 3：専用 OS ユーザー名
   retention: 720h
 ```
@@ -458,7 +465,7 @@ agent:
 | `claude -p` のハング | `agent.timeout` で、4.3 と同じ SIGINT → SIGTERM → SIGKILL の順にプロセスグループを停止 |
 | フォージ API の失敗 | ポーリングのたびに再試行する（`fix-agent-stuck-issues`）。書き戻しは run-dir の `outcome.json` から再開でき、同じ run のコメントは二度投稿しない。評価に失敗した issue は、`since` を止めて次のポーリングで評価し直す。やり直すものがある間は、中継につながっていてもポーリング間隔で回す |
 | 中継の停止・切断 | 自動でポーリング間隔に戻す（SPEC.md 7 章）。再接続時は `Last-Event-ID` で回収 |
-| 利用上限・クオータ | 端末の scheduler を解除時刻まで一時停止（`pause.json`、再起動しても引き継ぐ）。issueは `reason=limit` / `quota` の順番待ちとして、解除時刻と一緒に受信箱に出る（ADR-048） |
+| 利用上限・クオータ | 端末の scheduler を解除時刻まで一時停止（`pause.json`、再起動しても引き継ぐ）。issueは `reason=limit` / `quota` の順番待ちとして、解除時刻と一緒に受信箱に出る（ADR-053） |
 | ラベルの不整合（agent:* が複数） | reconciler が正規化し、監査ログに残す |
 | 同じ issue を 2 端末が担当（設定ミス） | 担当は設定で固定されるが、念のため running マーカーの `host` が自分でない場合は実行しない |
 

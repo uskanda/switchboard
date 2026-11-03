@@ -25,7 +25,7 @@ type fixInfo struct {
 
 // fixes counts the fix runs of the issue since the last reset: a trusted comment, or a claim made from a start label.
 // The fix runs are known by the reason of their claims, so every host counts the same. A fix run that stopped on a
-// usage limit, whose wait carries until, is not counted (ADR-048).
+// usage limit, whose wait carries until, is not counted (ADR-053).
 func (pl *plan) fixes() int {
 	n := 0
 	limited := map[string]bool{} // the runs whose wait says they hit a usage limit

@@ -67,7 +67,7 @@ func planDeclaration(res *claudecode.Result) (*PlanDeclaration, string) {
 // planSettings are what a plan run may do: read, search and look at the history. Nothing that writes. The rules are
 // not the boundary; the check after the run is (workspace.Space.Restore).
 func planSettings() claudecode.Settings {
-	allow := []string{"Read", "Glob", "Grep"}
+	allow := []string{"Read", "Glob", "Grep", "WebSearch"}
 	for _, c := range []string{"git status", "git diff", "git log"} {
 		allow = append(allow, "Bash("+c+")", "Bash("+c+" *)")
 	}

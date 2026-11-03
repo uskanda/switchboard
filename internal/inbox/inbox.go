@@ -18,6 +18,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/uskanda/switchboard/inboxapi"
 	"github.com/uskanda/switchboard/internal/agent"
 	"github.com/uskanda/switchboard/internal/config"
 	editorpkg "github.com/uskanda/switchboard/internal/editor"
@@ -87,6 +88,9 @@ type Item struct {
 	// on GitHub): a page watching one issue reads it again when either moves.
 	UpdatedAt *time.Time `json:"updated_at"`
 	Notes     int        `json:"notes"`
+	// AutoMerge is set by the inbox service on a done issue whose merge it waits to make (ADR-048); the listing of the
+	// inbox itself never sets it.
+	AutoMerge *inboxapi.AutoMerge `json:"auto_merge,omitempty"`
 }
 
 // The states of an Item.
@@ -849,13 +853,24 @@ func (b *Inbox) Merge(ctx context.Context, m forge.Merges, ref forge.IssueRef, s
 	if m == nil {
 		return fmt.Errorf("no client merges on %s", forgeName(ref.Kind()))
 	}
-	agentID, err := b.agentID(ctx, ref)
+	dm, err := b.doneChange(ctx, ref, sha, "nothing was merged")
 	if err != nil {
 		return err
 	}
+	return m.MergeChangeRequest(ctx, ref.Owner, ref.Repo, dm.CR, dm.SHA)
+}
+
+// doneChange is the marker of the agent's latest done post on an open done issue, when it names a change request and
+// the commit sha. Otherwise it is an ErrStale error, which ends with what was left undone (such as "nothing was
+// merged").
+func (b *Inbox) doneChange(ctx context.Context, ref forge.IssueRef, sha, undone string) (*marker.Marker, error) {
+	agentID, err := b.agentID(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
 	is, comments, err := b.forgeOf(ref.Kind()).Thread(ctx, ref)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	n := b.Config.Labels
 	if st := labels.StateOf(is.Labels, n); is.State != "open" || st != n.Done {
@@ -866,16 +881,16 @@ func (b *Inbox) Merge(ctx context.Context, m forge.Merges, ref forge.IssueRef, s
 		if now == "" {
 			now = "no state label"
 		}
-		return wrap(ErrStale, fmt.Errorf("%s is not done (%s); nothing was merged", refString(ref), now))
+		return nil, wrap(ErrStale, fmt.Errorf("%s is not done (%s); %s", refString(ref), now, undone))
 	}
 	_, dm := latestOf(comments, agentID, marker.Done)
 	switch {
 	case dm == nil || dm.CR == 0 || dm.SHA == "":
-		return wrap(ErrStale, fmt.Errorf("the done post of %s names no change request and commit; merge it on the forge", refString(ref)))
+		return nil, wrap(ErrStale, fmt.Errorf("the done post of %s names no change request and commit; merge it on the forge", refString(ref)))
 	case dm.SHA != sha:
-		return wrap(ErrStale, fmt.Errorf("the agent pushed %s to %s after the page was read; open it again", short(dm.SHA), refString(ref)))
+		return nil, wrap(ErrStale, fmt.Errorf("the agent pushed %s to %s after the page was read; open it again", short(dm.SHA), refString(ref)))
 	}
-	return m.MergeChangeRequest(ctx, ref.Owner, ref.Repo, dm.CR, dm.SHA)
+	return dm, nil
 }
 
 // short is the first 7 characters of a commit.
