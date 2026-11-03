@@ -176,6 +176,9 @@ type Project struct {
 	// with a GitLab project access token. The inbox never uses them.
 	TokenRef      string `yaml:"token_ref"`
 	AgentIdentity string `yaml:"agent_identity"`
+	// Icon is the project's icon in the web inbox, in place of the forge's avatar: an https:// URL of an image, the
+	// path of an image file (~/ is expanded), or one emoji. IconKind tells which.
+	Icon string `yaml:"icon"`
 
 	Forge string `yaml:"-"`
 	Owner string `yaml:"-"`
@@ -398,6 +401,9 @@ func (c *Config) applyDefaults(approveWritten bool) {
 	for i := range c.Projects {
 		set(&c.Projects[i].BaseBranch, "main")
 		c.Projects[i].Path = expandHome(c.Projects[i].Path)
+		if strings.HasPrefix(c.Projects[i].Icon, "~/") {
+			c.Projects[i].Icon = expandHome(c.Projects[i].Icon)
+		}
 	}
 }
 
@@ -463,6 +469,9 @@ func (c *Config) validate() error {
 		errs = append(errs, checkAllowTools(key+".allow_tools_extra", p.AllowToolsExtra)...)
 		if p.MaxParallel != nil && *p.MaxParallel < 1 {
 			errs = append(errs, fmt.Errorf("%s.max_parallel must be at least 1, got %d", key, *p.MaxParallel))
+		}
+		if _, err := iconKind(p.Icon); err != nil {
+			errs = append(errs, fmt.Errorf("%s.icon %w, got %q", key, err, p.Icon))
 		}
 		if (p.TokenRef == "") != (p.AgentIdentity == "") {
 			errs = append(errs, fmt.Errorf("%s: token_ref and agent_identity override the agent together; set both or neither", key))
