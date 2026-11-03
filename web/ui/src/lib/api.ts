@@ -182,19 +182,22 @@ export const addProject = (ref: string, planFirst: boolean) =>
     body: JSON.stringify({ ref, plan_first: planFirst }),
   });
 
-/** The kinds of start label a new issue can carry: the configuration's labels.ready, labels.plan and labels.go. */
-export type StartKind = "ready" | "plan" | "go";
+/**
+ * The kinds of start label a new issue can carry: the configuration's labels.ready, labels.plan and labels.go, and
+ * none, no label, whose label is empty.
+ */
+export type StartKind = "ready" | "plan" | "go" | "none";
 
 /**
  * IssueTargets are every configured project, each with host, the machine that runs it, and the start labels the
- * configuration names.
+ * configuration names, then none.
  */
 export type IssueTargets = {
   items: { ref: string; host: string }[];
   starts: { kind: StartKind; label: string }[];
 };
 
-/** NewIssue is what a new issue is opened with; the inbox service turns start into the label. */
+/** NewIssue is what a new issue is opened with; the inbox service turns start into the label, or none. */
 export type NewIssue = { ref: string; title: string; body: string; start: StartKind };
 
 /** CreatedIssue is the issue opened: its reference and its page on the forge. */

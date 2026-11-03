@@ -96,7 +96,7 @@ func TestIssueTargetsListsEveryProjectWithItsMachine(t *testing.T) {
 	if !slices.Equal(got.Items, wantItems) {
 		t.Errorf("items = %+v, want %+v", got.Items, wantItems)
 	}
-	wantStarts := []inboxapi.IssueStart{{Kind: "ready", Label: "agent:ready"}, {Kind: "plan", Label: "agent:plan"}, {Kind: "go", Label: "agent:go"}}
+	wantStarts := []inboxapi.IssueStart{{Kind: "ready", Label: "agent:ready"}, {Kind: "plan", Label: "agent:plan"}, {Kind: "go", Label: "agent:go"}, {Kind: "none", Label: ""}}
 	if !slices.Equal(got.Starts, wantStarts) {
 		t.Errorf("starts = %+v, want %+v", got.Starts, wantStarts)
 	}
@@ -107,8 +107,9 @@ func TestIssueTargetsLeavesOutAStartWithoutALabel(t *testing.T) {
 	w.cfg.Labels.Plan = ""
 	var got inboxapi.IssueTargets
 	_ = json.Unmarshal(w.do(http.MethodGet, "/v1/issue-targets", nil).Body.Bytes(), &got)
-	if len(got.Starts) != 2 || got.Starts[0].Kind != "ready" || got.Starts[1].Kind != "go" {
-		t.Fatalf("starts = %+v, want ready and go", got.Starts)
+	want := []inboxapi.IssueStart{{Kind: "ready", Label: "agent:ready"}, {Kind: "go", Label: "agent:go"}, {Kind: "none", Label: ""}}
+	if !slices.Equal(got.Starts, want) {
+		t.Fatalf("starts = %+v, want ready, go and none", got.Starts)
 	}
 	rec := w.create(inboxapi.CreateIssueRequest{Ref: "gh:o/r", Title: "t", Start: "plan"})
 	if rec.Code != http.StatusBadRequest || code(t, rec) != inboxapi.CodeInvalid {
@@ -131,6 +132,31 @@ func TestCreateIssueOpensItWithTheStartLabelAsTheInboxToken(t *testing.T) {
 	is, _, _ := w.gl.Thread(ctx, ref)
 	if is.Title != "Add a flag" || is.Body != "Use --x." || is.Author != w.me || !slices.Equal(is.Labels, []string{"agent:plan"}) {
 		t.Errorf("issue = %+v", is)
+	}
+}
+
+func TestCreateIssueWithoutAStartLabel(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		ref  string
+		f    func(w *issuesWorld) *fake.Forge
+		want forge.IssueRef
+	}{
+		{"GitHub", "gh:o/r", func(w *issuesWorld) *fake.Forge { return w.gh }, forge.IssueRef{Forge: forge.GitHub, Owner: "o", Repo: "r", Number: 1}},
+		{"GitLab", "gl:nas/sb", func(w *issuesWorld) *fake.Forge { return w.gl }, forge.IssueRef{Forge: forge.GitLab, Owner: "nas", Repo: "sb", Number: 1}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := withIssues(t)
+			w.cfg.Labels.Plan = ""
+			rec := w.create(inboxapi.CreateIssueRequest{Ref: tc.ref, Title: "Later", Body: "Some day.", Start: "none"})
+			if rec.Code != http.StatusCreated {
+				t.Fatalf("POST = %d %s", rec.Code, rec.Body)
+			}
+			is, _, _ := tc.f(w).Thread(ctx, tc.want)
+			if is.Title != "Later" || is.Author != w.me || len(is.Labels) != 0 {
+				t.Errorf("issue = %+v, want one without labels", is)
+			}
+		})
 	}
 }
 

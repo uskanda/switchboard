@@ -15,6 +15,7 @@ const startText: Record<StartKind, string> = {
   ready: "プロジェクトの設定どおりに始める",
   plan: "計画から始める",
   go: "計画なしで実装する",
+  none: "ラベルなし（実装開始しない）",
 };
 
 /** The most characters a title may have; the inbox service refuses a longer one. */
@@ -40,8 +41,9 @@ function failure(err: unknown): string {
 
 /**
  * NewIssue is the button above the list that opens a dialog for a new issue in any configured project, with a start
- * label. The issue is opened with the inbox token, so the agent takes it up (ADR-040). Once it is opened the dialog
- * closes and a success toast links to it on the forge.
+ * label or none. The issue is opened with the inbox token, so the agent takes it up when it has a start label
+ * (ADR-040); one without waits until the person puts one on it (ADR-047). Once it is opened the dialog closes and a
+ * success toast links to it on the forge.
  */
 export function NewIssue() {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -156,7 +158,12 @@ export function NewIssue() {
                   className="size-5 accent-primary"
                 />
                 <span>
-                  {startText[st.kind]}（<span className="font-mono text-mono-sm">{st.label}</span>）
+                  {startText[st.kind]}
+                  {st.label !== "" && (
+                    <>
+                      （<span className="font-mono text-mono-sm">{st.label}</span>）
+                    </>
+                  )}
                 </span>
               </label>
             ))}
