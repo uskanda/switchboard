@@ -33,7 +33,7 @@ WUIは、参照を`IssueRef`で`o/r#12`とフォージのバッジの形に出�
 - WUIは`ProjectIcon`の部品を`IssueRef`の中で参照の前に置く。部品は`aria-hidden`にし、画像は`alt=""`にする。参照の読み上げとテストが探す名前は変わらない
   - 頭文字の丸を下に敷き、画像が読めたら丸を隠す。読めなかったら画像を外す。読み込み中も丸が見える
   - 絵文字の一覧は`lib/projectIcons.ts`で最初の1回だけ読み、`useSyncExternalStore`で部品に配る。読めなかったら空の一覧にする
-- DESIGN.mdに`project-initial`（地`muted`、文字`on-primary`、`rounded.full`）を足す。暗いテーマでは`muted`と`on-primary`が入れ替わるので、組の明るさの差は保たれる
+- DESIGN.mdに`project-initial`（地`muted`、文字`on-primary`、角の丸みは`full`）を足す。暗いテーマでは`muted`と`on-primary`が入れ替わるので、組の明るさの差は保たれる
 
 ## Risks / Trade-offs
 
