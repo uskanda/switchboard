@@ -44,7 +44,7 @@ function failure(err: unknown): string {
  * NewIssue is the button above the list that opens a dialog for a new issue in any configured project, with a start
  * label or none. The ready start says whether the chosen project starts with a plan. The issue is opened with the inbox
  * token, so the agent takes it up when it has a start label (ADR-040); one without waits until the person puts one on
- * it (ADR-048). Once it is opened the dialog closes and a success toast links to it on the forge. Until the agent
+ * it (ADR-049). Once it is opened the dialog closes and a success toast links to it on the forge. Until the agent
  * takes up an issue with a start label, the list shows a running row of it, marked as being processed
  * (lib/pending.ts); one without gets no such row, since the agent does not take it up.
  */

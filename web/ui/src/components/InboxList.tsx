@@ -2,7 +2,7 @@ import { useRef } from "react";
 import { Link } from "react-router";
 import { IssueRef } from "@/components/IssueRef";
 import { Loading } from "@/components/Loading";
-import { MergeButton, changeName } from "@/components/MergeButton";
+import { AutoMergeBadge, MergeButton, changeName } from "@/components/MergeButton";
 import { NewIssue } from "@/components/NewIssue";
 import { ReasonBadge } from "@/components/ReasonBadge";
 import { Card } from "@/components/ui/card";
@@ -29,7 +29,7 @@ function ChangeLink({ it }: { it: ViewItem }) {
           {it.change_number ? changeName(it.ref, it.change_number) : it.change_url}
         </a>
       )}
-      {mergeable && <MergeButton issueRef={it.ref} number={it.change_number!} sha={it.change_sha!} url={it.change_url} />}
+      {mergeable && <MergeButton issueRef={it.ref} number={it.change_number!} sha={it.change_sha!} url={it.change_url} autoMerge={!!it.auto_merge} />}
     </div>
   );
 }
@@ -58,7 +58,14 @@ function cells(it: ViewItem) {
   }
   if (isDone(it)) {
     return {
-      tag: <span className="text-label-md font-medium">完了</span>,
+      tag: it.auto_merge ? (
+        <span className="inline-flex flex-wrap items-center gap-xs">
+          <span className="text-label-md font-medium">完了</span>
+          <AutoMergeBadge />
+        </span>
+      ) : (
+        <span className="text-label-md font-medium">完了</span>
+      ),
       line: "closeすると一覧から消えます。コメントすると作業を再開します",
       time: age(it.done_since ?? null),
       timeWords: timeText("done", it.done_since),

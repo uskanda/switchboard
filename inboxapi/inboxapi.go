@@ -40,6 +40,32 @@ type Item struct {
 	// on GitHub): a page watching one issue reads it again when either moves.
 	UpdatedAt *time.Time `json:"updated_at"`
 	Notes     int        `json:"notes"`
+	// AutoMerge is set on a done issue while the inbox service waits to merge its change request: the person pressed
+	// merge, the forge refused it for a conflict, and the merge is made once the agent has fixed it (ADR-048).
+	AutoMerge *AutoMerge `json:"auto_merge,omitempty"`
+}
+
+// AutoMerge is a merge the inbox service waits to make: the commit the person pressed merge on, and when.
+type AutoMerge struct {
+	SHA   string    `json:"sha"`
+	Since time.Time `json:"since"`
+}
+
+// The outcomes of an AutoMergeResult.
+const (
+	AutoMergeMerged    = "merged"
+	AutoMergeCancelled = "cancelled"
+)
+
+// AutoMergeResult is a merge the inbox service waited to make and finished: merged, or cancelled for Reason (closed,
+// waiting, instruction, not_fix, changed, change_closed, pushed, forbidden, or user for a cancel). Number is the
+// change request, At when it finished.
+type AutoMergeResult struct {
+	Ref     string    `json:"ref"`
+	Number  int       `json:"number"`
+	Outcome string    `json:"outcome"`
+	Reason  string    `json:"reason,omitempty"`
+	At      time.Time `json:"at"`
 }
 
 // ForgeError is a forge that could not be read while listing.
@@ -57,6 +83,9 @@ type Inbox struct {
 	FetchedAt              time.Time    `json:"fetched_at"`
 	Relay                  string       `json:"relay"`
 	RefreshIntervalSeconds int          `json:"refresh_interval_seconds"`
+	// AutoMergeResults are the merges the inbox service finished within the last 24 hours, oldest first, for a page
+	// to tell the person how they ended.
+	AutoMergeResults []AutoMergeResult `json:"auto_merge_results,omitempty"`
 }
 
 // The states of Inbox.Relay. While disconnected (or connecting), changes show at the refresh interval.
@@ -92,6 +121,8 @@ type Detail struct {
 	ChangeURL    string `json:"change_url,omitempty"`
 	ChangeNumber int    `json:"change_number,omitempty"`
 	ChangeSHA    string `json:"change_sha,omitempty"`
+	// AutoMerge is set as on its Item.
+	AutoMerge *AutoMerge `json:"auto_merge,omitempty"`
 	// Author, CreatedAt and Body are the issue's own; Comments are all its comments, oldest first.
 	Author    string     `json:"author"`
 	CreatedAt *time.Time `json:"created_at"`
@@ -175,7 +206,7 @@ type AddProjectResponse struct {
 }
 
 // The kinds of start label an issue can be opened with: the configuration's labels.ready, labels.plan and labels.go,
-// and StartNone, no label at all, which the agent does not take up until a start label is put on (ADR-048).
+// and StartNone, no label at all, which the agent does not take up until a start label is put on (ADR-049).
 const (
 	StartReady = "ready"
 	StartPlan  = "plan"
@@ -231,6 +262,26 @@ type CreateIssueResponse struct {
 type MergeRequest struct {
 	Ref string `json:"ref"`
 	SHA string `json:"sha"`
+}
+
+// MergeAnswer is the body of a POST /v1/merge answered with 202: Code is CodeAutoMergePending, and the inbox service
+// merges the change request once the agent has fixed its conflict (ADR-048).
+type MergeAnswer struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// CodeAutoMergePending is the code of a merge the forge refused for a conflict, which the inbox service makes later.
+const CodeAutoMergePending = "auto_merge_pending" // 202
+
+// MergeResult is what a merge came to: AutoMerge is set when the inbox service waits to make it.
+type MergeResult struct {
+	AutoMerge bool
+}
+
+// CancelAutoMergeRequest is the body of POST /v1/automerge/cancel: the issue whose waiting merge to cancel.
+type CancelAutoMergeRequest struct {
+	Ref string `json:"ref"`
 }
 
 // RegisterDeviceRequest is the body of POST /v1/devices: the FCM token of an app that wants the push notifications.

@@ -9,7 +9,7 @@
 - 受信箱のAPIの開始ラベルの種別に `none`（ラベルなし）を足す。`none` はラベル名を持たず、設定に関係なく、作れる先の一覧の最後に常に出る。
 - 種別 `none` でissueを作ると、ラベルを1つも付けずに作る。空の種別や未知の種別は今までどおり `invalid` で拒む。
 - WUIの新規issueのダイアログで、開始ラベルの最後に「ラベルなし（実装開始しない）」を出す。この選択肢にはラベル名を出さない。初期値は `ready` のまま。
-- ADR-048を足し、ADR-040の「開始ラベルを1つ付ける」を「1つ付けるか、付けない」に改める。エージェントはラベルなしのissueには着手せず、あとで本人が開始ラベルを付けたときに着手する。
+- ADR-049を足し、ADR-040の「開始ラベルを1つ付ける」を「1つ付けるか、付けない」に改める。エージェントはラベルなしのissueには着手せず、あとで本人が開始ラベルを付けたときに着手する。
 
 ## Capabilities
 
@@ -26,5 +26,5 @@
 
 - `inboxapi/inboxapi.go`（種別の定数）、`internal/inboxserve/issues.go`（一覧と作成）
 - `web/ui/src/lib/api.ts`、`web/ui/src/components/NewIssue.tsx`
-- `docs/DECISIONS.md`（ADR-048）、`docs/SPEC.md`、`README.md`、`DESIGN.md`
+- `docs/DECISIONS.md`（ADR-049）、`docs/SPEC.md`、`README.md`、`DESIGN.md`
 - フォージの層は変えない。GitHubとGitLabは、ラベルの空の一覧でissueを作れる

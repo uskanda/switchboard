@@ -32,6 +32,7 @@ type outcome struct {
 	Q       int    `json:"q,omitempty"`   // for plan-questions: the number of the last question
 	SHA     string `json:"sha,omitempty"` // for done: the commit pushed, whose CI is watched
 	CR      int    `json:"cr,omitempty"`  // for done: the number of the change request
+	Fix     string `json:"fix,omitempty"` // for done of a fix run: what it fixed (marker.CI, marker.Push or marker.Conflict)
 
 	msg texts
 	// next, set instead of a state, hands the issue to a fix run of a refused push; such an outcome is not written.
@@ -134,6 +135,9 @@ func (a *Agent) writeOut(ctx context.Context, ref forge.IssueRef, o *outcome, se
 		}
 		posting := body
 		m := marker.Marker{Host: a.Config.Host.Name, Session: o.Session, Run: o.Run, State: o.State, Reason: o.Reason, Ack: o.Ack, At: time.Now(), Q: o.Q, SHA: o.SHA, CR: o.CR}
+		if o.State == marker.Done {
+			m.Fix = o.Fix
+		}
 		body += "\n\n" + m.Format() + "\n"
 		a.checkComment(ref, o.Run, "comment.md", body)
 		c, err := a.forgeOf(ref).PostComment(ctx, ref, body)

@@ -29,7 +29,51 @@ export type Item = {
   /** The forge's update time and count of people's comments (GitLab's; 0 on GitHub): a move in either means the issue changed. */
   updated_at?: string | null;
   notes?: number;
+  /** Set while the inbox service waits to merge the change request once the agent has fixed its conflict. */
+  auto_merge?: AutoMerge;
 };
+
+/** AutoMerge is a merge the inbox service waits to make: the commit the merge was pressed on, and when. */
+export type AutoMerge = { sha: string; since: string };
+
+/** AutoMergeResult is a merge the inbox service waited to make and finished within the last day. */
+export type AutoMergeResult = {
+  ref: string;
+  number: number;
+  outcome: "merged" | "cancelled";
+  reason?: string;
+  at: string;
+};
+
+/** changeName is how the forge names the change request: "PR #9" on GitHub, "MR !9" on GitLab. */
+export function changeName(ref: string, number: number) {
+  return ref.startsWith("gl:") ? `MR !${number}` : `PR #${number}`;
+}
+
+/** autoMergeReason says why the inbox service stopped waiting to merge. */
+export function autoMergeReason(reason: string | undefined): string {
+  switch (reason) {
+    case "closed":
+      return "issueがcloseされました。";
+    case "waiting":
+      return "issueが返答待ちになりました。衝突の直しが上限を超えたときもこうなります。";
+    case "instruction":
+      return "人の指示で実行が始まりました。変更を見てからマージしてください。";
+    case "not_fix":
+      return "直す実行でない投稿で、コミットが変わりました。変更を見てからマージしてください。";
+    case "changed":
+      return "完了の投稿が、別のPR/MRを指しています。";
+    case "change_closed":
+      return "PR/MRが閉じられたか、マージ済みです。";
+    case "pushed":
+      return "エージェントのものでないコミットが、PR/MRに足されました。";
+    case "forbidden":
+      return "受信箱のトークンに、マージする権限がありません。";
+    case "user":
+      return "取り消しました。";
+  }
+  return reason ?? "";
+}
 
 export const isRunning = (it: Item) => it.state === "running";
 export const isQueued = (it: Item) => it.state === "queued";
@@ -66,6 +110,8 @@ export type Inbox = {
   fetched_at: string;
   relay?: "connected" | "disconnected" | "";
   refresh_interval_seconds?: number;
+  /** The merges the inbox service waited to make and finished within the last day, oldest first. */
+  auto_merge_results?: AutoMergeResult[];
 };
 
 export type Detail = {
@@ -86,6 +132,7 @@ export type Detail = {
   change_url?: string;
   change_number?: number;
   change_sha?: string;
+  auto_merge?: AutoMerge;
   /** The issue's own author, time and body, and all its comments, oldest first. A back end older than the thread leaves them out. */
   author?: string;
   created_at?: string | null;
@@ -218,13 +265,24 @@ export const createIssue = (issue: NewIssue) =>
 
 /**
  * merge marks the pull or merge request of a done issue ready and merges it with the inbox token, only at sha, the
- * commit the page showed. It is refused with stale, not_mergeable or forbidden.
+ * commit the page showed. It is refused with stale, not_mergeable or forbidden. autoMerge is set when the forge
+ * refused it for a conflict, and the inbox service merges it once the agent has fixed the conflict.
  */
-export const merge = (ref: string, sha: string) =>
-  call<void>("/api/merge", {
+export async function merge(ref: string, sha: string): Promise<{ autoMerge: boolean }> {
+  const out = await call<{ code?: string } | undefined>("/api/merge", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ref, sha }),
+  });
+  return { autoMerge: out?.code === "auto_merge_pending" };
+}
+
+/** cancelAutoMerge cancels the merge the inbox service waits to make on the issue; not_found when there is none. */
+export const cancelAutoMerge = (ref: string) =>
+  call<void>("/api/automerge/cancel", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ref }),
   });
 
 /** issuePath is the page of one issue; the ref is one path segment. */
