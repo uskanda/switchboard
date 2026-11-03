@@ -250,3 +250,10 @@
 - 決定：doneの投稿とラベルのあとに、画像だけのコメントを1件付ける。マーカーの状態は `attachment` で、待ちやdoneの判定には数えない。GitHubでは `gh issue comment --attach` を使い、`gh` にはエージェントのトークン（`GH_TOKEN`）と空の `GH_CONFIG_DIR` だけを渡す。GitLabではuploads APIを使う。添付に失敗したら理由だけのコメントを付け、doneは保つ。Claude側の `gh` の拒否は変えない
 - 決定：撮影に要るコマンドの許可は、ADR-045の `allow_tools_extra` に書いてもらう。撮影専用の許可の項目は作らない
 - 理由：GitHubには、コメントへ画像を付ける公開のAPIが無い。`gh` のv2.99.0の `--attach` は、Web画面で付けたときと同じ形で付けられるが、非公開のアップロードの仕組みに頼る。そこで、`gh` を呼ぶのは `internal/forge/github` の1つのファイルだけにする。画像をコミットしないので、リポジトリは大きくならない。エージェントのトークンで通るかは未確認で、V47として残す。`run.md` は直す実行にも入るので、「実装のときだけ撮る」を書けなかった。grillingの記録は `add-implement-instructions-and-screenshots`（issue `gh:uskanda/switchboard` #94のQ1〜Q11）
+
+## ADR-052 実行に渡すツールを固定し、モデルとeffortを設定で選ぶ（採用、2026-11-03）
+- 決定：エージェントは、`claude -p` に `--tools` で渡すツールを明示する。ファイルを書く実行は `Bash`、`Read`、`Edit`、`Write`、`Glob`、`Grep`、`WebSearch` とする。計画の実行は `Bash`、`Read`、`Glob`、`Grep`、`WebSearch` とする。`allow_tools_extra` の各項目のツール名（`Bash(openspec *)` なら `Bash`）も渡す
+- 決定：`WebSearch` を、どの実行でも許可する。`WebFetch` は今までどおり拒否する
+- 決定：設定の `agent.model` と `agent.effort` を既定にし、`agent.plan` と `agent.fix` で計画の実行と直す実行を上書きする。値が空のときは、`--model` と `--effort` を付けずにCLIとユーザーの設定に任せる。名前はClaude Code固有にせず、許容値の検査だけをアダプタが持つ
+- 決定：`--setting-sources` によるユーザー設定の切り離しは、この決定に含めない。実行のsandboxの扱いと一緒に決める（#130）
+- 理由：CLIの既定のツールは約25個あり、起動直後の文脈が約39kトークンになっていた。7個に絞ると約9kトークンになる（V49）。177回の実行で使われたツールは、ほぼBash、Read、Edit、Write、構造化出力だけだった。モデルとeffortは、ユーザーの全体設定（`opus[1m]` と `xhigh`）が無人の実行にもそのまま使われていた。WebSearchはページの本文を取ってこないため、WebFetchより出入りする情報が少ない。フォージの資格情報は渡さない（ADR-012）ので、検索語に秘密は載らない（issue `gh:uskanda/switchboard` #129のQ1〜Q9）

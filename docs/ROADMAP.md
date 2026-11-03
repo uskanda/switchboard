@@ -106,6 +106,8 @@
 | V46 | Claude Codeのsandboxは、書き込みを拒否するパスに何を置くか。コマンドが強制終了したとき、それは残るか | 0バイトで権限0444の通常のファイルを置く。worktreeでは `.claude/settings.json` や `.mcp.json`、`.bashrc` など、クローンでは `.git/config.lock` に置く。実行中にエージェントが止まると消されずに残り、worktreeの作成と設定の検査が失敗した（issue #128。usknasのエージェントの実行で観察） | 2026-11-03 |
 | V47 | エージェントのfine-grained PAT（Contents: Read/Write、Issues: Read/Write）を `GH_TOKEN` で渡し、空の `GH_CONFIG_DIR` で `gh issue comment -R owner/repo --attach` を実行すると、画像が `user-attachments` のURLで付くか。付いた画像が本文のどこに入るか | 未確認（issue #94の実装の時点。無人の実行からはフォージに届かないため）。`SWITCHBOARD_GH_TOKEN=... SWITCHBOARD_GH_ISSUE=owner/repo#n go test -tags realgh -run RealGH -v ./internal/forge/github/` で確かめる。通らなくても、doneは保たれ、理由のコメントが付く | |
 | V48 | GitLabの `POST /projects/:id/uploads` が返す `markdown` をissueのノートに入れると、画像として表示されるか | 未確認（issue #94の実装の時点）。`gl:` のsandboxのプロジェクトで、画像を置く実行をdoneまで進めて確かめる | |
+| V49 | `-p` に `--tools` を渡すと、セッションのツールはその一覧に絞られるか。`--json-schema` の構造化出力は動くか | 絞られる。initの `tools` は渡した一覧と `StructuredOutput` だけになり、構造化出力は動いた。`Bash,Read,Edit,Write,Glob,Grep` で、起動直後の文脈は約39kから約9kトークンに減った。`allow_tools_extra` の `Skill` を足すと `Skill` も渡った。claude 2.1.316。`go test -tags realclaude -run RealClaudeRunGetsOnlyItsTools ./internal/agent/` で再現できる | 2026-11-03 |
+| V50 | `-p` で `--model` と `--effort` は効くか。`--setting-sources project,local` で何が外れるか | `--model sonnet` はinitの `model` に反映された。`--effort` は受け付けられるが、initとresultに値は出ない。`--setting-sources project,local` では、ユーザーのスキル、プラグイン、model設定が外れ、文脈は約3kトークン減った。`~/.claude/CLAUDE.md` は外れなかった。claude 2.1.316 | 2026-11-03 |
 
 ### 検証で分かった、設計に関わる点
 

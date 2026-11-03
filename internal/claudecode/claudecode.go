@@ -37,8 +37,12 @@ type Request struct {
 	Settings     Settings
 	MaxTurns     int
 	Schema       string // JSON schema of the final structured output
-	Auth         string // "subscription" or "api_key"
-	Timeout      time.Duration
+	// Tools are the built-in tools the session gets (--tools); nil leaves the CLI's default set.
+	Tools []string
+	// Model and Effort pick the model and the effort level; empty leaves them to the CLI and the user's settings.
+	Model, Effort string
+	Auth          string // "subscription" or "api_key"
+	Timeout       time.Duration
 	// IntGrace and TermGrace are how long to wait after SIGINT and after SIGTERM before the next signal.
 	// Zero means 30s and 10s.
 	IntGrace, TermGrace time.Duration
@@ -101,9 +105,12 @@ func Env(parent []string, auth string) []string {
 	return out
 }
 
+// Efforts are the effort levels the CLI accepts for --effort.
+var Efforts = []string{"low", "medium", "high", "xhigh", "max"}
+
 // Args returns the command-line arguments for req. The files they name are written by Run.
 func Args(req Request) []string {
-	return []string{
+	args := []string{
 		"-p",
 		"--session-id", req.SessionID,
 		"--output-format", "stream-json", "--verbose",
@@ -114,6 +121,16 @@ func Args(req Request) []string {
 		"--max-turns", strconv.Itoa(req.MaxTurns),
 		"--json-schema", req.Schema,
 	}
+	if len(req.Tools) > 0 {
+		args = append(args, "--tools", strings.Join(req.Tools, ","))
+	}
+	if req.Model != "" {
+		args = append(args, "--model", req.Model)
+	}
+	if req.Effort != "" {
+		args = append(args, "--effort", req.Effort)
+	}
+	return args
 }
 
 func writeFiles(req Request) error {
