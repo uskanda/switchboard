@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -270,5 +271,31 @@ func TestOlder(t *testing.T) {
 		if got := Older(c.v, CheckedVersion); got != c.want {
 			t.Errorf("Older(%q) = %v", c.v, got)
 		}
+	}
+}
+
+func TestArgsPassToolsModelAndEffort(t *testing.T) {
+	req := Request{RunDir: "/run", SessionID: "s", MaxTurns: 3, Schema: "{}",
+		Tools: []string{"Bash", "Read", "WebSearch"}, Model: "opus", Effort: "medium"}
+	argv := Args(req)
+	for _, want := range [][]string{{"--tools", "Bash,Read,WebSearch"}, {"--model", "opus"}, {"--effort", "medium"}} {
+		if !hasSeq(argv, want) {
+			t.Errorf("argv lacks %v: %v", want, argv)
+		}
+	}
+}
+
+func TestArgsLeaveUnsetModelAndEffortToTheCLI(t *testing.T) {
+	argv := Args(Request{RunDir: "/run", SessionID: "s", MaxTurns: 3, Schema: "{}"})
+	for _, flag := range []string{"--tools", "--model", "--effort"} {
+		if slices.Contains(argv, flag) {
+			t.Errorf("argv has %s although the request leaves it unset: %v", flag, argv)
+		}
+	}
+}
+
+func TestEffortsAreTheCLILevels(t *testing.T) {
+	if want := []string{"low", "medium", "high", "xhigh", "max"}; !slices.Equal(Efforts, want) {
+		t.Fatalf("Efforts = %v, want %v", Efforts, want)
 	}
 }

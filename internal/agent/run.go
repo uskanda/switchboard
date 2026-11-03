@@ -99,9 +99,41 @@ func settings(verifyCommand string, extra ...[]string) claudecode.Settings {
 	}
 }
 
+// runTools are the tools every run that writes files gets; planTools those of a plan run. A tool the session lacks
+// cannot be called, whatever the allow rules say, and every tool left out shortens the system prompt.
+var (
+	runTools  = []string{"Bash", "Read", "Edit", "Write", "Glob", "Grep", "WebSearch"}
+	planTools = []string{"Bash", "Read", "Glob", "Grep", "WebSearch"}
+)
+
+// tools returns base followed by the tool names of the extra allow rules (Bash for "Bash(openspec *)"), each once.
+func tools(base []string, extra ...[]string) []string {
+	out := slices.Clone(base)
+	for _, rules := range extra {
+		for _, r := range rules {
+			name, _, _ := strings.Cut(strings.TrimSpace(r), "(")
+			if name = strings.TrimSpace(name); name != "" && !slices.Contains(out, name) {
+				out = append(out, name)
+			}
+		}
+	}
+	return out
+}
+
+// modelKind is the kind of run whose model and effort level a run of kind k uses.
+func modelKind(k runKind) config.RunKind {
+	switch k {
+	case planRun:
+		return config.PlanRun
+	case fixRun:
+		return config.FixRun
+	}
+	return config.ImplementRun
+}
+
 // baseAllow are the allow rules every run that writes files gets.
 func baseAllow(verifyCommand string) []string {
-	allow := []string{"Read", "Edit", "Write", "Glob", "Grep"}
+	allow := []string{"Read", "Edit", "Write", "Glob", "Grep", "WebSearch"}
 	for _, c := range []string{"git status", "git diff", "git log", "git add", "git commit", "git merge"} {
 		allow = append(allow, "Bash("+c+")", "Bash("+c+" *)")
 	}
@@ -243,7 +275,10 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) *outcome {
 		SystemPrompt: prompt.System(lang, p.BaseBranch), Settings: settings(p.VerifyCommand, a.Config.Agent.AllowToolsExtra, p.AllowToolsExtra), MaxTurns: a.Config.Agent.MaxTurns,
 		Schema: Schema, Auth: a.Config.Claude.Auth, Timeout: a.Config.Agent.Timeout,
 		IntGrace: a.IntGrace, TermGrace: a.TermGrace, Env: a.Env,
+		Tools: tools(runTools, a.Config.Agent.AllowToolsExtra, p.AllowToolsExtra),
 	}
+	m := a.Config.Agent.ModelFor(modelKind(pl.kind))
+	req.Model, req.Effort = m.Model, m.Effort
 	head := ""
 	var used instructions.Loaded
 	switch pl.kind {
@@ -251,6 +286,7 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) *outcome {
 		in.Task = prompt.PlanTask
 		used, added = a.planInstructions(p), []string{}
 		req.SystemPrompt, req.Settings, req.Schema = prompt.PlanSystem(lang, word, used.Text), planSettings(), PlanSchema
+		req.Tools = planTools
 		if head, err = sp.Head(ctx); err != nil {
 			return o.fail(fmt.Sprintf(a.msg.prepare, err))
 		}
