@@ -233,7 +233,7 @@ describe("the list", () => {
     unmount();
     at("/issue/gh%3Ao%2Fr%2312");
     const nav = await screen.findByRole("navigation", { name: "一覧" });
-    expect((await within(nav).findAllByText("o/r#12"))[0].closest("a")).toHaveAttribute("aria-current", "page");
+    expect((await within(nav).findAllByRole("link", { current: "page" }))[0]).toHaveAttribute("href", "/issue/gh%3Ao%2Fr%2312");
     expect(await screen.findByRole("heading", { level: 2, name: "Add a flag" })).toBeInTheDocument();
   });
 });
