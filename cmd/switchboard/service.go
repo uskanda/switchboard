@@ -147,7 +147,7 @@ func serviceInstall(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, errors.New("no forge has an inbox_token_ref; the inbox service reads and replies with your own token"))
 	case kind == service.KindWeb:
 		if _, err := os.Stat(s.Config); err != nil {
-			return fail(stderr, fmt.Errorf("%s: write it first (listen: <LAN address>:<port>); see the README", s.Config))
+			return fail(stderr, fmt.Errorf("%s: write it first (listen: <LAN address>:<port>); see docs/GUIDE.md", s.Config))
 		}
 	case relay && len(cfg.Relay.Hosts) == 0:
 		return fail(stderr, errors.New("relay.hosts is empty: no agent could subscribe; add one with `switchboard relay token add <host>`"))

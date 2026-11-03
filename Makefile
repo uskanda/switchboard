@@ -63,13 +63,13 @@ deploy-check:
 deploy: deploy-check install restart ## Install the current build and restart every service
 
 # The release APK is signed with the user's own key and built with their Firebase app's google-services.json. Both
-# stay outside the repository and are named by these variables (README: Android app); android/ is made anew by expo
+# stay outside the repository and are named by these variables (docs/GUIDE.md: Android app); android/ is made anew by expo
 # prebuild on each build and never committed.
 APP_ENV := SWITCHBOARD_APP_KEYSTORE SWITCHBOARD_APP_KEYSTORE_PASSWORD SWITCHBOARD_APP_KEY_ALIAS SWITCHBOARD_APP_KEY_PASSWORD SWITCHBOARD_APP_GOOGLE_SERVICES
 
 app-apk: ## Build the signed release APK of the Android app to bin/switchboard.apk (needs JDK 17 and the Android SDK)
 	@missing=""; for v in $(APP_ENV); do [ -n "$${!v}" ] || missing="$$missing $$v"; done; \
-	if [ -n "$$missing" ]; then echo "app-apk: set$$missing (README: Android app)" >&2; exit 1; fi; \
+	if [ -n "$$missing" ]; then echo "app-apk: set$$missing (docs/GUIDE.md: Android app)" >&2; exit 1; fi; \
 	for f in "$$SWITCHBOARD_APP_KEYSTORE" "$$SWITCHBOARD_APP_GOOGLE_SERVICES"; do \
 		[ -f "$$f" ] || { echo "app-apk: no such file: $$f" >&2; exit 1; }; \
 	done
