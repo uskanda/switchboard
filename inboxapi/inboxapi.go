@@ -264,6 +264,43 @@ type MergeRequest struct {
 	SHA string `json:"sha"`
 }
 
+// MergeStatus is the answer to GET /v1/merge-status: where the change request of a done issue stands before the merge
+// dialog's merge (ADR-050). It is information only; the forge still decides whether the merge goes through.
+type MergeStatus struct {
+	// State is the change request's state on the forge: "open", "closed" or "merged".
+	State string `json:"state"`
+	// HeadMoved is set when the change request's head is no longer the commit the page showed.
+	HeadMoved bool `json:"head_moved"`
+	// Mergeable is MergeClean, MergeConflict or MergeComputing.
+	Mergeable string `json:"mergeable"`
+	// CI is CIRead, CINone or CIForbidden; Checks are empty unless it is CIRead.
+	CI     string        `json:"ci"`
+	Checks []CheckStatus `json:"checks"`
+}
+
+// CheckStatus is one check of the commit. Name is the forge's data, to be shown as text only.
+type CheckStatus struct {
+	Name   string `json:"name"`
+	Status string `json:"status"` // CheckSuccess, CheckFailure, CheckRunning or CheckOther
+	URL    string `json:"url"`
+}
+
+// The values of MergeStatus.Mergeable, MergeStatus.CI and CheckStatus.Status.
+const (
+	MergeClean     = "clean"
+	MergeConflict  = "conflict"
+	MergeComputing = "computing" // the forge still computes whether it conflicts
+
+	CIRead      = "ok"        // the commit has checks, listed in Checks
+	CINone      = "none"      // the commit has no checks
+	CIForbidden = "forbidden" // the inbox token may not read CI
+
+	CheckSuccess = "success"
+	CheckFailure = "failure"
+	CheckRunning = "running"
+	CheckOther   = "other"
+)
+
 // MergeAnswer is the body of a POST /v1/merge answered with 202: Code is CodeAutoMergePending, and the inbox service
 // merges the change request once the agent has fixed its conflict (ADR-048).
 type MergeAnswer struct {
