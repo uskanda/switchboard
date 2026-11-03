@@ -29,6 +29,8 @@ type Inbox interface {
 	IssueTargets(ctx context.Context) (*inboxapi.IssueTargets, error)
 	CreateIssue(ctx context.Context, req inboxapi.CreateIssueRequest) (*inboxapi.CreateIssueResponse, error)
 	Merge(ctx context.Context, ref, sha string) error
+	RegisterDevice(ctx context.Context, token string) error
+	Approve(ctx context.Context, ref string, since time.Time) error
 	Events(ctx context.Context, fn func(*inboxapi.Inbox)) error
 }
 
@@ -78,6 +80,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.createIssue(w, r)
 	case r.URL.Path == "/api/merge" && r.Method == http.MethodPost:
 		s.merge(w, r)
+	case r.URL.Path == "/api/devices" && r.Method == http.MethodPost:
+		s.registerDevice(w, r)
+	case r.URL.Path == "/api/approve" && r.Method == http.MethodPost:
+		s.approve(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/"):
 		send(w, http.StatusNotFound, inboxapi.Error{Code: inboxapi.CodeNotFound, Message: "no such endpoint"})
 	case r.Method == http.MethodGet || r.Method == http.MethodHead:
@@ -87,7 +93,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// sameOrigin tells whether a reply, a save, an addition, a new issue or a merge comes from the web inbox's own page: a JSON body (a page elsewhere cannot send
+// sameOrigin tells whether a reply, a save, an addition, a new issue, a merge, an app's registration or an approval
+// comes from the web inbox's own page or the app, which sends this Origin itself: a JSON body (a page elsewhere cannot send
 // one without a preflight, which this server never answers), an Origin of exactly this address, and a Host of
 // exactly this address (a page that rebinds its own name to this address still sends its own name).
 func (s *Server) sameOrigin(r *http.Request) (int, string) {
@@ -195,6 +202,42 @@ func (s *Server) merge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Inbox.Merge(r.Context(), req.Ref, req.SHA); err != nil {
+		s.answer(w, nil, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// registerDevice passes an app's FCM token on to the inbox service.
+func (s *Server) registerDevice(w http.ResponseWriter, r *http.Request) {
+	if code, why := s.sameOrigin(r); code != 0 {
+		send(w, code, inboxapi.Error{Code: inboxapi.CodeInvalid, Message: why})
+		return
+	}
+	var req inboxapi.RegisterDeviceRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
+		send(w, http.StatusBadRequest, inboxapi.Error{Code: inboxapi.CodeInvalid, Message: "the body is not a device registration"})
+		return
+	}
+	if err := s.Inbox.RegisterDevice(r.Context(), req.Token); err != nil {
+		s.answer(w, nil, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// approve passes the approval of a plan, pressed on a notification, on to the inbox service.
+func (s *Server) approve(w http.ResponseWriter, r *http.Request) {
+	if code, why := s.sameOrigin(r); code != 0 {
+		send(w, code, inboxapi.Error{Code: inboxapi.CodeInvalid, Message: why})
+		return
+	}
+	var req inboxapi.ApproveRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
+		send(w, http.StatusBadRequest, inboxapi.Error{Code: inboxapi.CodeInvalid, Message: "the body is not an approval"})
+		return
+	}
+	if err := s.Inbox.Approve(r.Context(), req.Ref, req.Since); err != nil {
 		s.answer(w, nil, err)
 		return
 	}
