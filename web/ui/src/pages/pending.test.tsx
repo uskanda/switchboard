@@ -138,7 +138,7 @@ describe("a new issue", () => {
     at("/");
     await userEvent.click(await screen.findByRole("button", { name: "新規issue" }));
     const dialog = await screen.findByRole("dialog", { name: "新規issue" });
-    await within(dialog).findByRole("option", { name: /nas\/sb/ });
+    await waitFor(() => expect(within(dialog).getByRole("combobox", { name: "プロジェクト" })).toHaveTextContent("nas/sb"));
     await userEvent.type(within(dialog).getByRole("textbox", { name: "タイトル" }), "Add a flag");
     await userEvent.click(within(dialog).getByRole("button", { name: "作成する" }));
 

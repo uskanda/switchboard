@@ -218,7 +218,7 @@ async function openNewIssue() {
   at("/");
   await userEvent.click(await screen.findByRole("button", { name: "新規issue" }));
   const dialog = await screen.findByRole("dialog", { name: "新規issue" });
-  await within(dialog).findAllByRole("option");
+  await waitFor(() => expect(within(dialog).getByRole("combobox", { name: "プロジェクト" })).toHaveTextContent(/担当/));
   return dialog;
 }
 
@@ -227,7 +227,8 @@ describe("the ready start of a new issue", () => {
     answer({ "GET /api/issue-targets": targets([{ ref: "gh:o/r", host: "a", plan_first: true }, { ref: "gh:o/x", host: "a", plan_first: false }]) });
     const dialog = await openNewIssue();
     expect(within(dialog).getByRole("radio", { name: /agent:ready/ }).closest("label")).toHaveTextContent("このプロジェクトは計画から始めます");
-    await userEvent.selectOptions(within(dialog).getByRole("combobox", { name: "プロジェクト" }), "gh:o/x");
+    await userEvent.click(within(dialog).getByRole("combobox", { name: "プロジェクト" }));
+    await userEvent.click(await within(dialog).findByRole("option", { name: "o/x GitHub（担当：a）" }));
     expect(within(dialog).getByRole("radio", { name: /agent:ready/ }).closest("label")).toHaveTextContent("このプロジェクトはすぐに実装します");
   });
 

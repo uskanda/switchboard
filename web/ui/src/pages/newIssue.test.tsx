@@ -49,16 +49,27 @@ async function openDialog() {
   );
   await userEvent.click(await screen.findByRole("button", { name: "新規issue" }));
   const dialog = await screen.findByRole("dialog", { name: "新規issue" });
-  await within(dialog).findByRole("option", { name: "o/r GitHub（担当：usknas）" });
+  await waitFor(() => expect(within(dialog).getByRole("combobox", { name: "プロジェクト" })).toHaveTextContent("o/r GitHub（担当：usknas）"));
   return dialog;
+}
+
+/** choose opens the list of projects with a click and picks the one named. */
+async function choose(dialog: HTMLElement, name: string) {
+  await userEvent.click(within(dialog).getByRole("combobox", { name: "プロジェクト" }));
+  await userEvent.click(await within(dialog).findByRole("option", { name }));
 }
 
 describe("a new issue", () => {
   it("is written in a dialog over the list, starting ready in the first project", async () => {
     answer({ "GET /api/issue-targets": targets });
     const dialog = await openDialog();
-    expect(within(dialog).getByRole("combobox", { name: "プロジェクト" })).toHaveValue("gh:o/r");
-    expect(within(dialog).getByRole("option", { name: "nas/sb GitLab（担当：laptop）" })).toBeInTheDocument();
+    const project = within(dialog).getByRole("combobox", { name: "プロジェクト" });
+    expect(project).toHaveTextContent("o/r GitHub（担当：usknas）");
+    await userEvent.click(project);
+    const list = await within(dialog).findByRole("listbox");
+    expect(within(list).getByRole("option", { name: "o/r GitHub（担当：usknas）" })).toHaveAttribute("data-state", "checked");
+    expect(within(list).getByRole("option", { name: "nas/sb GitLab（担当：laptop）" })).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
     const ready = within(dialog).getByRole("radio", { name: /agent:ready/ });
     expect(ready).toBeChecked();
     expect(within(dialog).getByRole("radio", { name: /agent:plan/ })).not.toBeChecked();
@@ -110,7 +121,7 @@ describe("a new issue", () => {
       "POST /api/issues": { status: 201, body: { ref: "gl:nas/sb#7", url: "https://gitlab.test/nas/sb/-/issues/7" } },
     });
     const dialog = await openDialog();
-    await userEvent.selectOptions(within(dialog).getByRole("combobox", { name: "プロジェクト" }), "gl:nas/sb");
+    await choose(dialog, "nas/sb GitLab（担当：laptop）");
     await userEvent.type(within(dialog).getByRole("textbox", { name: "タイトル" }), "Add a flag");
     await userEvent.type(within(dialog).getByRole("textbox", { name: "本文" }), "Use --x.");
     await userEvent.click(within(dialog).getByRole("radio", { name: /agent:plan/ }));
@@ -162,5 +173,73 @@ describe("a new issue", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "やめる" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(calls.some((c) => c.key === "POST /api/issues")).toBe(false);
+  });
+});
+
+describe("the project of a new issue", () => {
+  it("shows the chosen project's icon and forge badge in the closed field", async () => {
+    answer({ "GET /api/issue-targets": targets });
+    const dialog = await openDialog();
+    const project = within(dialog).getByRole("combobox", { name: "プロジェクト" });
+    expect(project.querySelector("[data-project-icon]")).not.toBeNull();
+    expect(within(project).getByText("o/r")).toHaveClass("font-mono");
+    expect(within(project).getByText("GitHub")).toBeInTheDocument();
+    expect(within(project).queryByText("gh:o/r")).toBeNull();
+  });
+
+  it("shows an icon and the forge badge on every choice of the open list", async () => {
+    answer({ "GET /api/issue-targets": targets });
+    const dialog = await openDialog();
+    await userEvent.click(within(dialog).getByRole("combobox", { name: "プロジェクト" }));
+    const list = await within(dialog).findByRole("listbox");
+    // The list lies in the dialog: a modal dialog leaves what is outside it inert.
+    expect(dialog.contains(list)).toBe(true);
+    const options = within(list).getAllByRole("option");
+    // The icons are left out of the names, which read as the native options did.
+    expect(options).toEqual([
+      within(list).getByRole("option", { name: "o/r GitHub（担当：usknas）" }),
+      within(list).getByRole("option", { name: "nas/sb GitLab（担当：laptop）" }),
+    ]);
+    for (const o of options) expect(o.querySelector("[data-project-icon]")).not.toBeNull();
+    expect(within(options[1]).getByText("GitLab")).toBeInTheDocument();
+  });
+
+  it("is chosen with the keys", async () => {
+    const calls = answer({
+      "GET /api/issue-targets": targets,
+      "POST /api/issues": { status: 201, body: { ref: "gl:nas/sb#7", url: "https://gitlab.test/nas/sb/-/issues/7" } },
+    });
+    const dialog = await openDialog();
+    within(dialog).getByRole("combobox", { name: "プロジェクト" }).focus();
+    await userEvent.keyboard("{ArrowDown}");
+    await within(dialog).findByRole("listbox");
+    await userEvent.keyboard("{ArrowDown}{Enter}");
+    await waitFor(() => expect(within(dialog).queryByRole("listbox")).toBeNull());
+    expect(within(dialog).getByRole("combobox", { name: "プロジェクト" })).toHaveTextContent("nas/sb GitLab（担当：laptop）");
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "タイトル" }), "Keys");
+    await userEvent.click(within(dialog).getByRole("button", { name: "作成する" }));
+    await screen.findByText(/を作りました/);
+    const post = calls.find((c) => c.key === "POST /api/issues");
+    expect(JSON.parse(String(post?.init?.body))).toMatchObject({ ref: "gl:nas/sb" });
+  });
+
+  it("closes only the list on Escape, and keeps the dialog open", async () => {
+    answer({ "GET /api/issue-targets": targets });
+    const dialog = await openDialog();
+    await userEvent.click(within(dialog).getByRole("combobox", { name: "プロジェクト" }));
+    await within(dialog).findByRole("listbox");
+    // The browser asks the dialog to close on Escape with a cancel event; while the list is open it is stopped.
+    const cancel = new Event("cancel", { cancelable: true });
+    dialog.dispatchEvent(cancel);
+    expect(cancel.defaultPrevented).toBe(true);
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(within(dialog).queryByRole("listbox")).toBeNull());
+    expect(screen.getByRole("dialog", { name: "新規issue" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("combobox", { name: "プロジェクト" })).toHaveFocus();
+    // Once the list is closed, Escape closes the dialog again.
+    await new Promise((r) => setTimeout(r, 0));
+    const later = new Event("cancel", { cancelable: true });
+    dialog.dispatchEvent(later);
+    expect(later.defaultPrevented).toBe(false);
   });
 });
