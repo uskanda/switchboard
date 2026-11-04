@@ -11,8 +11,8 @@ import (
 )
 
 // PlanSchema is the JSON schema of the declaration that ends a run in the plan stage.
-const PlanSchema = `{"type":"object","additionalProperties":false,"required":["status"],` +
-	`"properties":{"status":{"type":"string","enum":["questions","plan"]},"summary":{"type":"string"},` +
+const PlanSchema = `{"type":"object","additionalProperties":false,"required":["status","title"],` +
+	`"properties":{"status":{"type":"string","enum":["questions","plan"]},"title":{"type":"string"},"summary":{"type":"string"},` +
 	`"plan":{"type":"string"},"questions":{"type":"array","minItems":1,"items":{"type":"object",` +
 	`"additionalProperties":false,"required":["title","body","recommendation"],"properties":{` +
 	`"title":{"type":"string"},"body":{"type":"string"},"recommendation":{"type":"string"}}}}}}`
@@ -27,6 +27,7 @@ type PlanQuestion struct {
 // PlanDeclaration is how a run in the plan stage ends: with questions, or with the plan.
 type PlanDeclaration struct {
 	Status    string         `json:"status"`
+	Title     string         `json:"title"` // the plan, or the plan the questions lead to, on one short line
 	Summary   string         `json:"summary,omitempty"`
 	Questions []PlanQuestion `json:"questions,omitempty"`
 	Plan      string         `json:"plan,omitempty"`
@@ -43,6 +44,11 @@ func planDeclaration(res *claudecode.Result) (*PlanDeclaration, string) {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&d); err != nil {
 		return nil, "the structured output does not match the schema: " + err.Error()
+	}
+	if d.Status == "questions" || d.Status == "plan" {
+		if strings.TrimSpace(d.Title) == "" {
+			return nil, "the structured output has no title"
+		}
 	}
 	switch d.Status {
 	case "questions":
@@ -80,7 +86,7 @@ func planSettings() claudecode.Settings {
 
 // planQuestions writes back the questions of a plan round, numbered from first.
 func (o *outcome) planQuestions(d *PlanDeclaration, first int, denials []claudecode.Denial, discarded bool, word string) *outcome {
-	var parts []string
+	parts := []string{o.planTitleLine(d)}
 	if s := strings.TrimSpace(d.Summary); s != "" {
 		parts = append(parts, s)
 	}
@@ -98,9 +104,15 @@ func (o *outcome) planQuestions(d *PlanDeclaration, first int, denials []claudec
 
 // planText writes back the plan of a plan run.
 func (o *outcome) planText(d *PlanDeclaration, denials []claudecode.Denial, discarded bool, word string) *outcome {
-	parts := []string{strings.TrimSpace(d.Plan)}
+	parts := []string{o.planTitleLine(d), strings.TrimSpace(d.Plan)}
 	parts = append(parts, o.planTail(denials, discarded, fmt.Sprintf(o.msg.planHint, word))...)
 	return o.set("waiting", marker.PlanReady, o.msg.planTitle, parts...)
+}
+
+// planTitleLine is the paragraph right after the heading of a plan-stage comment: the plan's title on one line. The
+// inbox and the notifications quote it as the start of the question (Question).
+func (o *outcome) planTitleLine(d *PlanDeclaration) string {
+	return "**" + o.msg.planLabel + "** " + strings.Join(strings.Fields(d.Title), " ")
 }
 
 // planTail is the end of a plan-stage comment: the discarded changes, the refused operations folded away, and the

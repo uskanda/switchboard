@@ -139,15 +139,15 @@ func TestPlanWaitsAreNotified(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("sent %d notifications: %q", len(got), got)
 	}
-	for _, want := range []string{"Waiting (plan-questions)", "Q1", "Default"} {
+	for _, want := range []string{"Waiting (plan-questions)", "Plan:", "Split the config loading"} {
 		if !strings.Contains(got[0], want) {
 			t.Errorf("the questions notification lacks %q:\n%s", want, got[0])
 		}
 	}
 	if strings.Contains(got[0], "Read the config package.") {
-		t.Errorf("the questions notification quotes the summary, not the question:\n%s", got[0])
+		t.Errorf("the questions notification quotes the summary, not the title:\n%s", got[0])
 	}
-	for _, want := range []string{"Waiting (plan)", "Add --dry-run, off by default."} {
+	for _, want := range []string{"Waiting (plan)", "Plan:", "Split the config loading"} {
 		if !strings.Contains(got[1], want) {
 			t.Errorf("the plan notification lacks %q:\n%s", want, got[1])
 		}
