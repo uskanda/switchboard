@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/uskanda/switchboard/internal/relay"
+	"github.com/uskanda/switchboard/internal/event"
 )
 
 // server sends one event per connection, numbered on from the client's Last-Event-ID, then drops the connection.
@@ -38,10 +38,10 @@ func TestReconnectsWithLastEventID(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var mu sync.Mutex
-	var got []relay.Event
+	var got []event.Event
 	var states []bool
 	c := &Client{URL: srv.URL + "/events", Token: "tok", MinBackoff: time.Millisecond, MaxBackoff: 5 * time.Millisecond, Logf: func(string, ...any) {}}
-	go c.Run(ctx, func(e relay.Event) {
+	go c.Run(ctx, func(e event.Event) {
 		mu.Lock()
 		got = append(got, e)
 		if len(got) == 3 {
@@ -86,7 +86,7 @@ func TestRefusedTokenIsReportedAndRetried(t *testing.T) {
 	c := &Client{URL: srv.URL, Token: "bad", MinBackoff: time.Millisecond, MaxBackoff: 10 * time.Millisecond,
 		Logf: func(f string, a ...any) { lmu.Lock(); logs = append(logs, fmt.Sprintf(f, a...)); lmu.Unlock() }}
 	ups := 0
-	c.Run(ctx, func(relay.Event) {}, func(up bool) {
+	c.Run(ctx, func(event.Event) {}, func(up bool) {
 		if up {
 			ups++
 		}
@@ -127,7 +127,7 @@ func TestASilentStreamIsDroppedAfterIdle(t *testing.T) {
 		Logf: func(string, ...any) {}}
 	go func() {
 		defer close(done)
-		c.Run(ctx, func(relay.Event) {}, func(up bool) {
+		c.Run(ctx, func(event.Event) {}, func(up bool) {
 			smu.Lock()
 			states = append(states, up)
 			if len(states) == 3 {

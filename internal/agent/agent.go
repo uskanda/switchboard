@@ -419,7 +419,7 @@ func (a *Agent) pollProject(ctx context.Context, p config.Project) []error {
 // pollReplies evaluates the waiting and done issues of a GitLab project whose comment count changed. GitLab does not
 // move an issue's update time for a new comment (V22), so UpdatedIssues alone misses replies.
 func (a *Agent) pollReplies(ctx context.Context, p config.Project, f forge.Forge) []error {
-	waiting, err := f.SearchOpenIssuesWithLabel(ctx, p.FullName(), a.Config.Labels.Waiting, a.Config.Labels.Done)
+	waiting, err := f.SearchOpenIssuesWithLabel(ctx, forge.Projects(p.FullName()), a.Config.Labels.Waiting, a.Config.Labels.Done)
 	if err != nil {
 		return []error{fmt.Errorf("%s: %w", p.Ref, err)}
 	}

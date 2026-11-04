@@ -217,7 +217,7 @@ func (a *Agent) runs(run string) bool {
 // keepNotes records the note count of a GitLab issue that is now waiting or done, as read after its progress note
 // went away, so that the next poll does not take the removal for a reply.
 func (a *Agent) keepNotes(ctx context.Context, p config.Project, ref forge.IssueRef) {
-	list, err := a.forgeOf(ref).SearchOpenIssuesWithLabel(ctx, p.FullName(), a.Config.Labels.Waiting, a.Config.Labels.Done)
+	list, err := a.forgeOf(ref).SearchOpenIssuesWithLabel(ctx, forge.Projects(p.FullName()), a.Config.Labels.Waiting, a.Config.Labels.Done)
 	if err != nil {
 		return // the next poll evaluates the issue again, which only costs a read
 	}

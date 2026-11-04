@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"github.com/uskanda/switchboard/internal/config"
+	"github.com/uskanda/switchboard/internal/event"
 	"github.com/uskanda/switchboard/internal/forge"
-	"github.com/uskanda/switchboard/internal/relay"
 )
 
 // lockedLog is a log the runs and the test may write and read at once.
@@ -219,7 +219,7 @@ func TestReloadDropsARemovedProjectButFinishesItsRun(t *testing.T) {
 
 func TestRelayEventsReachAnAcceptedProject(t *testing.T) {
 	x := newReloadH(t)
-	e := relay.Event{Forge: "gh", Project: "o/notes"}
+	e := event.Event{Forge: "gh", Project: "o/notes"}
 	if _, ok := x.a.projectOf(e); ok {
 		t.Fatal("an event of an unconfigured project was taken")
 	}

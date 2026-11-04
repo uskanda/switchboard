@@ -17,12 +17,12 @@ import (
 	"github.com/uskanda/switchboard/inboxapi"
 	"github.com/uskanda/switchboard/internal/automerge"
 	"github.com/uskanda/switchboard/internal/config"
+	"github.com/uskanda/switchboard/internal/event"
 	"github.com/uskanda/switchboard/internal/forge"
 	"github.com/uskanda/switchboard/internal/inbox"
 	"github.com/uskanda/switchboard/internal/inboxserve"
 	"github.com/uskanda/switchboard/internal/instructions"
 	"github.com/uskanda/switchboard/internal/push"
-	"github.com/uskanda/switchboard/internal/relay"
 	"github.com/uskanda/switchboard/internal/relayclient"
 	"github.com/uskanda/switchboard/internal/secret"
 	"github.com/uskanda/switchboard/internal/state"
@@ -140,7 +140,7 @@ func inboxPush(cfg *config.Config, token func(ref string) (string, error), d sta
 // followRelay passes the relay's events and state to api until ctx ends. An event is only a cue to read the forges
 // again; which issue it names does not matter, since the listing is read whole.
 func followRelay(ctx context.Context, rc *relayclient.Client, api *inboxserve.Server, stderr io.Writer) {
-	rc.Run(ctx, func(relay.Event) { api.RelayEvent() }, func(up bool) {
+	rc.Run(ctx, func(event.Event) { api.RelayEvent() }, func(up bool) {
 		if up {
 			fmt.Fprintln(stderr, "switchboard: inbox: relay: connected")
 		} else {

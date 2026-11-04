@@ -101,7 +101,7 @@ func settings(verifyCommand string, extra ...[]string) claudecode.Settings {
 	}
 	return claudecode.Settings{
 		Allow:       append(base, extraAllow(base, extra...)...),
-		Deny:        []string{"Bash(git push)", "Bash(git push *)", "Bash(git rebase)", "Bash(git rebase *)", "Bash(gh)", "Bash(gh *)", "WebFetch"},
+		Deny:        append(claudecode.Commands("git push", "git rebase", "gh"), "WebFetch"),
 		Unsandboxed: append(unsandboxed, gitUnsandboxed...),
 	}
 }
@@ -184,8 +184,7 @@ func tools(base []string, extra ...[]string) []string {
 	out := slices.Clone(base)
 	for _, rules := range extra {
 		for _, r := range rules {
-			name, _, _ := strings.Cut(strings.TrimSpace(r), "(")
-			if name = strings.TrimSpace(name); name != "" && !slices.Contains(out, name) {
+			if name := claudecode.ToolName(r); name != "" && !slices.Contains(out, name) {
 				out = append(out, name)
 			}
 		}
@@ -207,11 +206,9 @@ func modelKind(k runKind) config.RunKind {
 // baseAllow are the allow rules every run that writes files gets.
 func baseAllow(verifyCommand string) []string {
 	allow := []string{"Read", "Edit", "Write", "Glob", "Grep", "WebSearch"}
-	for _, c := range []string{"git status", "git diff", "git log", "git add", "git commit", "git merge"} {
-		allow = append(allow, "Bash("+c+")", "Bash("+c+" *)")
-	}
+	allow = append(allow, claudecode.Commands("git status", "git diff", "git log", "git add", "git commit", "git merge")...)
 	if f := strings.Fields(verifyCommand); len(f) > 0 {
-		allow = append(allow, "Bash("+f[0]+")", "Bash("+f[0]+" *)")
+		allow = append(allow, claudecode.Commands(f[0])...)
 	}
 	return allow
 }
@@ -471,7 +468,7 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) (o *outcome) {
 	}
 	d, problem := declaration(res)
 	switch {
-	case res.Subtype == "error_max_turns":
+	case res.MaxTurns():
 		return o.fail(fmt.Sprintf(a.msg.maxTurns, a.Config.Agent.MaxTurns))
 	case problem != "" && res.IsError:
 		return o.fail(fmt.Sprintf(a.msg.failed, problem))
@@ -634,7 +631,7 @@ func (a *Agent) planOutcome(res *claudecode.Result, pl *plan, o *outcome, discar
 	d, problem := planDeclaration(res)
 	word := a.Config.Plan.ApproveWord
 	switch {
-	case res.Subtype == "error_max_turns":
+	case res.MaxTurns():
 		return o.fail(fmt.Sprintf(a.msg.maxTurns, a.Config.Agent.MaxTurns))
 	case problem != "" && res.IsError:
 		return o.fail(fmt.Sprintf(a.msg.failed, problem))

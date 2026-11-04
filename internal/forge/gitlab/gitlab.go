@@ -521,15 +521,31 @@ func (c *Client) Version(ctx context.Context) (string, error) {
 	return v.Version, err
 }
 
-// SearchOpenIssuesWithLabel implements forge.Forge. On GitLab the scope is one project's path ("group/project"):
-// the inbox reads the configured projects one by one.
-// GitLab's labels parameter matches the issues that carry all of them, so each label is asked for on its own.
-func (c *Client) SearchOpenIssuesWithLabel(ctx context.Context, scope string, labels ...string) ([]forge.IssueSummary, error) {
-	i := strings.LastIndex(scope, "/")
-	if i < 0 {
-		return nil, fmt.Errorf("gitlab: %q is not a project path", scope)
+// SearchOpenIssuesWithLabel implements forge.Forge. GitLab has no search over a set of projects, so the projects of
+// the scope are read one by one; its query is ignored.
+func (c *Client) SearchOpenIssuesWithLabel(ctx context.Context, scope forge.Scope, labels ...string) ([]forge.IssueSummary, error) {
+	var out []forge.IssueSummary
+	for _, path := range scope.Projects {
+		found, err := c.searchProject(ctx, path, labels)
+		if err != nil {
+			if len(scope.Projects) > 1 {
+				err = fmt.Errorf("%s: %w", path, err)
+			}
+			return nil, err
+		}
+		out = append(out, found...)
 	}
-	owner, repo := scope[:i], scope[i+1:]
+	return out, nil
+}
+
+// searchProject lists the open issues of the project at path ("group/project") that carry any of labels. GitLab's
+// labels parameter matches the issues that carry all of them, so each label is asked for on its own.
+func (c *Client) searchProject(ctx context.Context, path string, labels []string) ([]forge.IssueSummary, error) {
+	i := strings.LastIndex(path, "/")
+	if i < 0 {
+		return nil, fmt.Errorf("gitlab: %q is not a project path", path)
+	}
+	owner, repo := path[:i], path[i+1:]
 	var out []forge.IssueSummary
 	seen := map[int]bool{}
 	for _, label := range labels {

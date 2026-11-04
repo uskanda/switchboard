@@ -87,7 +87,7 @@ func TestSearchWithAnyOfTheLabels(t *testing.T) {
 	f.AddIssue("o", "r", 3, "t", "b", me)
 	f.AddLabel(a, "agent:waiting", me)
 	f.AddLabel(b, "agent:running", me)
-	got, err := f.SearchOpenIssuesWithLabel(context.Background(), "user:me", "agent:waiting", "agent:running")
+	got, err := f.SearchOpenIssuesWithLabel(context.Background(), forge.Scope{Query: "user:me"}, "agent:waiting", "agent:running")
 	if err != nil || len(got) != 2 {
 		t.Fatalf("Search = %+v, %v", got, err)
 	}

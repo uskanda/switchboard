@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -570,10 +571,53 @@ func (c *Client) User(ctx context.Context, login string) (*forge.User, error) {
 
 var repoFromURL = regexp.MustCompile(`/repos/([^/]+)/([^/]+)$`)
 
-// SearchOpenIssuesWithLabel implements forge.Forge. It reads the first 100 results, which covers any realistic
-// number of waiting issues.
-// Several labels go into one qualifier, label:"a","b", which matches any of them (V28).
-func (c *Client) SearchOpenIssuesWithLabel(ctx context.Context, scope string, labels ...string) ([]forge.IssueSummary, error) {
+// reposPerSearch is how many repo: qualifiers one search holds, well within its limit of 256 characters.
+const reposPerSearch = 4
+
+// searchQueries are the search qualifiers that cover scope: its query when set, else its projects as repo:
+// qualifiers, a few to a search. A scope with neither has no query: an empty one would search the whole of GitHub.
+func searchQueries(scope forge.Scope) []string {
+	if scope.Query != "" {
+		return []string{scope.Query}
+	}
+	var repos []string
+	for _, p := range scope.Projects {
+		if q := "repo:" + p; !slices.Contains(repos, q) {
+			repos = append(repos, q)
+		}
+	}
+	var out []string
+	for len(repos) > 0 {
+		n := min(reposPerSearch, len(repos))
+		out = append(out, strings.Join(repos[:n], " "))
+		repos = repos[n:]
+	}
+	return out
+}
+
+// SearchOpenIssuesWithLabel implements forge.Forge. Each search reads the first 100 results, which covers any
+// realistic number of waiting issues.
+func (c *Client) SearchOpenIssuesWithLabel(ctx context.Context, scope forge.Scope, labels ...string) ([]forge.IssueSummary, error) {
+	var res []forge.IssueSummary
+	seen := map[forge.IssueRef]bool{}
+	for _, q := range searchQueries(scope) {
+		found, err := c.search(ctx, q, labels)
+		if err != nil {
+			return nil, err
+		}
+		for _, s := range found {
+			if !seen[s.Ref] {
+				seen[s.Ref] = true
+				res = append(res, s)
+			}
+		}
+	}
+	return res, nil
+}
+
+// search runs one issue search within the qualifiers scope. Several labels go into one qualifier, label:"a","b",
+// which matches any of them (V28).
+func (c *Client) search(ctx context.Context, scope string, labels []string) ([]forge.IssueSummary, error) {
 	quoted := make([]string, len(labels))
 	for i, l := range labels {
 		quoted[i] = strconv.Quote(l)

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/uskanda/switchboard/internal/relay"
+	"github.com/uskanda/switchboard/internal/event"
 )
 
 // Client subscribes to URL with the bearer Token.
@@ -41,7 +41,7 @@ func (c *Client) grow(d time.Duration) time.Duration {
 
 // Run follows the stream until ctx ends, passing each event to on. state(true) is called once a connection is up and
 // state(false) once it is lost.
-func (c *Client) Run(ctx context.Context, on func(relay.Event), state func(connected bool)) {
+func (c *Client) Run(ctx context.Context, on func(event.Event), state func(connected bool)) {
 	min := c.MinBackoff
 	if min == 0 {
 		min = time.Second
@@ -67,7 +67,7 @@ func (c *Client) Run(ctx context.Context, on func(relay.Event), state func(conne
 }
 
 // follow makes one connection and reads it until it ends. connected reports whether the stream was opened.
-func (c *Client) follow(ctx context.Context, on func(relay.Event), state func(bool)) (connected bool, err error) {
+func (c *Client) follow(ctx context.Context, on func(event.Event), state func(bool)) (connected bool, err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.URL, nil)
@@ -108,7 +108,7 @@ func (c *Client) follow(ctx context.Context, on func(relay.Event), state func(bo
 		switch {
 		case line == "":
 			if data != "" {
-				var e relay.Event
+				var e event.Event
 				if err := json.Unmarshal([]byte(data), &e); err != nil {
 					c.Logf("relay: skipped an event that is not JSON: %v", err)
 				} else {

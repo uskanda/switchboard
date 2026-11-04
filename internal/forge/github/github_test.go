@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -377,7 +378,7 @@ func TestReadsOfRepositoryUserAndSearch(t *testing.T) {
 	if err != nil || u.ID != 1 {
 		t.Fatalf("User = %+v, %v", u, err)
 	}
-	found, err := c.SearchOpenIssuesWithLabel(ctx, "user:alice", "agent:waiting")
+	found, err := c.SearchOpenIssuesWithLabel(ctx, forge.Scope{Query: "user:alice"}, "agent:waiting")
 	if err != nil || len(found) != 1 || found[0].Ref != (forge.IssueRef{Forge: forge.GitHub, Owner: "o", Repo: "r", Number: 7}) {
 		t.Fatalf("Search = %+v, %v", found, err)
 	}
@@ -432,8 +433,32 @@ func TestSearchOpenIssuesWithAnyOfTheLabels(t *testing.T) {
 		}
 		jsonReply(map[string]any{"items": []map[string]any{}})(w, r)
 	})
-	if _, err := c.SearchOpenIssuesWithLabel(ctx, "user:alice", "agent:waiting", "agent:running"); err != nil {
+	if _, err := c.SearchOpenIssuesWithLabel(ctx, forge.Scope{Query: "user:alice", Projects: []string{"o/r"}}, "agent:waiting", "agent:running"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Without a query, the projects go into the searches as repo: qualifiers, a few to a search, and an issue found
+// twice is listed once. With neither, GitHub is not asked: an empty scope would search all of it.
+func TestSearchOverTheProjects(t *testing.T) {
+	s, c := newServer(t)
+	var qs []string
+	s.on("GET /search/issues", func(w http.ResponseWriter, r *http.Request) {
+		qs = append(qs, r.URL.Query().Get("q"))
+		jsonReply(map[string]any{"items": []map[string]any{{"number": 7, "title": "t", "state": "open",
+			"repository_url": "https://api.github.test/repos/o/a"}}})(w, r)
+	})
+	found, err := c.SearchOpenIssuesWithLabel(ctx, forge.Projects("o/a", "o/b", "o/a", "o/d", "o/e", "o/f"), "agent:waiting")
+	if err != nil || len(found) != 1 {
+		t.Fatalf("found = %+v, %v", found, err)
+	}
+	want := []string{`is:issue is:open label:"agent:waiting" repo:o/a repo:o/b repo:o/d repo:o/e`, `is:issue is:open label:"agent:waiting" repo:o/f`}
+	if !slices.Equal(qs, want) {
+		t.Fatalf("queries = %q, want %q", qs, want)
+	}
+	qs = nil
+	if found, err := c.SearchOpenIssuesWithLabel(ctx, forge.Scope{}, "agent:waiting"); err != nil || len(found) != 0 || len(qs) != 0 {
+		t.Fatalf("empty scope: found %+v, %v, queries %q", found, err, qs)
 	}
 }
 

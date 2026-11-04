@@ -397,7 +397,7 @@ func TestSearchOpenIssuesWithLabelReadsOneProject(t *testing.T) {
 		}
 		jsonReply([]map[string]any{{"iid": 3, "title": "t", "state": "opened", "labels": []string{"agent:waiting"}}})(w, r)
 	})
-	got, err := c.SearchOpenIssuesWithLabel(ctx, "nas/tools/sb", "agent:waiting")
+	got, err := c.SearchOpenIssuesWithLabel(ctx, forge.Projects("nas/tools/sb"), "agent:waiting")
 	if err != nil || len(got) != 1 || got[0].Ref != ref {
 		t.Fatalf("Search = %+v, %v", got, err)
 	}
@@ -452,7 +452,7 @@ func TestSearchOpenIssuesWithAnyOfTheLabels(t *testing.T) {
 		iid := map[string]int{"agent:waiting": 3, "agent:running": 4}[l]
 		jsonReply([]map[string]any{{"iid": iid, "title": "t", "state": "opened", "labels": []string{l}}})(w, r)
 	})
-	got, err := c.SearchOpenIssuesWithLabel(ctx, "nas/tools/sb", "agent:waiting", "agent:running")
+	got, err := c.SearchOpenIssuesWithLabel(ctx, forge.Projects("nas/tools/sb"), "agent:waiting", "agent:running")
 	if err != nil || len(got) != 2 || got[0].Ref.Number != 3 || got[1].Ref.Number != 4 || len(s.log) != 2 {
 		t.Fatalf("Search = %+v, %v (%d requests)", got, err, len(s.log))
 	}

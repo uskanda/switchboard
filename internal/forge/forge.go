@@ -208,6 +208,19 @@ type Forge interface {
 	RepoPrivate(ctx context.Context, owner, repo string) (bool, error)
 	// User resolves a login to the user, with its numeric ID.
 	User(ctx context.Context, login string) (*User, error)
-	// SearchOpenIssuesWithLabel lists the open issues within scope (such as "user:alice") that carry any of labels.
-	SearchOpenIssuesWithLabel(ctx context.Context, scope string, labels ...string) ([]IssueSummary, error)
+	// SearchOpenIssuesWithLabel lists the open issues within scope that carry any of labels, each once. How the
+	// projects are asked (one search, or one request per project) is the adapter's business.
+	SearchOpenIssuesWithLabel(ctx context.Context, scope Scope, labels ...string) ([]IssueSummary, error)
 }
+
+// Scope is where SearchOpenIssuesWithLabel looks.
+type Scope struct {
+	// Projects are the full names of the projects ("owner/repo", "group/sub/project").
+	Projects []string
+	// Query, when set, takes the place of Projects on a forge that searches by a query: GitHub's search_scope, such
+	// as "user:alice". A forge without such a search ignores it.
+	Query string
+}
+
+// Projects is the scope of the named projects alone.
+func Projects(names ...string) Scope { return Scope{Projects: names} }

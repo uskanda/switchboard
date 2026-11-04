@@ -16,6 +16,7 @@ import (
 	"github.com/uskanda/switchboard/internal/labels"
 	"github.com/uskanda/switchboard/internal/marker"
 	"github.com/uskanda/switchboard/internal/notify"
+	"github.com/uskanda/switchboard/internal/postfmt"
 	"github.com/uskanda/switchboard/internal/workspace"
 )
 
@@ -287,11 +288,7 @@ func (a *Agent) checkComment(ref forge.IssueRef, run, name, body string) {
 func (a *Agent) recover(ctx context.Context) error {
 	var errs []error
 	for _, p := range a.projectList() {
-		scope := "repo:" + p.FullName()
-		if p.Forge == forge.GitLab {
-			scope = p.FullName() // GitLab searches one project, named by its path
-		}
-		list, err := a.routeOf(p).Forge.SearchOpenIssuesWithLabel(ctx, scope, a.Config.Labels.Running)
+		list, err := a.routeOf(p).Forge.SearchOpenIssuesWithLabel(ctx, forge.Projects(p.FullName()), a.Config.Labels.Running)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", p.FullName(), err))
 			continue
@@ -535,7 +532,7 @@ func (a *Agent) notify(ctx context.Context, is *forge.IssueSummary, o *outcome, 
 			body = body[i:] // quote the first question, not the summary above it
 		}
 		text = notify.Waiting{
-			Ref: ref, Title: is.Title, Reason: o.Reason, Question: Question(body),
+			Ref: ref, Title: is.Title, Reason: o.Reason, Question: postfmt.Question(body),
 			IssueURL: is.URL, WebURL: a.Config.Notify.WebURL,
 		}.Text(lang)
 	}

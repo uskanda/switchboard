@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/uskanda/switchboard/internal/config"
+	"github.com/uskanda/switchboard/internal/event"
 	"github.com/uskanda/switchboard/internal/forge"
-	"github.com/uskanda/switchboard/internal/relay"
 	"github.com/uskanda/switchboard/internal/trust"
 )
 
@@ -32,14 +32,14 @@ func (c *counting) UpdatedIssues(ctx context.Context, owner, repo string, since 
 // feed is a relay subscription the test drives.
 type feed struct {
 	mu    sync.Mutex
-	on    func(relay.Event)
+	on    func(event.Event)
 	state func(bool)
 	ready chan struct{}
 }
 
 func newFeed() *feed { return &feed{ready: make(chan struct{})} }
 
-func (f *feed) Run(ctx context.Context, on func(relay.Event), state func(bool)) {
+func (f *feed) Run(ctx context.Context, on func(event.Event), state func(bool)) {
 	f.mu.Lock()
 	f.on, f.state = on, state
 	f.mu.Unlock()
@@ -47,7 +47,7 @@ func (f *feed) Run(ctx context.Context, on func(relay.Event), state func(bool)) 
 	<-ctx.Done()
 }
 
-func (f *feed) send(e relay.Event) { <-f.ready; f.mu.Lock(); on := f.on; f.mu.Unlock(); on(e) }
+func (f *feed) send(e event.Event) { <-f.ready; f.mu.Lock(); on := f.on; f.mu.Unlock(); on(e) }
 func (f *feed) set(up bool)        { <-f.ready; f.mu.Lock(); st := f.state; f.mu.Unlock(); st(up) }
 
 func relayH(t *testing.T) (*h, *counting) {
@@ -57,11 +57,11 @@ func relayH(t *testing.T) (*h, *counting) {
 	return x, c
 }
 
-var ours = relay.Event{Forge: "gh", Project: "o/r", Issue: 12, Kind: "issues"}
+var ours = event.Event{Forge: "gh", Project: "o/r", Issue: 12, Kind: "issues"}
 
 func TestRelayEventOfAnotherProjectIsIgnored(t *testing.T) {
 	x, c := relayH(t)
-	for _, e := range []relay.Event{
+	for _, e := range []event.Event{
 		{Forge: "gh", Project: "o/other", Issue: 1, Kind: "issues"},
 		{Forge: "gl", Project: "o/r", Issue: 12, Kind: "note"},
 	} {
@@ -77,7 +77,7 @@ func TestRelayEventsOfAProjectAreMergedIntoOneFetch(t *testing.T) {
 	x, c := relayH(t)
 	x.a.onEvent(ours)
 	time.Sleep(10 * time.Millisecond)
-	x.a.onEvent(relay.Event{Forge: "gh", Project: "O/R", Issue: 12, Kind: "issue_comment"}) // GitHub names are case-insensitive
+	x.a.onEvent(event.Event{Forge: "gh", Project: "O/R", Issue: 12, Kind: "issue_comment"}) // GitHub names are case-insensitive
 	x.waitFor("a fetch", func() bool { return c.calls.Load() >= 1 })
 	time.Sleep(150 * time.Millisecond)
 	if n := c.calls.Load(); n != 1 {
