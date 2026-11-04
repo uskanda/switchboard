@@ -11,9 +11,9 @@
 
 ## 1. 設計の要点
 
-1. **Goの単一バイナリ**（ADR-010案）。CLI・常駐エージェント・フック・中継をすべて `switchboard` のサブコマンドにする
+1. **Goの単一バイナリ**（ADR-010）。CLI・常駐エージェント・中継をすべて `switchboard` のサブコマンドにする。受信箱のWeb表示だけは別のバイナリ（`switchboard-web`）である。Claude Codeのフックは使わない（ADR-060）
 2. **`claude -p` の終了を状態遷移点にする**。ヘッドレス実行は「止まって待つ」のではなく「質問を残して終了する」（事前許可のないツールも確認待ちにならず拒否される〔確認済C15〕）。終了時の構造化出力（終了プロトコル、5章）からwaiting / done / errorを判定する
-3. **フォージへの書き込みはエージェントに一本化**。フックはフォージに触れず、ローカルでの検査・プロトコル強制だけを担う（仕様変更）
+3. **フォージへの書き込みはエージェントに一本化**。`claude -p` の終了後に、エージェントが検査と書き戻しを行う（仕様変更）
 4. **pushとPR作成もエージェントが行う**。Claude Codeのプロセスにはフォージの資格情報を渡さず、ローカルコミットまでに留める（仕様変更）
 5. **状態はフォージから復元できる**。「どこまで読んだか」はマーカー内の `ack`（最後に取り込んだコメントID）で表す。ローカルDBは監査・重複排除・最適化用で、消えても動く
 6. **信頼判定をコメント以外にも広げる**。issue本文の投稿者・編集者、`agent:ready` を付けた人、コメントの編集者まで検証する
@@ -62,16 +62,14 @@ ADR-008（受信箱用トークンの分離）はADR-015とセットで解決す
  │                                              │                         │
  │                              ┌───────────────▼───────────────┐         │
  │                              │ claude -p（資格情報なし環境）     │         │
- │                              │  hooks: switchboard hook ...    │         │
- │                              │   PreToolUse: 危険操作の拒否      │         │
- │                              │   PermissionRequest: 拒否の記録   │         │
- │                              │   Stop: outcome 漏れの差し戻し    │         │
+ │                              │  sandbox（ADR-057）              │         │
+ │                              │  宣言は --json-schema で返す      │         │
  │                              └───────────────────────────────┘         │
- │ ~/.local/state/switchboard/  state.db（監査・重複排除）, runs/<run-id>/  │
+ │ ~/.local/state/switchboard/  JSON のファイル（8.2）, runs/<run-id>/      │
  └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-ARCHITECTURE.md 1章との差分は「フックの矢印がフォージに向かない」「push / PRもエージェント経由」の2点。
+フックは使わない（ADR-060）。push / PRもエージェント経由である。
 
 ---
 
@@ -87,7 +85,6 @@ SPEC.md 6章のCLIに、内部用のサブコマンドを加える。
 | `agent run` / `agent status` | 常駐エージェント | エージェント |
 | `labels sync` | 状態ラベルの作成・統一 | エージェント |
 | `relay serve` | 中継 | なし（webhook シークレットのみ） |
-| `hook pre-tool-use` / `hook permission-request` / `hook stop` | Claude Code から呼ばれるフック（内部用） | なし |
 | `doctor` | 設定検証、trusted_authors のユーザーID解決、トークン権限の自己診断、claude のバージョン確認 | 両方（読み取りのみ） |
 
 ### 4.2 フォージ抽象（`internal/forge`）
@@ -162,16 +159,16 @@ claude -p \
   < <run-dir>/prompt.md
 ```
 
-- 新規起動時は `--session-id` でセッションIDをエージェント側で先に決める〔確認済C17、`-p` との組み合わせはV7〕。フック入力から取り出す必要がなくなり、V1への依存が下がる
+- 新規起動時は `--session-id` でセッションIDをエージェント側で先に決める〔確認済C17、`-p` との組み合わせはV7〕
 - 再開時は `--fork-session` で毎回新しいIDに分岐させ、分岐した先のIDも `--session-id` で先に決める（V53）。再開するのは、同じ端末で1時間以内に続く計画の実行だけである（ADR-058）。再開では追記するシステムプロンプトが差し替わらないため、前回と今回の起動の条件を `launch.json` で比べる。分岐なしで同じセッションを2か所から再開すると発言が1つのtranscriptに混ざる〔確認済C17〕ので、マスターが同じセッションを対話で開いていても衝突しないようにする（V4のリスクを設計で消す）
 - `--permission-mode dontAsk` と明示allowで動かす。`-p` で事前許可のないツールは確認待ちにならず拒否され、最終resultの `permission_denials` に残る〔確認済C15、dontAskの厳密な挙動はV18〕
 - `--tools` で渡すツールを実行の種類ごとに固定する（ADR-052）。ファイルを書く実行は `Bash,Read,Edit,Write,Glob,Grep,WebSearch` に、`allow_tools_extra` の項目のツール名を足す。計画の実行は `Bash,Read,Glob,Grep,WebSearch` とする。`--model` と `--effort` は、`agent.model`、`agent.effort`、`agent.plan`、`agent.fix` の値があるときだけ付ける
 - `--strict-mcp-config` と空に近い `mcp.json` で、対象リポジトリの `.mcp.json` 由来のMCPサーバーを読み込ませない
 - `-p` は `--bare` を付けない限り、対象リポジトリの `.claude/settings.json` のフックと `.mcp.json` を信頼確認なしで読み込む〔確認済C19〕。`--bare` はサブスクリプションのOAuth認証を読まないため使えない〔確認済C19, C21〕。対策は次の3つ。(1) `--strict-mcp-config` でMCPを固定する。(2) `--setting-sources project,local` で、ユーザーの全体設定を外してプロジェクト設定を読み込む（ADR-028、ADR-057）。V17のとおり、プロジェクト設定を外すと `CLAUDE.md` も読み込まれない。(3) 実行前にworktreeの `.claude/`・`.mcp.json`・`CLAUDE.md` がベースブランチと一致するか確認し、一致しなければ実行しない（ADR-018）
-- `settings.json` はrunごとにエージェントが生成する（許可ツール・拒否ルール・フック・サンドボックス設定）。sandboxは常に有効にする（ADR-057）。`failIfUnavailable` を有効にし、`allowUnsandboxedCommands` を無効にする。sandboxの中のBashは許可の規則なしで動き、拒否の規則だけが働く。`excludedCommands` は、`git` と検証コマンドの全体とする。`filesystem.denyRead` には、資格情報の置き場所、設定ファイルのディレクトリ、状態のディレクトリの項目を入れる。状態のディレクトリの `worktrees` と、実在しないパスは入れない。フックはこの設定経由でのみ登録するので、マスターが手で開く対話セッションには影響しない
+- `settings.json` はrunごとにエージェントが生成する（許可ツール・拒否ルール・サンドボックス設定）。sandboxは常に有効にする（ADR-057）。`failIfUnavailable` を有効にし、`allowUnsandboxedCommands` を無効にする。sandboxの中のBashは許可の規則なしで動き、拒否の規則だけが働く。`excludedCommands` は、`git` と検証コマンドの全体とする。`filesystem.denyRead` には、資格情報の置き場所、設定ファイルのディレクトリ、状態のディレクトリの項目を入れる。状態のディレクトリの `worktrees` と、実在しないパスは入れない。この設定はrunにだけ渡すので、マスターが手で開く対話セッションには影響しない
 - Linuxでは、claudeを起動する前に `bwrap --ro-bind / / --dev /dev --unshare-all true` を実行する。名前空間を作れなければ、実行を誤りにする（V51）
 - 作業ディレクトリは、issueごとに固定したパスのworktreeとする。パスは `<data>/worktrees/<forge>/<project>/issue-<n>`。ブランチは `switchboard/issue-<n>`。`--resume` は作業ディレクトリに縛られず、IDで全プロジェクトから探す〔確認済C17〕。それでもファイルの文脈を揃えるため、パスは固定する
-- transcript（`~/.claude/projects/…/<session-id>.jsonl`）の形式は内部仕様でバージョンごとに変わる〔確認済C22〕ので解析しない。必要な情報はstream-jsonとStopフックの `last_assistant_message` から取る
+- transcript（`~/.claude/projects/…/<session-id>.jsonl`）の形式は内部仕様でバージョンごとに変わる〔確認済C22〕ので解析しない。必要な情報はstream-jsonの最終resultから取る
 
 **環境変数**：親の環境を引き継がず、許可リストで組み立てる。
 
@@ -200,18 +197,15 @@ prompt.md（stdin）
 - 新規起動時はissue全体を、`--resume` 時は `ack` 以降の信頼済みコメントだけを渡す
 - 区切りタグによる分離は緩和策であって保証ではない。公開リポジトリでは `include_untrusted: false` を強制する
 
-### 4.5 フック（`internal/hook`）
+### 4.5 フック（採用しない、ADR-060）
 
-フックは `switchboard hook <event>` として同じバイナリから呼ぶ。フォージには一切通信しない。
+当初は `switchboard hook <event>` として、PreToolUse（文字列による追加の拒否とログ）、PermissionRequest（拒否の記録）、Stop（宣言の漏れの差し戻し）を同じバイナリから呼ぶ案だった。どれも実装していない。
 
-| イベント | 役割 | 失敗時 |
-|---|---|---|
-| `PreToolUse`（Bash 等） | 権限設定の上に重ねる拒否：`git push`、`gh` / `glab` の書き込み系、`security find-generic-password` 等のキーチェーン参照、`~/.ssh` 参照など。判定結果を run-dir に記録 | 拒否（安全側） |
-| `PermissionRequest` | `-p` でも実行され、判定を返さなければそのまま拒否される〔確認済 C15〕。判定は返さず、拒否された要求を run-dir に記録して `reason=permission` の質問文に使う | 何もしない（拒否のまま） |
-| `Stop` | `--json-schema` が期待どおり動かない場合（V8 が NG）の予備。`last_assistant_message` に outcome がなく、かつ `stop_hook_active` でなければ block して「outcome を出力して終了せよ」と返す〔確認済 C14〕 | 通す（Claude Code 側にも連続 8 回で打ち切る上限がある〔確認済 C14〕） |
-
-- PreToolUseの判定は権限ルールを迂回しない。Bashの権限ルール自体も、文書で「同じプログラムを別の形で呼ぶと一致せず、プログラムに対するセキュリティ境界ではない」とされている〔確認済C18〕。したがって文字列判定（`sh -c`、絶対パス、別名で回避できる）は **境界ではない**。目的はログと誤操作防止で、実際の境界は7章のL0・L1・L5
-- Notificationフックは `-p` で発火するかが文書に書かれていない〔V13〕。ヘッドレス実行では使わない。対話セッションの待ちを受信箱に出す拡張をする場合に改めて検討する（SPEC.md 8章の対象外と整合）
+- 宣言は `--json-schema` の構造化出力で受け取れる（V8）。Stopフックによる差し戻しは要らない
+- 拒否された呼び出しは、最終resultの `permission_denials` に載る（V18）。`dontAsk` ではPermissionRequestフックが動かない
+- 文字列による拒否は、`sh -c`、絶対パス、別名で回避できる〔確認済C18〕。境界にはならず、拒否の規則もすり抜けられる（V5）。実際の境界は、sandbox（ADR-057）、資格情報を渡さない環境、push前の検査である（7章のL0・L1・L5）
+- Notificationフックは `-p` で発火しない（V13）
+- 書き戻しは、`claude -p` の終了後にエージェントが行う（ADR-011）
 
 ### 4.6 受信箱（`internal/inbox`）
 
@@ -302,7 +296,7 @@ Claudeには最終出力として次のどちらかを返させる。
 受け取り方は次の2段構えとする。
 
 1. `--json-schema` による構造化出力を使う。結果はresultの `structured_output` に入り、有効な出力なしで終わると `structured_output` が付かない〔確認済C16、実機確認はV8〕
-2. 1が実機で期待どおり動かない場合は、最終メッセージ末尾の `<switchboard-outcome>{…}</switchboard-outcome>` を解析し、Stopフックで出力漏れを差し戻す
+2. 1が実機で期待どおり動かない場合の予備として、最終メッセージ末尾の `<switchboard-outcome>{…}</switchboard-outcome>` を解析し、Stopフックで出力漏れを差し戻す案があった。V8で1が動くと確かめたので、予備は作っていない（ADR-060）
 
 エージェントは次の順で判定する。
 
@@ -335,7 +329,7 @@ Claudeには最終出力として次のどちらかを返させる。
 | 対象 | 採用条件 | 不採用時 |
 |---|---|---|
 | `agent:ready` の付与 | 直近の `labeled` イベントの actor が信頼済み | 実行しない（ログのみ。第三者への返信はしない） |
-| issue 本文 | 作成者が信頼済み、かつ最終編集者がいれば信頼済み | 実行しない |
+| issue 本文とタイトル | 作成者が信頼済み、かつ本文とタイトルの最終編集者がいればどちらも信頼済み | 実行しない |
 | コメント（指示） | 作成者が信頼済み、かつ未編集、または編集者が信頼済み | 指示として使わない（`include_untrusted` 時のみ参考データ） |
 | マーカー | 作成者がエージェントの ID、かつコメント末尾の単独行、引用ブロック内でない | 無視 |
 
@@ -362,7 +356,7 @@ CI設定の変更を止める理由：pushしただけでCIが走るため、CI�
 | L0 フォージ側 | トークンの最小権限（Workflows 権限なし、admin なし）、main のブランチ保護 / ルールセット、PR は draft。ただし GitHub Free の**非公開**リポジトリではブランチ保護もルールセットも使えない〔確認済 C1〕。その場合 L0 はトークン権限だけになるので、エージェントは push の refspec を `switchboard/issue-<n>` に固定し、ベースブランチへの push をコードで禁止する | ○ | Phase 1 |
 | L1 資格情報の分離 | Claude Code を資格情報のない環境で動かす。推奨は専用 OS ユーザー（`switchboard`）で実行し、Claude のサブスク認証はそのユーザーで `claude setup-token`（1 年有効の OAuth トークン、CI・スクリプト向け〔確認済 C21〕）を使う〔利用規約上の扱いは V6、実機は V10〕。併用として Claude Code のサンドボックス（下記の注意つき）〔`-p` での適用は V9〕 | ○ | Phase 1 は環境変数の除去のみ、Phase 3 で OS ユーザー分離 |
 | L2 Claude Code の権限設定 | 許可ツールの明示、`git push` / `gh` / `glab` / ネットワーク系の deny。deny はどの設定ソースの allow よりも先に評価される〔確認済 C18、実機は V5〕。ただし Bash ルールは境界ではない〔確認済 C18〕 | △ | Phase 1 |
-| L3 PreToolUse フック | 文字列ベースの追加拒否とログ | × | Phase 1 |
+| L3 PreToolUse フック | 文字列ベースの追加拒否とログ | × | 採用しない（ADR-060） |
 | L4 資源制限 | タイムアウト、max-turns、同時実行数、worktree への作業限定 | △ | Phase 1 |
 | L5 出力検査 | 6.3 の push 前検査、投稿前の秘密情報検査 | ○（出口） | Phase 1 |
 
@@ -372,7 +366,7 @@ CI設定の変更を止める理由：pushしただけでCIが走るため、CI�
 - 覆うのはシェルコマンドとその子プロセスだけ。ファイル系ツール・MCPサーバー・フックはサンドボックスの外で動く
 - `sandbox.filesystem.denyRead` はReadツールを止めず、`sandbox.network.allowedDomains` はWebFetchを制限しない。権限ルール側の `Read(~/.ssh/**)` 等のdenyとWebFetchのdenyを必ず併用する
 
-正直な評価：Phase 1の時点ではL1が弱く、Claudeが同じOSユーザーの `~/.ssh` 等に到達できる。Phase 1は自分の非公開リポジトリ・自分だけが書けるissueに限定して運用し、公開リポジトリや他者が書き込めるissueを扱うのはL1を入れてからにする。
+正直な評価：Phase 1の時点ではL1が弱く、Claudeが同じOSユーザーの `~/.ssh` 等に到達できた。そのため、当初は自分の非公開リポジトリに限って運用した（ADR-023）。その後、sandboxを常に有効にし（ADR-057）、資格情報の置き場所を `denyRead` に入れ、タイトルと本文とコメントの編集者まで検証するようにした。公開リポジトリも対象にする（ADR-059）。公開リポジトリでは `include_untrusted` を拒み、指示として採るのは `trusted_authors` の入力だけである。
 
 ---
 
@@ -394,34 +388,21 @@ CI設定の変更を止める理由：pushしただけでCIが走るため、CI�
 
 未知のキーは無視し、`v` が大きい場合は表示のみ行う（前方互換）。
 
-### 8.2 ローカル状態（SQLite、`~/.local/state/switchboard/state.db`）
+### 8.2 ローカル状態（JSONのファイル、`~/.local/state/switchboard/`）
 
-純GoのSQLite実装（cgo不要でクロスコンパイルしやすい）を使う。
+当初はSQLiteの案だったが、JSONのファイルにした。状態はフォージから復元でき（5.3）、ローカルの状態は監査と最適化のためのものなので、データベースは要らない。各ファイルは一時ファイルに書いてから置き換える（`state.WriteJSON`）。
 
-```sql
-CREATE TABLE runs (
-  run_id       TEXT PRIMARY KEY,   -- ULID
-  issue_ref    TEXT NOT NULL,      -- gh:owner/repo#123
-  host         TEXT NOT NULL,
-  session_id   TEXT,
-  resumed      INTEGER NOT NULL,
-  started_at   TEXT NOT NULL,
-  ended_at     TEXT,
-  outcome      TEXT,               -- waiting / done / cancelled
-  reason       TEXT,
-  exit_code    INTEGER,
-  ack_comment  TEXT,
-  pr_url       TEXT
-);
-CREATE TABLE trust_decisions (     -- 採用/破棄と理由（SECURITY.md 5 章）
-  id INTEGER PRIMARY KEY, at TEXT, issue_ref TEXT, subject TEXT, -- body / label / comment:<id>
-  actor_id TEXT, verdict TEXT, reason TEXT, content_sha256 TEXT
-);
-CREATE TABLE deliveries (delivery_id TEXT PRIMARY KEY, received_at TEXT);  -- 中継モード
-CREATE TABLE poll_cache (project TEXT PRIMARY KEY, etag TEXT, last_since TEXT);
-```
+| ファイル | 中身 |
+|---|---|
+| `audit.jsonl` | 監査ログ。信頼の判定（採用と破棄、理由、本文のSHA-256）、実行の始まりと終わり、書き戻しの失敗など。1行に1件 |
+| `identities.json` | `trusted_authors` と `agent_identity` のログイン名から固定したユーザーID（6.1） |
+| `issues/<owner>/<repo>/<n>.json`（GitLabは `issues/@gitlab/…`） | issueごとの最新の実行の記録。実行ID、セッションID、状態、始まりと終わり、`ack`、結果 |
+| `runs/<run-id>/` | 実行ごとのファイル（下記） |
+| `agent.json`、`last.json`、`queued.json` | 動いているエージェントの情報、最後の実行、順番待ち |
+| `locks/` | issueごとのファイルロック |
+| `inbox/` | 受信箱の行番号、自動マージの依頼（`automerge.json`） |
 
-runごとのファイルは `~/.local/state/switchboard/runs/<run-id>/` に置く。置くファイルは `prompt.md`、`system.md`、`settings.json`、`stream.jsonl`、`outcome.json`、`hook.log`、`inputs/` である。保持期間は設定で決める（既定30日）。
+runごとのファイルは `runs/<run-id>/` に置く。置くファイルは `prompt.md`、`system.md`、`settings.json`、`mcp.json`、`stream.jsonl`、`outcome.json`、`launch.json` などである。保持期間は `agent.retention` で決める（既定720h＝30日、`0` は消さない）。エージェントは起動時と1日ごとに、最後の書き込みから保持期間を過ぎた実行のディレクトリを消す。実行中のもの、書き戻しを待つもの、各issueの記録が指す最新のもの（次の計画の実行がセッションの引き継ぎに使う）は残す。
 
 ### 8.3 設定ファイルへの追加（`config/switchboard.example.yaml` に対して）
 
@@ -495,9 +476,8 @@ switchboard/
 │   ├── inbox/
 │   ├── relay/                  # 中継サーバー
 │   ├── relayclient/            # SSE 購読
-│   ├── store/                  # SQLite
-│   ├── hook/                   # switchboard hook <event>
-│   └── adapters/claudecode/    # CLI 引数・stream-json 解析・hooks の入出力型・settings 生成
+│   ├── state/                  # JSON のファイル（8.2）
+│   └── claudecode/             # CLI 引数・stream-json 解析・settings 生成
 ├── config/
 │   ├── switchboard.example.yaml
 │   ├── claude-settings.base.json   # 権限・拒否ルールの雛形
@@ -514,7 +494,7 @@ switchboard/
 
 ### 11.1 Phase 1 で作る範囲（ROADMAP.md の Phase 1 に対して）
 
-- 本書の4.2（GitHubのみ）、4.3（ポーリングのみ）、4.4、4.5、4.6（GitHubのみ）、5章、6章、7章のL0・L2〜L5とL1のうち環境変数の除去、8章
+- 本書の4.2（GitHubのみ）、4.3（ポーリングのみ）、4.4、4.6（GitHubのみ）、5章、6章、7章のL0・L2・L4・L5とL1のうち環境変数の除去、8章。4.5のフックとL3は採用しない（ADR-060）
 - 先送り：GitLab（Phase 2）、OSユーザー分離とbotアカウント（Phase 3）、中継（Phase 4）
 
 ### 11.2 既存の検証項目（V1〜V6）への影響

@@ -49,7 +49,7 @@ Phase 1からPhase 5の機能を実装し、作者の端末（Ubuntu 24.04）と
 
 作者1人の環境で作り、確かめてきた。ほかの人が使うときは、次の前提に合うかを先に確かめること。
 
-- 利用者は1人である。`trusted_authors` に自分だけを書き、対象は非公開のリポジトリにする。エージェントも、既定では自分のアカウントで投稿する
+- 利用者は1人である。`trusted_authors` に自分だけを書く。エージェントも、既定では自分のアカウントで投稿する。公開リポジトリも扱えるが、そのときは `include_untrusted` を使えず、指示として採るのは `trusted_authors` の入力だけである（ADR-059）
 - 端末はLinuxで、systemd、Secret Service（GNOME Keyringなど）、`bubblewrap`、`socat` が要る。macOSでは動作を確かめていない
 - 受信箱のWeb表示は利用者を認証しない。LANの中の機器なら誰でも返答し、issueを作れる
 - 中継は `127.0.0.1` で待ち受ける。GitHub.comのwebhookは届かないので、GitHubのプロジェクトはポーリングで扱う
