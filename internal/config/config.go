@@ -233,6 +233,19 @@ type Inbox struct {
 	ProjectRoot     string        `yaml:"project_root"`
 	Relay           *AgentRelay   `yaml:"relay"`
 	Notify          InboxNotify   `yaml:"notify"`
+	// Auth, when set, makes the web inbox ask for a GitLab login (issue #15).
+	Auth *InboxAuth `yaml:"auth"`
+}
+
+// InboxAuth is the GitLab OpenID Connect application the inbox service logs people in with, and who may log in:
+// the members of MemberGroups or AdminGroups (or of a group below one), and Owner. ClientSecretRef names the client
+// secret in the Secret Service, as token_ref names a token.
+type InboxAuth struct {
+	ClientID        string   `yaml:"client_id"`
+	ClientSecretRef string   `yaml:"client_secret_ref"`
+	MemberGroups    []string `yaml:"member_groups"`
+	AdminGroups     []string `yaml:"admin_groups"`
+	Owner           string   `yaml:"owner"`
 }
 
 // ProjectAddEnabled reports whether projects may be added through the inbox service.
@@ -612,6 +625,16 @@ func (c *Config) validate() error {
 	if r := c.Inbox.Relay; r != nil {
 		need(r.URL, "inbox.relay.url")
 		need(r.TokenRef, "inbox.relay.token_ref")
+	}
+	if a := c.Inbox.Auth; a != nil {
+		if c.Forges.GitLab.TokenRef == "" && c.Forges.GitLab.InboxTokenRef == "" {
+			errs = append(errs, errors.New("inbox.auth needs forges.gitlab: people log in with GitLab"))
+		}
+		need(a.ClientID, "inbox.auth.client_id")
+		need(a.ClientSecretRef, "inbox.auth.client_secret_ref")
+		if len(a.MemberGroups) == 0 && len(a.AdminGroups) == 0 && strings.TrimSpace(a.Owner) == "" {
+			errs = append(errs, errors.New("inbox.auth needs member_groups, admin_groups or owner: nobody could log in"))
+		}
 	}
 	errs = append(errs, c.validateRelay()...)
 	errs = append(errs, c.validateNotify()...)

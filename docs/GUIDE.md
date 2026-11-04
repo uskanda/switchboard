@@ -55,7 +55,7 @@ cp config/switchboard.example.yaml ~/.config/switchboard/config.yaml
 switchboard doctor
 ```
 
-Phase 1では、エージェントの投稿も自分のアカウントで行う。`trusted_authors` には自分だけを書く。公開リポジトリも対象にできるが、`include_untrusted` は使えない（ADR-059）。`claude` は自分のOSユーザーのsandboxの中で動くため、詳しくは [SECURITY.md](SECURITY.md) を読むこと。
+Phase 1では、エージェントの投稿も自分のアカウントで行う。`trusted_authors` には自分だけを書く。公開リポジトリも対象にできるが、`include_untrusted` は使えない（ADR-060）。`claude` は自分のOSユーザーのsandboxの中で動くため、詳しくは [SECURITY.md](SECURITY.md) を読むこと。
 
 `switchboard doctor` は、トークンの権限も診断する。GitLabのトークンとGitHubのclassic PATはスコープを読み、足りなければ失敗、広すぎれば警告にする。GitHubのfine-grained PATは権限を返さないので、各プロジェクトのissue、PR、contentsを読めるかだけを試す。書き込みの権限は確かめられない。
 
@@ -439,6 +439,35 @@ Web表示は、端末で受信ポートを開く唯一の部品である（ADR-0
    ```
 
 状態は `switchboard service status --inbox` と `--web` で見る。手で試すときは、`switchboard inbox serve` を動かしてから `switchboard-web serve` を動かす。このときソケットは `$XDG_RUNTIME_DIR/switchboard/inbox.sock` にでき、`web.yaml` の `socket` で場所を指定できる。
+
+#### GitLabでログインさせる
+
+`config.yaml` に `inbox.auth` を書くと、Web表示を開いた人にGitLabのログインを求める（ADR-059）。ログインできるのは、指定したGitLabのグループ（その下位のグループを含む）に属する人と、`owner` の1人だけである。書かなければ、今までどおりログインは求めない。
+
+1. GitLabで、アプリケーションを登録する。管理者なら `Admin > Applications`、そうでなければ利用者の設定の `Applications` で作る。confidentialにし、スコープは `openid`、`profile`、`api` を選ぶ。戻り先のURLは、`web.yaml` の `listen` を使って `http://192.168.0.82:8783/auth/callback` のように書く
+2. 表示されたsecretを、Secret Serviceに置く。secretは標準入力から読む
+
+   ```bash
+   secret-tool store --label='switchboard gitlab oidc' service switchboard/gitlab-oidc username token
+   ```
+
+3. 設定に `inbox.auth` を足し、`switchboard service install --inbox` で受信箱のサービスを置き直す。secretも、暗号化したクレデンシャルとしてサービスに渡る
+
+   ```yaml
+   inbox:
+     auth:
+       client_id: <アプリケーションのID>
+       client_secret_ref: switchboard/gitlab-oidc
+       member_groups: [team]
+       admin_groups: [team/leads]
+       owner: <あなたのGitLabのユーザー名>
+   ```
+
+ログインに使うのは、`forges.gitlab.base_url` のGitLabである。セッションは受信箱のサービスのメモリーにだけあり、受信箱のサービスを再起動すると、全員がログインし直す。セッションは、24時間使わないか、ログインから7日たつと終わる。グループから外された人は、トークンの更新（約2時間ごと）のときに締め出される。ヘッダには、ログインしたユーザー名とログアウトが出る。
+
+Web表示は当面HTTPで待つので、セッションのcookieは平文で流れる。同じLANで盗み見た人は、その利用者として操作できる。家の外から使うときと、信頼できない機器があるLANでは使わない（#155）。
+
+Androidのアプリでは、GitLabのログインの画面もアプリの中に開く。
 
 #### 中継のイベントで一覧をすぐ取り直す
 

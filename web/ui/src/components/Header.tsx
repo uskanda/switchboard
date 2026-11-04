@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { isDone, isQueued, isRunning, isWaiting, type Inbox } from "@/lib/api";
 import { useHeightVar } from "@/lib/height";
 import { asOf, clockText, fullText } from "@/lib/freshness";
+import { useAuth } from "@/lib/auth";
 import { useInbox, type Live } from "@/lib/inbox";
 
 const liveText: Record<Live, string> = {
@@ -46,10 +47,12 @@ function AsOf({ inbox, liveUntil }: { inbox: Inbox; liveUntil: string | null }) 
  * settings link. While the updates are not live, the state is followed by the time of the list (AsOf). The name links
  * to the list. While an issue waits, its count is bold in the attention color. On a narrow screen the settings link
  * stays on the first line, beside the name, and the counts and the state wrap below them. The counts are of the rows
- * as the list shows them, with what this tab asked of the issues laid over the listing (lib/pending.ts).
+ * as the list shows them, with what this tab asked of the issues laid over the listing (lib/pending.ts). With the
+ * login on, the GitLab user logged in and the logout follow the settings link.
  */
 export function Header() {
   const { inbox, view, live, liveUntil } = useInbox();
+  const { status, logout } = useAuth();
   const bar = useRef<HTMLElement>(null);
   useHeightVar(bar, "--header-h", document.documentElement);
   const running = view?.filter(isRunning).length ?? 0;
@@ -84,9 +87,19 @@ export function Header() {
           {inbox && live !== "live" && <AsOf inbox={inbox} liveUntil={liveUntil} />}
         </p>
         </div>
-        <Link to="/settings" className="ml-auto inline-flex min-h-11 items-center text-label-md text-muted underline">
-          設定
-        </Link>
+        <div className="ml-auto flex items-center gap-lg">
+          <Link to="/settings" className="inline-flex min-h-11 items-center text-label-md text-muted underline">
+            設定
+          </Link>
+          {status.user && (
+            <p className="flex items-center gap-sm text-label-md text-muted">
+              <span>{status.user}</span>
+              <button type="button" onClick={() => void logout()} className="inline-flex min-h-11 items-center underline">
+                ログアウト
+              </button>
+            </p>
+          )}
+        </div>
       </div>
     </header>
   );

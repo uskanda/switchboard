@@ -33,9 +33,13 @@ type fakeInbox struct {
 	// statusOf are the issues and commits whose merge status was asked for.
 	statusOf []inboxapi.MergeRequest
 	err      error
+	// auth, when set, is the login of the inbox service; sessions are the session ids the listings were asked with.
+	auth     *fakeAuth
+	sessions []string
 }
 
-func (f *fakeInbox) List(context.Context) (*inboxapi.Inbox, error) {
+func (f *fakeInbox) List(ctx context.Context) (*inboxapi.Inbox, error) {
+	f.sessions = append(f.sessions, inboxapi.SessionOf(ctx))
 	if f.err != nil {
 		return nil, f.err
 	}

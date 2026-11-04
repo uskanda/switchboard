@@ -19,6 +19,7 @@ import (
 	"github.com/uskanda/switchboard/internal/inbox"
 	"github.com/uskanda/switchboard/internal/instructions"
 	"github.com/uskanda/switchboard/internal/state"
+	"github.com/uskanda/switchboard/internal/webauth"
 )
 
 // Inbox is what the server needs of *inbox.Inbox.
@@ -87,6 +88,12 @@ type Server struct {
 	Devices Registry
 	// Observer, when set, gets every listing read from the forges, in order. Watch keeps them read with no page.
 	Observer Observer
+	// Auth, when set (inbox.auth), logs people in with GitLab and refuses every request without a live session but
+	// those under /v1/auth/ (issue #15). GitLab is the base URL people log in on, for the app's WebView.
+	Auth   *webauth.Auth
+	GitLab string
+	// observeSession, when set, gets the session of each request let through; for the tests.
+	observeSession func(*webauth.Session)
 
 	// vmu guards Inbox, Instructions.Projects, Projects.Config, NewIssues.Config and Icons.Config, which Reload
 	// replaces while requests read them.
@@ -173,6 +180,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"/v1/reply":   {http.MethodPost, s.reply},
 		"/v1/events":  {http.MethodGet, s.events},
 		"/v1/approve": {http.MethodPost, s.approve},
+		// The login (issue #15); without inbox.auth, start and callback answer not found.
+		"/v1/auth/status":   {http.MethodGet, s.authStatus},
+		"/v1/auth/start":    {http.MethodPost, s.authStart},
+		"/v1/auth/callback": {http.MethodPost, s.authCallback},
+		"/v1/auth/logout":   {http.MethodPost, s.authLogout},
 	}
 	if s.Devices != nil {
 		routes["/v1/devices"] = route{http.MethodPost, s.devices}
@@ -201,6 +213,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		routes["/v1/merge-status"] = route{http.MethodGet, s.mergeStatus}
 	}
 	rt := routes[r.URL.Path]
+	r, ok := s.authorize(w, r)
+	if !ok {
+		return
+	}
 	switch {
 	case rt.h == nil:
 		fail(w, http.StatusNotFound, inboxapi.CodeNotFound, "no such endpoint")

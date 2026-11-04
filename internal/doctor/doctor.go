@@ -294,7 +294,7 @@ func (d *Doctor) project(ctx context.Context, f forge.Forge, p config.Project) {
 	}
 	d.ci(ctx, f, p)
 	if !private {
-		d.warn("%s is not private (public, or internal on GitLab): anyone who can see it can comment on its issues; only the input of trusted_authors is taken, include_untrusted is refused, and claude runs in the sandbox (ADR-059, docs/SECURITY.md)", p.Ref)
+		d.warn("%s is not private (public, or internal on GitLab): anyone who can see it can comment on its issues; only the input of trusted_authors is taken, include_untrusted is refused, and claude runs in the sandbox (ADR-060, docs/SECURITY.md)", p.Ref)
 		return
 	}
 	d.ok("%s is private", p.Ref)
