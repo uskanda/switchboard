@@ -309,6 +309,19 @@ func (a *Agent) recover(ctx context.Context) error {
 }
 
 func (a *Agent) recoverOne(ctx context.Context, p config.Project, ref forge.IssueRef) error {
+	// The issue runs on the host that claimed it last. When that is another host (both by mistake assigned the
+	// project), its run may still be going, and it is that host's to write back.
+	// When the issue cannot be read, it is recovered as before: only a failed search fails the start.
+	if host, err := a.lastClaimHost(ctx, ref); err != nil {
+		if ctx.Err() != nil {
+			return err
+		}
+		a.logf("%s: read the claims before recovering: %v", ref, err)
+	} else if host != "" && host != a.Config.Host.Name {
+		a.logf("%s: left running: host %s claimed it last", ref, host)
+		a.Audit.Log("run.not_recovered", map[string]any{"issue": ref.String(), "host": host})
+		return nil
+	}
 	rec, _ := a.loadRecord(ref)
 	o := &outcome{msg: a.msg}
 	if rec != nil && a.State.ReadJSON(filepath.Join("runs", rec.Run, "outcome.json"), o) == nil {
@@ -336,6 +349,22 @@ func (a *Agent) recoverOne(ctx context.Context, p config.Project, ref forge.Issu
 	a.saveRecord(ref, *rec)
 	a.logf("%s: recovered run %s: %s", ref, o.Run, o.result())
 	return nil
+}
+
+// lastClaimHost is the host of the agent's latest claim on the issue, or "" when there is none.
+func (a *Agent) lastClaimHost(ctx context.Context, ref forge.IssueRef) (string, error) {
+	_, comments, err := a.forgeOf(ref).Thread(ctx, ref)
+	if err != nil {
+		return "", err
+	}
+	agentID := a.judgeOf(ref).AgentIDOf(ref)
+	for i := len(comments) - 1; i >= 0; i-- {
+		c := comments[i]
+		if m, ok := marker.Parse(c.Body); ok && c.Author.ID == agentID && m.State == marker.Running {
+			return m.Host, nil
+		}
+	}
+	return "", nil
 }
 
 // pendingWriteBack is a run of this host whose write-back did not finish. Each poll tries it again until it is

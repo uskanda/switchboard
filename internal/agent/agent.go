@@ -257,7 +257,17 @@ func (a *Agent) Start(ctx context.Context) error {
 	for _, p := range a.Config.ProjectsFor(a.Config.Host.Name) {
 		private, err := a.routeOf(p).Forge.RepoPrivate(ctx, p.Owner, p.Repo)
 		if err != nil {
-			return fmt.Errorf("%s: %w", p.FullName(), err)
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			// One project the forge does not answer for keeps the others running: it waits for acceptance, as a
+			// project of a reload does, and is tried again on each poll.
+			a.logf("%s: read the repository's visibility: %v; tried again on the next poll", p.FullName(), err)
+			a.pmu.Lock()
+			a.accepting[p.Ref] = p
+			a.failures[p.Ref] = err.Error()
+			a.pmu.Unlock()
+			continue
 		}
 		if !a.allowed(p, private) {
 			continue
@@ -602,12 +612,19 @@ type plan struct {
 	fix          *fixInfo // for fixRun: what it fixes
 }
 
-// ack is the last comment the run takes in, or 0.
+// ack is the last comment the run takes in, or 0. The agent's transient posts (claims, progress, queued comments,
+// attachments) are passed over: two hosts that read the issue on either side of the other's claim still name the same
+// trigger, so the claim rule finds one winner.
 func (pl *plan) ack() int64 {
-	if len(pl.comments) == 0 {
-		return 0
+	for i := len(pl.comments) - 1; i >= 0; i-- {
+		if i < len(pl.kinds) && pl.kinds[i] == trust.AgentPost {
+			if m, _ := marker.Parse(pl.comments[i].Body); m != nil && m.Transient() {
+				continue
+			}
+		}
+		return pl.comments[i].ID
 	}
-	return pl.comments[len(pl.comments)-1].ID
+	return 0
 }
 
 // decide returns a plan when the issue should run now: ready and labeled by a trusted user, or waiting with a

@@ -43,6 +43,8 @@ type Forge struct {
 	failThreadOf             *forge.IssueRef // FailNthThreadOf: only the calls for this issue count
 	// FailSearch, when set, is returned by the next SearchOpenIssuesWithLabel call and then cleared.
 	FailSearch error
+	// FailRepoPrivate, when set, is returned by the next RepoPrivate call and then cleared.
+	FailRepoPrivate error
 	// FailCI, when set, is returned by every CommitChecks and CheckLog call.
 	FailCI error
 	ci     *ci
@@ -530,6 +532,10 @@ func (f *Forge) ClosePR(i int) {
 func (f *Forge) RepoPrivate(_ context.Context, owner, name string) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if err := f.FailRepoPrivate; err != nil {
+		f.FailRepoPrivate = nil
+		return false, err
+	}
 	r, ok := f.repos[owner+"/"+name]
 	if !ok {
 		return false, forge.ErrNotFound
