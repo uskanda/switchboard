@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"strings"
 
 	"github.com/uskanda/switchboard/internal/claudecode"
 	"github.com/uskanda/switchboard/internal/config"
@@ -103,11 +104,13 @@ func (d *Doctor) forge(ctx context.Context, kind string) {
 		label = "forges.gitlab.token_ref"
 	}
 	var f forge.Forge
+	agentKnown := false
 	if token, err := d.Secrets.Token(tokenRef); err != nil {
 		d.fail("agent token (%s %s): %v", label, tokenRef, err)
 	} else {
 		d.ok("agent token (%s %s) found", label, tokenRef)
 		f = d.Forge(kind, token)
+		agentKnown = d.scopes(ctx, f, kind, "agent token")
 	}
 	inboxLabel := "inbox_token_ref"
 	if kind == forge.GitLab {
@@ -125,7 +128,9 @@ func (d *Doctor) forge(ctx context.Context, kind string) {
 			needs = "the api scope"
 		}
 		d.ok("inbox token (%s %s) found; merging from the web inbox needs %s", inboxLabel, ref, needs)
-		d.inboxCI(ctx, d.Forge(kind, token), kind)
+		inf := d.Forge(kind, token)
+		d.scopes(ctx, inf, kind, "inbox token")
+		d.inboxCI(ctx, inf, kind)
 	}
 	if v, ok := f.(versioned); ok && kind == forge.GitLab {
 		if ver, err := v.Version(ctx); err != nil {
@@ -150,7 +155,7 @@ func (d *Doctor) forge(ctx context.Context, kind string) {
 		j = d.identities(ctx, f, kind, agentLogin, overrides)
 	}
 	for _, p := range projects {
-		pf := f
+		pf, known := f, agentKnown
 		if p.TokenRef != "" {
 			if token, err := d.Secrets.Token(p.TokenRef); err != nil {
 				d.fail("%s: agent token (token_ref %s): %v", p.Ref, p.TokenRef, err)
@@ -158,12 +163,82 @@ func (d *Doctor) forge(ctx context.Context, kind string) {
 			} else {
 				d.ok("%s: agent token (token_ref %s) found", p.Ref, p.TokenRef)
 				pf = d.Forge(kind, token)
+				known = d.scopes(ctx, pf, kind, p.Ref+": agent token")
 			}
 			if j != nil {
 				d.ok("%s: agent identity %s is user ID %d (recorded)", p.Ref, p.AgentIdentity, j.AgentIDs[p.Ref])
 			}
 		}
 		d.project(ctx, pf, p)
+		if pf != nil && !known {
+			d.probe(ctx, pf, p)
+		}
+	}
+}
+
+// broadGitHubScopes are classic token scopes beyond what the agent and the inbox need; a scope that starts with
+// "admin:" is broad too.
+var broadGitHubScopes = map[string]bool{"repo": true, "delete_repo": true, "workflow": true, "user": true,
+	"write:packages": true, "delete:packages": true, "codespace": true, "site_admin": true}
+
+// broadGitLabScopes are GitLab scopes beyond the api scope switchboard needs.
+var broadGitLabScopes = map[string]bool{"sudo": true, "admin_mode": true}
+
+// scopes checks the scopes of the token behind f, named who, and reports whether they are known (AGENTS.md: least
+// privilege). A token without the scope switchboard needs fails; one with more than it needs is a warning. A GitHub
+// fine-grained token tells nothing of its permissions: its reads are tried on each project instead (probe), and its
+// writes, which cannot be tried without a side effect, are only named.
+func (d *Doctor) scopes(ctx context.Context, f forge.Forge, kind, who string) bool {
+	tp, ok := f.(forge.TokenProber)
+	if !ok {
+		return true
+	}
+	ts, err := tp.TokenScopes(ctx)
+	if err != nil {
+		d.warn("%s: its scopes could not be read: %v", who, err)
+		return false
+	}
+	if !ts.Known {
+		d.ok("%s is a fine-grained token: its permissions cannot be read, so its reads are tried on each project; its writes (Issues, Pull requests and Contents) cannot be checked without changing something", who)
+		return false
+	}
+	var broad []string
+	has := map[string]bool{}
+	for _, s := range ts.Scopes {
+		has[s] = true
+		if (kind == forge.GitLab && broadGitLabScopes[s]) || (kind != forge.GitLab && (broadGitHubScopes[s] || strings.HasPrefix(s, "admin:"))) {
+			broad = append(broad, s)
+		}
+	}
+	list := strings.Join(ts.Scopes, ", ")
+	switch {
+	case kind == forge.GitLab && !has["api"]:
+		d.fail("%s has the scopes [%s]; switchboard needs the api scope", who, list)
+		return true
+	case kind != forge.GitLab && !has["repo"] && !has["public_repo"]:
+		d.fail("%s has the scopes [%s]; switchboard needs repo (private repositories) or public_repo", who, list)
+		return true
+	}
+	if len(broad) > 0 {
+		d.warn("%s has the scopes [%s]; %s reach beyond the projects (a GitHub fine-grained token limited to them is narrower)", who, list, strings.Join(broad, ", "))
+		return true
+	}
+	d.ok("%s has the scopes [%s]", who, list)
+	return true
+}
+
+// probe tries the reads the agent needs on p with a token whose permissions are not known.
+func (d *Doctor) probe(ctx context.Context, f forge.Forge, p config.Project) {
+	tp, ok := f.(forge.TokenProber)
+	if !ok {
+		return
+	}
+	for _, r := range tp.ProbeReads(ctx, p.Owner, p.Repo, cmp.Or(p.BaseBranch, "main")) {
+		if r.Err != nil {
+			d.fail("%s: the agent token cannot read the %s: %v", p.Ref, r.What, r.Err)
+		} else {
+			d.ok("%s: the agent token can read the %s", p.Ref, r.What)
+		}
 	}
 }
 
@@ -219,7 +294,7 @@ func (d *Doctor) project(ctx context.Context, f forge.Forge, p config.Project) {
 	}
 	d.ci(ctx, f, p)
 	if !private {
-		d.warn("%s is not private (public, or internal on GitLab): anyone who can see it can comment on its issues, and claude runs with your account (docs/SECURITY.md)", p.Ref)
+		d.warn("%s is not private (public, or internal on GitLab): anyone who can see it can comment on its issues; only the input of trusted_authors is taken, include_untrusted is refused, and claude runs in the sandbox (ADR-059, docs/SECURITY.md)", p.Ref)
 		return
 	}
 	d.ok("%s is private", p.Ref)
