@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/uskanda/switchboard/internal/claudecode"
@@ -595,13 +596,21 @@ func (a *Agent) finish(ctx context.Context, pl *plan, sp *workspace.Space, d *De
 	return o.done(d, url, sha, fmt.Sprintf(a.msg.pr, url))
 }
 
-// shell runs cmd with sh in dir and env, within the run timeout, and returns its combined output.
+// shellWaitDelay is how long shell waits for the output pipe to close after it killed the command's process group.
+const shellWaitDelay = 5 * time.Second
+
+// shell runs cmd with sh in dir and env, within the run timeout, and returns its combined output. The command runs in
+// a process group of its own: on the timeout or a cancel the whole group is killed, and a grandchild that still holds
+// the output open cannot keep shell from returning (WaitDelay).
 func (a *Agent) shell(ctx context.Context, dir string, env []string, cmd string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, a.Config.Agent.Timeout)
 	defer cancel()
 	c := exec.CommandContext(ctx, "sh", append([]string{"-c", cmd, "sh"}, args...)...)
 	c.Dir = dir
 	c.Env = env
+	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	c.Cancel = func() error { return syscall.Kill(-c.Process.Pid, syscall.SIGKILL) }
+	c.WaitDelay = shellWaitDelay
 	out, err := c.CombinedOutput()
 	return string(out), err
 }
