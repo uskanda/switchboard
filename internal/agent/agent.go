@@ -289,6 +289,7 @@ func (a *Agent) Start(ctx context.Context) error {
 		return err
 	}
 	a.scanWatches(ctx)
+	a.pruneRuns(time.Now())
 	return nil
 }
 
@@ -327,6 +328,8 @@ func (a *Agent) Run(ctx context.Context) error {
 			t.Reset(d)
 		}
 	}
+	prune := time.NewTicker(pruneEvery)
+	defer prune.Stop()
 	next := a.projectList // what the coming poll fetches, decided after a reload is applied
 	for {
 		a.applyProjects(ctx)
@@ -349,6 +352,8 @@ func (a *Agent) Run(ctx context.Context) error {
 				break wait
 			case <-a.tune:
 				retune()
+			case now := <-prune.C:
+				a.pruneRuns(now)
 			}
 		}
 	}
@@ -482,8 +487,10 @@ func (a *Agent) forgetMissing(p config.Project, listed map[forge.IssueRef]bool) 
 	}
 }
 
+// inProject reports whether ref is an issue of p. The forges treat owner and repository names without regard to
+// case, and may return them in another case than the configuration's.
 func inProject(ref forge.IssueRef, p config.Project) bool {
-	return ref.Kind() == p.Forge && ref.Owner == p.Owner && ref.Repo == p.Repo
+	return ref.Kind() == p.Forge && strings.EqualFold(ref.Owner, p.Owner) && strings.EqualFold(ref.Repo, p.Repo)
 }
 
 // since is a minute before the latest update seen in the project, so that a clock skew between the forge and
@@ -968,7 +975,7 @@ func (a *Agent) hasSlot(ref forge.IssueRef, limit int) (bool, string, int) {
 	}
 	n := 0
 	for r := range a.active {
-		if r.Kind() == ref.Kind() && r.Owner == ref.Owner && r.Repo == ref.Repo {
+		if r.Kind() == ref.Kind() && strings.EqualFold(r.Owner, ref.Owner) && strings.EqualFold(r.Repo, ref.Repo) {
 			n++
 		}
 	}
@@ -982,7 +989,7 @@ func (a *Agent) hasSlot(ref forge.IssueRef, limit int) (bool, string, int) {
 // which is never taken with mu held.
 func (a *Agent) projectLimit(ref forge.IssueRef) int {
 	for _, p := range a.projectList() {
-		if ref.Kind() == p.Forge && ref.Owner == p.Owner && ref.Repo == p.Repo {
+		if inProject(ref, p) {
 			return p.ParallelLimit()
 		}
 	}

@@ -15,6 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/uskanda/switchboard/internal/claudecode"
+	"github.com/uskanda/switchboard/internal/secret"
 )
 
 // Config is the whole configuration file. Field comments name the YAML keys.
@@ -123,6 +124,9 @@ type Agent struct {
 	// ResumeWithinSet is how soon after the post of a plan run the next plan run of the issue forks from its
 	// session; nil means DefaultResumeWithin, 0 never.
 	ResumeWithinSet *time.Duration `yaml:"resume_within"`
+	// RetentionSet is how long the directory of a run (runs/<run-id>/: prompt.md, stream.jsonl) is kept after the run
+	// last wrote to it; nil means DefaultRetention, 0 forever.
+	RetentionSet *time.Duration `yaml:"retention"`
 	// Model and Effort are the model and the effort level of every run; Plan and Fix override them for the plan runs
 	// and the fix runs. The names stay free of any one coding agent's terms; empty leaves the choice to it.
 	Model  string   `yaml:"model"`
@@ -194,6 +198,17 @@ func (a Agent) ResumeWithin() time.Duration {
 		return DefaultResumeWithin
 	}
 	return *a.ResumeWithinSet
+}
+
+// DefaultRetention is agent.retention when unset: 30 days (DESIGN 8.2).
+const DefaultRetention = 720 * time.Hour
+
+// Retention is how long a run's directory is kept after the run last wrote to it; 0 forever.
+func (a Agent) Retention() time.Duration {
+	if a.RetentionSet == nil {
+		return DefaultRetention
+	}
+	return *a.RetentionSet
 }
 
 // AgentRelay is where the agent subscribes: the relay's SSE URL and the token_ref of this host's bearer token.
@@ -536,6 +551,9 @@ func (c *Config) validate() error {
 	if n := c.Agent.MaxFixAttempts; n != nil && *n < 0 {
 		errs = append(errs, fmt.Errorf("agent.max_fix_attempts must be at least 0, got %d", *n))
 	}
+	if d := c.Agent.RetentionSet; d != nil && *d < 0 {
+		errs = append(errs, fmt.Errorf("agent.retention must not be negative, got %v", *d))
+	}
 	if d := c.Agent.ResumeWithinSet; d != nil && *d < 0 {
 		errs = append(errs, fmt.Errorf("agent.resume_within must not be negative, got %v", *d))
 	}
@@ -612,7 +630,35 @@ func (c *Config) validate() error {
 			errs = append(errs, errors.New("trusted_authors.gitlab needs at least one login"))
 		}
 	}
+	if err := secret.CredentialNameClash(c.SecretRefs()); err != nil {
+		errs = append(errs, err)
+	}
 	return errors.Join(errs...)
+}
+
+// SecretRefs lists every reference of a token or a secret the configuration names: the forges' tokens, the
+// projects' overrides, the relays' bearer tokens, the webhook secrets and the notifiers' keys.
+func (c *Config) SecretRefs() []string {
+	refs := []string{c.Forges.GitHub.TokenRef, c.Forges.GitHub.InboxTokenRef, c.Forges.GitLab.TokenRef, c.Forges.GitLab.InboxTokenRef}
+	for _, p := range c.Projects {
+		refs = append(refs, p.TokenRef)
+	}
+	if r := c.Agent.Relay; r != nil {
+		refs = append(refs, r.TokenRef)
+	}
+	if r := c.Inbox.Relay; r != nil {
+		refs = append(refs, r.TokenRef)
+	}
+	for _, h := range c.Relay.Hooks {
+		refs = append(refs, h.SecretRef)
+	}
+	if t := c.Notify.Telegram; t != nil {
+		refs = append(refs, t.TokenRef)
+	}
+	if f := c.Inbox.Notify.FCM; f != nil {
+		refs = append(refs, f.CredentialsRef)
+	}
+	return refs
 }
 
 var (

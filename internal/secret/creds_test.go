@@ -4,12 +4,23 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
 func TestCredentialName(t *testing.T) {
 	if got := CredentialName("switchboard/gitlab-inbox"); got != "switchboard_gitlab_inbox" {
 		t.Fatalf("CredentialName = %q", got)
+	}
+}
+
+func TestCredentialNameClash(t *testing.T) {
+	if err := CredentialNameClash([]string{"switchboard/github", "switchboard/gitlab", "switchboard/github", ""}); err != nil {
+		t.Fatalf("no clash: %v", err)
+	}
+	err := CredentialNameClash([]string{"a/b", "x", "a_b", "a.b"})
+	if err == nil || !strings.Contains(err.Error(), "a.b, a/b, a_b (credential a_b)") {
+		t.Fatalf("err = %v", err)
 	}
 }
 
@@ -31,6 +42,18 @@ func TestTokenFromSystemdCredential(t *testing.T) {
 	v, err := Resolver{Store: failing{t}}.Token("switchboard/github")
 	if err != nil || v != "tok-from-creds" {
 		t.Fatalf("Token = %q, %v", v, err)
+	}
+}
+
+// An empty credential is an error, not an empty token.
+func TestAnEmptyCredentialIsAnError(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "switchboard_hook"), []byte("\n"), 0o400); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CREDENTIALS_DIRECTORY", dir)
+	if v, err := (Resolver{Store: failing{t}}).Token("switchboard/hook"); err == nil {
+		t.Fatalf("Token = %q, want an error", v)
 	}
 }
 

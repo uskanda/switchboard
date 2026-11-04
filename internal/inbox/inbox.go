@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -129,7 +130,7 @@ func (b *Inbox) forgeOf(kind string) forge.Forge {
 // project returns the configured project of an issue.
 func (b *Inbox) project(kind, owner, repo string) (config.Project, bool) {
 	for _, p := range b.Config.Projects {
-		if kindOf(p) == kind && p.Owner == owner && p.Repo == repo {
+		if kindOf(p) == kind && strings.EqualFold(p.Owner, owner) && strings.EqualFold(p.Repo, repo) {
 			return p, true
 		}
 	}
@@ -283,6 +284,30 @@ func (b *Inbox) uses(kind string) bool {
 	return false
 }
 
+// reposPerSearch is how many repo: qualifiers one GitHub search holds, well within its limit of 256 characters.
+const reposPerSearch = 4
+
+// githubScopes are the scopes the GitHub issues are searched over: search_scope when it is set, else the configured
+// GitHub projects, a few repo: qualifiers to a search. An empty scope would search the whole of GitHub.
+func (b *Inbox) githubScopes() []string {
+	if s := b.Config.Forges.GitHub.SearchScope; s != "" {
+		return []string{s}
+	}
+	var repos []string
+	for _, p := range b.Config.Projects {
+		if kindOf(p) == forge.GitHub && !slices.Contains(repos, "repo:"+p.FullName()) {
+			repos = append(repos, "repo:"+p.FullName())
+		}
+	}
+	var scopes []string
+	for len(repos) > 0 {
+		n := min(reposPerSearch, len(repos))
+		scopes = append(scopes, strings.Join(repos[:n], " "))
+		repos = repos[n:]
+	}
+	return scopes
+}
+
 // list reads one forge's waiting, running and queued issues. GitHub is searched once over search_scope; GitLab is
 // read project by project, since it has no search over the configured projects alone. An issue with a start label
 // is listed only once the agent has queued it.
@@ -293,11 +318,19 @@ func (b *Inbox) list(ctx context.Context, kind string) ([]Item, error) {
 	}
 	var found []forge.IssueSummary
 	if kind == forge.GitHub {
-		s, err := f.SearchOpenIssuesWithLabel(ctx, b.Config.Forges.GitHub.SearchScope, b.listed()...)
-		if err != nil {
-			return nil, err
+		seen := map[forge.IssueRef]bool{}
+		for _, scope := range b.githubScopes() {
+			s, err := f.SearchOpenIssuesWithLabel(ctx, scope, b.listed()...)
+			if err != nil {
+				return nil, err
+			}
+			for _, is := range s {
+				if !seen[is.Ref] {
+					seen[is.Ref] = true
+					found = append(found, is)
+				}
+			}
 		}
-		found = s
 	} else {
 		for _, p := range b.Config.Projects {
 			if kindOf(p) != kind {

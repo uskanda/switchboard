@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -54,6 +55,9 @@ func (r *Receiver) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	secret, err := r.Secret(hook.SecretRef)
+	if err == nil && secret == "" {
+		err = errors.New("it is empty")
+	}
 	if err != nil {
 		r.Logf("webhook %s: cannot read the secret %s: %v", hook.Project, hook.SecretRef, err)
 		http.Error(w, "unavailable", http.StatusServiceUnavailable)
@@ -78,10 +82,13 @@ func (r *Receiver) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "signature does not verify", http.StatusUnauthorized)
 		return
 	}
-	if delivery == "" || !r.first(delivery) {
-		if delivery != "" {
-			r.Logf("webhook %s delivery %s: duplicate", hook.Project, delivery)
-		}
+	if delivery == "" {
+		r.Logf("webhook %s: dropped: the delivery has no ID", hook.Project)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	if !r.first(delivery) {
+		r.Logf("webhook %s delivery %s: duplicate", hook.Project, delivery)
 		w.WriteHeader(http.StatusOK)
 		return
 	}

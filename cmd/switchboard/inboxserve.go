@@ -211,7 +211,10 @@ func inboxServe(args []string, stdout, stderr io.Writer) int {
 	// Requests end with ctx, so the event streams, which never go idle, close on a signal instead of holding the
 	// shutdown.
 	srv := &http.Server{Handler: api, ReadHeaderTimeout: 10 * time.Second, BaseContext: func(net.Listener) context.Context { return ctx }}
+	// Serve returns as soon as Shutdown begins; the requests still open are waited for through shutDown.
+	shutDown := make(chan struct{})
 	go func() {
+		defer close(shutDown)
 		<-ctx.Done()
 		shut, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -221,5 +224,6 @@ func inboxServe(args []string, stdout, stderr io.Writer) int {
 	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fail(stderr, err)
 	}
+	<-shutDown
 	return 0
 }

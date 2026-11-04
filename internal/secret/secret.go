@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 
 	"github.com/zalando/go-keyring"
@@ -86,6 +88,34 @@ func CredentialName(ref string) string {
 	return b.String()
 }
 
+// CredentialNameClash returns an error that names every set of different refs CredentialName maps to one name
+// ("a/b" and "a_b"), or nil. Such refs would read each other's credential under systemd; the names are kept as they
+// are, so that the credentials already installed still match, and the clash is refused instead.
+func CredentialNameClash(refs []string) error {
+	byName := map[string][]string{}
+	for _, ref := range refs {
+		if ref == "" {
+			continue
+		}
+		name := CredentialName(ref)
+		if !slices.Contains(byName[name], ref) {
+			byName[name] = append(byName[name], ref)
+		}
+	}
+	var clashes []string
+	for name, rs := range byName {
+		if len(rs) > 1 {
+			sort.Strings(rs)
+			clashes = append(clashes, fmt.Sprintf("%s (credential %s)", strings.Join(rs, ", "), name))
+		}
+	}
+	if len(clashes) == 0 {
+		return nil
+	}
+	sort.Strings(clashes)
+	return fmt.Errorf("these token references share one systemd credential name; rename one of each: %s", strings.Join(clashes, "; "))
+}
+
 // credential reads the token of ref from $CREDENTIALS_DIRECTORY, which systemd sets for a service with credentials.
 // ok is false when there is no such directory or no credential for ref.
 func credential(ref string) (v string, ok bool, err error) {
@@ -100,7 +130,11 @@ func credential(ref string) (v string, ok bool, err error) {
 	if err != nil {
 		return "", false, fmt.Errorf("read the credential of %s: %w", ref, err)
 	}
-	return strings.TrimSpace(string(data)), true, nil
+	v = strings.TrimSpace(string(data))
+	if v == "" {
+		return "", false, fmt.Errorf("the credential of %s is empty", ref)
+	}
+	return v, true, nil
 }
 
 // EnvName is the development-only environment variable for ref: SWITCHBOARD_TOKEN_ followed by ref in upper case,

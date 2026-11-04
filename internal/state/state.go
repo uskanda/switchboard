@@ -98,7 +98,8 @@ func (d Dir) SaveIdentities(ids map[string]int64) error {
 	return d.WriteJSON("identities.json", ids)
 }
 
-// WriteJSON writes v as JSON to name inside the directory, replacing it atomically.
+// WriteJSON writes v as JSON to name inside the directory, replacing it atomically. Each write goes through a
+// temporary file of its own, so that writers of one name at once (runs that write last.json) never share one.
 func (d Dir) WriteJSON(name string, v any) error {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
@@ -108,11 +109,22 @@ func (d Dir) WriteJSON(name string, v any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, append(data, '\n'), 0o600); err != nil {
+	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	tmp := f.Name()
+	_, err = f.Write(append(data, '\n'))
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Rename(tmp, path)
+	}
+	if err != nil {
+		os.Remove(tmp)
+	}
+	return err
 }
 
 // ReadJSON reads name inside the directory into v. It returns os.ErrNotExist (wrapped) when the file is missing.

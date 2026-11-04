@@ -12,6 +12,18 @@ import (
 	"github.com/uskanda/switchboard/internal/config"
 )
 
+func TestServeRefusesAnEmptyWebhookSecret(t *testing.T) {
+	whLn, _ := net.Listen("tcp", "127.0.0.1:0")
+	sseLn, _ := net.Listen("tcp", "127.0.0.1:0")
+	defer whLn.Close()
+	defer sseLn.Close()
+	cfg := config.Relay{Hooks: []config.Hook{{Project: "gh:alice/sandbox", Key: ghKey, SecretRef: "r/gh", Forge: "gh", Owner: "alice", Repo: "sandbox"}}}
+	err := Serve(context.Background(), cfg, whLn, sseLn, func(string) (string, error) { return "", nil }, func(string, ...any) {})
+	if err == nil || !strings.Contains(err.Error(), "empty") {
+		t.Fatalf("Serve = %v", err)
+	}
+}
+
 // A webhook sent to the receiver comes out of the SSE stream as one event, through the two separate listeners.
 func TestServeCarriesAWebhookToSubscribers(t *testing.T) {
 	whLn, _ := net.Listen("tcp", "127.0.0.1:0")
