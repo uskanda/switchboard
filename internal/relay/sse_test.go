@@ -17,8 +17,26 @@ func hashOf(token string) string {
 	return "sha256:" + hex.EncodeToString(s[:])
 }
 
+// hub numbers its events from 1: it starts at the Unix epoch.
 func hub() *Hub {
-	return &Hub{Hosts: map[string]string{"ubuntu-a": hashOf("tok-a"), "ubuntu-b": hashOf("tok-b")}, Ping: 50 * time.Millisecond, Logf: func(string, ...any) {}}
+	return &Hub{Hosts: map[string]string{"ubuntu-a": hashOf("tok-a"), "ubuntu-b": hashOf("tok-b")}, Ping: 50 * time.Millisecond, Logf: func(string, ...any) {},
+		Now: func() time.Time { return time.UnixMicro(0) }}
+}
+
+// A relay that restarts numbers its events after every ID it gave before, so that the Last-Event-ID of a host
+// replays every event of the new run.
+func TestSSEIDsGrowAcrossARestart(t *testing.T) {
+	at := time.Date(2026, 11, 4, 0, 0, 0, 0, time.UTC)
+	before := &Hub{Logf: func(string, ...any) {}, Now: func() time.Time { return at }}
+	for i := 0; i < 5; i++ {
+		before.Publish(Event{Forge: "gh", Project: "a/b", Issue: i, Kind: "issues"})
+	}
+	after := &Hub{Logf: func(string, ...any) {}, Now: func() time.Time { return at.Add(time.Second) }}
+	after.Publish(Event{Forge: "gh", Project: "a/b", Issue: 9, Kind: "issues"})
+	_, missed := after.subscribe(before.last)
+	if len(missed) != 1 || missed[0].id <= before.last {
+		t.Fatalf("missed = %+v after %d", missed, before.last)
+	}
 }
 
 // subscribe connects with token and lastID and returns a reader of the stream's lines.

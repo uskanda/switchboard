@@ -13,7 +13,10 @@ import (
 var banned = "us" + "kn"
 
 // productRoots are the paths, relative to the repository root, that make up the product.
-var productRoots = []string{"cmd", "internal", "config", "Makefile", "go.mod", ".github"}
+var productRoots = []string{"cmd", "internal", "inboxapi", "web", "config", "Makefile", "go.mod", ".github"}
+
+// skipped are directories that hold what tools fetch or build, not the product's sources.
+var skipped = map[string]bool{"node_modules": true, "dist": true}
 
 func TestProductDoesNotMentionTheHarness(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", ".."))
@@ -30,8 +33,14 @@ func TestProductDoesNotMentionTheHarness(t *testing.T) {
 			continue
 		}
 		err := filepath.WalkDir(start, func(path string, d os.DirEntry, err error) error {
-			if err != nil || d.IsDir() || path == self {
+			if err != nil || path == self {
 				return err
+			}
+			if d.IsDir() {
+				if skipped[d.Name()] {
+					return filepath.SkipDir
+				}
+				return nil
 			}
 			data, err := os.ReadFile(path)
 			if err != nil {

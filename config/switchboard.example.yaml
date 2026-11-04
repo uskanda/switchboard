@@ -68,6 +68,7 @@ agent:
   max_turns: 80
   max_fix_attempts: 2                 # fix runs an issue gets from CI failures and rejected pushes; 0 turns them off
   limit_wait: 30m                     # how long to pause after a usage limit whose reset time is unknown
+  retention: 720h                     # how long a run's directory (prompt.md, stream.jsonl) is kept; 0 keeps it forever
   # model: opus                       # the model of every run; empty leaves it to the CLI and your settings
   # effort: medium                    # low | medium | high | xhigh | max; empty leaves it to the CLI
   # plan: { model: "", effort: "" }   # overrides for the plan runs

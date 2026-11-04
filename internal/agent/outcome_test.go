@@ -164,6 +164,44 @@ func TestDoneReusesTheOpenPullRequest(t *testing.T) {
 	}
 }
 
+// A pull request the forge refuses to open leaves the pushed branch and waits with the reason, so that a reply
+// runs again.
+func TestAFailedPullRequestWaitsWithTheReason(t *testing.T) {
+	x := newH(t, "", nil)
+	x.f.FailCreateChangeRequest = errors.New("422 validation failed")
+	x.step(1, commit("flag.txt", "dry-run")+done("Added it."))
+	x.f.AddLabel(x.ref, "agent:ready", x.master)
+	x.poll()
+	x.settle()
+	p := x.lastPost(x.ref)
+	if !x.originHas("switchboard/issue-12") || len(x.f.PRs) != 0 {
+		t.Fatalf("pushed=%v PRs=%d", x.originHas("switchboard/issue-12"), len(x.f.PRs))
+	}
+	if x.labels(x.ref) != "agent:waiting" || p.Marker.Reason != "error" || !strings.Contains(p.Body, "422 validation failed") {
+		t.Fatalf("labels=%q post=%+v\n%s", x.labels(x.ref), p.Marker, p.Body)
+	}
+}
+
+// A poll whose listing fails reports it and starts nothing; the next poll finds the issue still ready.
+func TestAFailedListingIsReadAgainOnTheNextPoll(t *testing.T) {
+	x := newH(t, "", nil)
+	x.step(1, commit("flag.txt", "dry-run")+done("Added it."))
+	x.f.AddLabel(x.ref, "agent:ready", x.master)
+	x.f.FailUpdatedIssues = errors.New("502 bad gateway")
+	if err := x.pollErr(); err == nil || !strings.Contains(err.Error(), "502 bad gateway") {
+		t.Fatalf("poll error = %v", err)
+	}
+	x.settle()
+	if len(x.posts(x.ref)) != 0 || x.labels(x.ref) != "agent:ready" {
+		t.Fatalf("after the failed listing: labels=%q posts=%d", x.labels(x.ref), len(x.posts(x.ref)))
+	}
+	x.poll()
+	x.settle()
+	if x.labels(x.ref) != "agent:done" || len(x.f.PRs) != 1 {
+		t.Fatalf("after the next poll: labels=%q PRs=%d", x.labels(x.ref), len(x.f.PRs))
+	}
+}
+
 func TestDoneOpensANewPullRequestWhenTheOldOneIsClosed(t *testing.T) {
 	x := newH(t, "", nil)
 	if _, err := x.f.CreateChangeRequest(context.Background(), forge.ChangeRequest{Owner: "o", Repo: "r", Head: "switchboard/issue-12", Base: "main"}); err != nil {

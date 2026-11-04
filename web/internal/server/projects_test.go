@@ -54,7 +54,7 @@ func TestAddingAProjectFromElsewhereIsRefused(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			f := &fakeInbox{}
 			w := do(newServer(f), "POST", "/api/projects", `{"ref":"gh:evil/repo"}`, h)
-			if w.Code != http.StatusForbidden && w.Code != http.StatusUnsupportedMediaType {
+			if w.Code != http.StatusForbidden && w.Code != http.StatusUnsupportedMediaType && w.Code != http.StatusMisdirectedRequest {
 				t.Fatalf("status = %d", w.Code)
 			}
 			if len(f.added) != 0 {

@@ -57,7 +57,7 @@ func TestCancellingFromElsewhereIsRefused(t *testing.T) {
 		want int
 	}{
 		"other origin":  {map[string]string{"Content-Type": "application/json", "Origin": "https://evil.example"}, http.StatusForbidden},
-		"rebound host":  {map[string]string{"Content-Type": "application/json", "Origin": "http://" + listen, "Host": "evil.example:8783"}, http.StatusForbidden},
+		"rebound host":  {map[string]string{"Content-Type": "application/json", "Origin": "http://" + listen, "Host": "evil.example:8783"}, http.StatusMisdirectedRequest},
 		"form encoding": {map[string]string{"Content-Type": "application/x-www-form-urlencoded", "Origin": "http://" + listen}, http.StatusUnsupportedMediaType},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -88,7 +88,7 @@ func TestMergingFromElsewhereIsRefused(t *testing.T) {
 	}{
 		"other origin":  {map[string]string{"Content-Type": "application/json", "Origin": "https://evil.example"}, http.StatusForbidden},
 		"no origin":     {map[string]string{"Content-Type": "application/json"}, http.StatusForbidden},
-		"rebound host":  {map[string]string{"Content-Type": "application/json", "Origin": "http://" + listen, "Host": "evil.example:8783"}, http.StatusForbidden},
+		"rebound host":  {map[string]string{"Content-Type": "application/json", "Origin": "http://" + listen, "Host": "evil.example:8783"}, http.StatusMisdirectedRequest},
 		"form encoding": {map[string]string{"Content-Type": "application/x-www-form-urlencoded", "Origin": "http://" + listen}, http.StatusUnsupportedMediaType},
 	} {
 		t.Run(name, func(t *testing.T) {

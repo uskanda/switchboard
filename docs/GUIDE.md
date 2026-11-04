@@ -55,7 +55,9 @@ cp config/switchboard.example.yaml ~/.config/switchboard/config.yaml
 switchboard doctor
 ```
 
-Phase 1では、エージェントの投稿も自分のアカウントで行う。対象は非公開リポジトリとし、`trusted_authors` には自分だけを書く。`claude` は自分のOSユーザーで動くため、詳しくは [SECURITY.md](SECURITY.md) を読むこと。
+Phase 1では、エージェントの投稿も自分のアカウントで行う。`trusted_authors` には自分だけを書く。公開リポジトリも対象にできるが、`include_untrusted` は使えない（ADR-062）。`claude` は自分のOSユーザーのsandboxの中で動くため、詳しくは [SECURITY.md](SECURITY.md) を読むこと。
+
+`switchboard doctor` は、トークンの権限も診断する。GitLabのトークンとGitHubのclassic PATはスコープを読み、足りなければ失敗、広すぎれば警告にする。GitHubのfine-grained PATは権限を返さないので、各プロジェクトのissue、PR、contentsを読めるかだけを試す。書き込みの権限は確かめられない。
 
 ### GitLab
 
@@ -210,6 +212,15 @@ OpenSpecを使うプロジェクトでの書き方の例は、[examples/openspec
 ```yaml
 agent:
   resume_within: 30m
+```
+
+### 実行のディレクトリの保持期間
+
+実行ごとのファイル（`runs/<run-id>/` の `prompt.md`、`stream.jsonl` など）は、最後の書き込みから `agent.retention`（既定720h）を過ぎると、エージェントが消す。起動時と、その後1日ごとに調べる。実行中のもの、書き戻しを待つもの、各issueの最新の実行のものは残す。`0s` にすると消さない。
+
+```yaml
+agent:
+  retention: 168h
 ```
 
 ### 実行のモデルとeffort
@@ -430,9 +441,9 @@ inbox:
   refresh_interval: 60s
 ```
 
-Web表示は、端末で受信ポートを開く唯一の部品である（ADR-036）。LANの中だけに出す。今の版では、利用者を認証しない。そのため、LANの中の機器なら誰でも、自分の名前で返答でき、issueを作って実行を起こせる（ADR-040）。外のWebページからの返答とissueの作成は、`Origin` と `Host` の検査で拒む。
+Web表示は、端末で受信ポートを開く唯一の部品である（ADR-036）。LANの中だけに出す。今の版では、利用者を認証しない。そのため、LANの中の機器なら誰でも、自分の名前で返答でき、issueを作って実行を起こせる（ADR-040）。外のWebページからの返答とissueの作成は、`Origin` と `Host` の検査で拒む。一覧などの読み取りも、`Host` がこのアドレスでなければ421で断る（DNS rebindingを防ぐ）。
 
-1. `~/.config/switchboard/web.yaml` に、待ち受けのアドレスを書く。この端末のLANのIPアドレスとポートを明示する。`0.0.0.0` は拒まれる。ホスト名は書けない。`Host` の検査を、この1つの値との比較にするためである。ブラウザでも、このIPアドレスで開く
+1. `~/.config/switchboard/web.yaml` に、待ち受けのアドレスを書く。この端末のLANのIPアドレスとポートを明示する。許すのは、ループバック、プライベート（`10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16`、`fc00::/7`）、リンクローカルのアドレスだけである。`0.0.0.0`、`[::ffff:0.0.0.0]`、グローバルなアドレス、Tailscaleなどの `100.64.0.0/10` は拒まれる。ホスト名は書けない。`Host` の検査を、この1つの値との比較にするためである。ブラウザでも、このIPアドレスで開く
 
    ```yaml
    listen: 192.168.0.82:8783

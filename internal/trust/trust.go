@@ -139,7 +139,8 @@ func (j *Judge) ReadyLabel(ref forge.IssueRef, actor *forge.User) bool {
 	return ok
 }
 
-// Body reports whether the issue title and body may be taken as an instruction.
+// Body reports whether the issue title and body may be taken as an instruction: a trusted author, and no untrusted
+// or unknown edit of either. The title goes into the trusted part of the prompt and into the pull request.
 func (j *Judge) Body(is *forge.Issue) bool {
 	var ok bool
 	var reason string
@@ -147,9 +148,14 @@ func (j *Judge) Body(is *forge.Issue) bool {
 	case !j.trusted(&is.Author):
 		reason = "author is not trusted"
 	default:
-		if ok, reason = j.editOK(is.BodyEdit); ok {
-			reason = "trusted author, no untrusted edit"
+		if ok, reason = j.editOK(is.BodyEdit); !ok {
+			break
 		}
+		if ok, reason = j.editOK(is.TitleEdit); !ok {
+			reason = "title: " + reason
+			break
+		}
+		reason = "trusted author, no untrusted edit"
 	}
 	j.log(is.Ref, "body", &is.Author, ok, reason, is.Title+"\n"+is.Body)
 	return ok

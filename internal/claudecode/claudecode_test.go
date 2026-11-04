@@ -40,6 +40,7 @@ func fakeClaude(t *testing.T, fixture string, sleep float64, ignoreInt, ignoreTe
 rec=%q
 trap '%s' INT
 trap '%s' TERM
+: > "$rec/ready"
 printf '%%s\n' "$@" > "$rec/argv"
 env | sort > "$rec/env"
 pwd > "$rec/cwd"
@@ -209,15 +210,19 @@ func TestRunReportsMaxTurns(t *testing.T) {
 func TestTimeoutSendsINTThenTERMThenKILL(t *testing.T) {
 	bin, rec := fakeClaude(t, "done.jsonl", 30, true, true, 0)
 	req := request(t, bin)
-	req.Timeout = 300 * time.Millisecond
-	// The fake runs its trap only after its current sleep returns, which a loaded machine can delay past a short
-	// grace: give each signal a second to be recorded.
+	// A loaded machine can take a while to start bash: the timeout leaves the fake time to set its traps, and the
+	// test checks that it did (the ready file) before it reads the signals. The fake runs its trap only after its
+	// current sleep returns, which a loaded machine can delay past a short grace: give each signal a second.
+	req.Timeout = 2 * time.Second
 	req.IntGrace = time.Second
 	req.TermGrace = time.Second
 	start := time.Now()
 	res, err := Run(context.Background(), req)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(rec, "ready")); err != nil {
+		t.Fatalf("the fake had not set its traps when the timeout came: %v", err)
 	}
 	// ExitCode is -1 only when a signal ended the process: the fake ignores INT and TERM, so that was the KILL.
 	if !res.TimedOut || res.ExitCode != -1 || time.Since(start) > 10*time.Second {

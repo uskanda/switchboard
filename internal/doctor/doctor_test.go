@@ -264,8 +264,17 @@ type tokenForge struct {
 	login  string
 }
 
-func (s tokenForge) TokenScopes(context.Context) ([]string, error) { return s.scopes, nil }
-func (s tokenForge) TokenOwner(context.Context) (string, error)    { return s.login, nil }
+func (s tokenForge) TokenScopes(context.Context) (*forge.TokenScopes, error) {
+	return &forge.TokenScopes{Known: s.scopes != nil, Scopes: s.scopes}, nil
+}
+
+func (s tokenForge) ProbeReads(context.Context, string, string, string) []forge.Probe {
+	return nil
+}
+
+func (s tokenForge) TokenOwner(context.Context) (string, error) {
+	return s.login, nil
+}
 
 func TestInboxAuthWarnsOnAWritingInboxTokenAndAnUntrustedOwner(t *testing.T) {
 	w := newWorld(t)

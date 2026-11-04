@@ -82,7 +82,11 @@ func Build(in Input) string {
 		// Text from the issue never contains this run's fence tags.
 		return strings.ReplaceAll(s, in.Nonce, "")
 	}
-	fmt.Fprintf(&b, "You are working on GitHub issue %s.\n\n", in.Ref)
+	forgeName := "GitHub"
+	if in.Ref.Kind() == forge.GitLab {
+		forgeName = "GitLab"
+	}
+	fmt.Fprintf(&b, "You are working on %s issue %s.\n\n", forgeName, in.Ref)
 	open, end := tag("issue")
 	fmt.Fprintf(&b, "%s\n# %s\n\n%s\n%s\n\n", open, scrub(in.Title), scrub(in.Body), end)
 	open, end = tag("instructions")

@@ -133,6 +133,25 @@ func TestWebhookRefusals(t *testing.T) {
 	}
 }
 
+// An empty secret would take a signature anyone can make with the empty key.
+func TestWebhookRefusesAnEmptySecret(t *testing.T) {
+	r, rec := receiver(t)
+	r.Secret = func(string) (string, error) { return "", nil }
+	if code := serve(r, ghRequest(ghKey, "d-1", commentPayload, sign("", commentPayload))); code != http.StatusServiceUnavailable || len(rec.events) != 0 {
+		t.Fatalf("code %d, events %v", code, rec.events)
+	}
+}
+
+func TestWebhookLogsADeliveryWithoutAnID(t *testing.T) {
+	r, rec := receiver(t)
+	if code := serve(r, ghRequest(ghKey, "", commentPayload, sign("s3cret", commentPayload))); code != 200 || len(rec.events) != 0 {
+		t.Fatalf("code %d, events %v", code, rec.events)
+	}
+	if len(rec.logs) != 1 || !strings.Contains(rec.logs[0], "no ID") {
+		t.Fatalf("logs = %v", rec.logs)
+	}
+}
+
 func TestWebhookGitLabSecretToken(t *testing.T) {
 	r, rec := receiver(t)
 	body := strings.Replace(notePayload, "nas/switchboard-sandbox", "nas/old", 1)

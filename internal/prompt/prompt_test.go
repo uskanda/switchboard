@@ -24,6 +24,17 @@ func input() Input {
 	}
 }
 
+func TestPromptNamesTheForgeOfTheIssue(t *testing.T) {
+	in := input()
+	if p := Build(in); !strings.Contains(p, "You are working on GitHub issue gh:o/r#7.") {
+		t.Errorf("GitHub: %s", p)
+	}
+	in.Ref.Forge = forge.GitLab
+	if p := Build(in); !strings.Contains(p, "You are working on GitLab issue gl:o/r#7.") {
+		t.Errorf("GitLab: %s", p)
+	}
+}
+
 func TestPromptHoldsOnlyTrustedInputByDefault(t *testing.T) {
 	p := Build(input())
 	for _, want := range []string{"Add a flag", "Please add --dry-run.", "Default off.", "Which default?"} {

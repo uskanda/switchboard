@@ -257,7 +257,17 @@ func (a *Agent) Start(ctx context.Context) error {
 	for _, p := range a.Config.ProjectsFor(a.Config.Host.Name) {
 		private, err := a.routeOf(p).Forge.RepoPrivate(ctx, p.Owner, p.Repo)
 		if err != nil {
-			return fmt.Errorf("%s: %w", p.FullName(), err)
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			// One project the forge does not answer for keeps the others running: it waits for acceptance, as a
+			// project of a reload does, and is tried again on each poll.
+			a.logf("%s: read the repository's visibility: %v; tried again on the next poll", p.FullName(), err)
+			a.pmu.Lock()
+			a.accepting[p.Ref] = p
+			a.failures[p.Ref] = err.Error()
+			a.pmu.Unlock()
+			continue
 		}
 		if !a.allowed(p, private) {
 			continue
@@ -279,6 +289,7 @@ func (a *Agent) Start(ctx context.Context) error {
 		return err
 	}
 	a.scanWatches(ctx)
+	a.pruneRuns(time.Now())
 	return nil
 }
 
@@ -317,6 +328,8 @@ func (a *Agent) Run(ctx context.Context) error {
 			t.Reset(d)
 		}
 	}
+	prune := time.NewTicker(pruneEvery)
+	defer prune.Stop()
 	next := a.projectList // what the coming poll fetches, decided after a reload is applied
 	for {
 		a.applyProjects(ctx)
@@ -339,6 +352,8 @@ func (a *Agent) Run(ctx context.Context) error {
 				break wait
 			case <-a.tune:
 				retune()
+			case now := <-prune.C:
+				a.pruneRuns(now)
 			}
 		}
 	}
@@ -404,7 +419,7 @@ func (a *Agent) pollProject(ctx context.Context, p config.Project) []error {
 // pollReplies evaluates the waiting and done issues of a GitLab project whose comment count changed. GitLab does not
 // move an issue's update time for a new comment (V22), so UpdatedIssues alone misses replies.
 func (a *Agent) pollReplies(ctx context.Context, p config.Project, f forge.Forge) []error {
-	waiting, err := f.SearchOpenIssuesWithLabel(ctx, p.FullName(), a.Config.Labels.Waiting, a.Config.Labels.Done)
+	waiting, err := f.SearchOpenIssuesWithLabel(ctx, forge.Projects(p.FullName()), a.Config.Labels.Waiting, a.Config.Labels.Done)
 	if err != nil {
 		return []error{fmt.Errorf("%s: %w", p.Ref, err)}
 	}
@@ -472,8 +487,10 @@ func (a *Agent) forgetMissing(p config.Project, listed map[forge.IssueRef]bool) 
 	}
 }
 
+// inProject reports whether ref is an issue of p. The forges treat owner and repository names without regard to
+// case, and may return them in another case than the configuration's.
 func inProject(ref forge.IssueRef, p config.Project) bool {
-	return ref.Kind() == p.Forge && ref.Owner == p.Owner && ref.Repo == p.Repo
+	return ref.Kind() == p.Forge && strings.EqualFold(ref.Owner, p.Owner) && strings.EqualFold(ref.Repo, p.Repo)
 }
 
 // since is a minute before the latest update seen in the project, so that a clock skew between the forge and
@@ -602,12 +619,19 @@ type plan struct {
 	fix          *fixInfo // for fixRun: what it fixes
 }
 
-// ack is the last comment the run takes in, or 0.
+// ack is the last comment the run takes in, or 0. The agent's transient posts (claims, progress, queued comments,
+// attachments) are passed over: two hosts that read the issue on either side of the other's claim still name the same
+// trigger, so the claim rule finds one winner.
 func (pl *plan) ack() int64 {
-	if len(pl.comments) == 0 {
-		return 0
+	for i := len(pl.comments) - 1; i >= 0; i-- {
+		if i < len(pl.kinds) && pl.kinds[i] == trust.AgentPost {
+			if m, _ := marker.Parse(pl.comments[i].Body); m != nil && m.Transient() {
+				continue
+			}
+		}
+		return pl.comments[i].ID
 	}
-	return pl.comments[len(pl.comments)-1].ID
+	return 0
 }
 
 // decide returns a plan when the issue should run now: ready and labeled by a trusted user, or waiting with a
@@ -952,7 +976,7 @@ func (a *Agent) hasSlot(ref forge.IssueRef, limit int) (bool, string, int) {
 	}
 	n := 0
 	for r := range a.active {
-		if r.Kind() == ref.Kind() && r.Owner == ref.Owner && r.Repo == ref.Repo {
+		if r.Kind() == ref.Kind() && strings.EqualFold(r.Owner, ref.Owner) && strings.EqualFold(r.Repo, ref.Repo) {
 			n++
 		}
 	}
@@ -966,7 +990,7 @@ func (a *Agent) hasSlot(ref forge.IssueRef, limit int) (bool, string, int) {
 // which is never taken with mu held.
 func (a *Agent) projectLimit(ref forge.IssueRef) int {
 	for _, p := range a.projectList() {
-		if ref.Kind() == p.Forge && ref.Owner == p.Owner && ref.Repo == p.Repo {
+		if inProject(ref, p) {
 			return p.ParallelLimit()
 		}
 	}

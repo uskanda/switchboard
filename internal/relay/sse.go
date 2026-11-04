@@ -24,11 +24,28 @@ type Hub struct {
 	Hosts map[string]string
 	Ping  time.Duration // 30s when zero
 	Logf  func(format string, args ...any)
+	// Now is when the hub starts numbering; time.Now when nil.
+	Now func() time.Time
 
-	mu   sync.Mutex
-	last int64
-	buf  []numbered
-	subs map[chan numbered]bool
+	mu      sync.Mutex
+	started bool
+	last    int64
+	buf     []numbered
+	subs    map[chan numbered]bool
+}
+
+// begin sets the ID before the first event to the time of the hub's first use, in microseconds, so that the IDs of
+// a relay that restarted are larger than every ID it gave before. Call it with mu held.
+func (h *Hub) begin() {
+	if h.started {
+		return
+	}
+	h.started = true
+	now := time.Now
+	if h.Now != nil {
+		now = h.Now
+	}
+	h.last = now().UnixMicro()
 }
 
 type numbered struct {
@@ -41,6 +58,7 @@ func (h *Hub) Publish(e Event) {
 	data, _ := json.Marshal(e)
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.begin()
 	h.last++
 	n := numbered{h.last, data}
 	h.buf = append(h.buf, n)
@@ -80,11 +98,13 @@ func (h *Hub) host(r *http.Request) string {
 	return name
 }
 
-// subscribe registers a subscriber and returns the events it missed after lastID. An ID newer than any held is from
-// before a restart: the whole buffer is replayed.
+// subscribe registers a subscriber and returns the events it missed after lastID. An ID from before a restart is
+// smaller than every ID since, so the whole buffer is replayed; so is an ID newer than any held (a clock that went
+// back).
 func (h *Hub) subscribe(lastID int64) (chan numbered, []numbered) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.begin()
 	if lastID > h.last {
 		lastID = 0
 	}

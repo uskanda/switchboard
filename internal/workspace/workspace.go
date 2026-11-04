@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -178,26 +179,52 @@ func ClearConfigLock(ctx context.Context, repo string) (bool, error) {
 	return true, nil
 }
 
-// claudeConfig are the paths Claude Code reads its project configuration and instructions from.
-var claudeConfig = []string{".claude", ".mcp.json", "CLAUDE.md", "AGENTS.md"}
+// rootClaudeConfig are the paths at the root of the worktree Claude Code reads its project configuration and
+// instructions from; nestedClaudeConfig the ones it also reads in any directory below.
+var (
+	rootClaudeConfig   = []string{".claude", ".mcp.json", "CLAUDE.md", "AGENTS.md"}
+	nestedClaudeConfig = []string{":(glob)**/CLAUDE.md", ":(glob)**/AGENTS.md", ":(glob)**/.claude/**"}
+)
 
-// CheckClaudeConfig fails when the worktree's Claude Code configuration differs from the base branch: changed,
-// committed on the issue branch, or present but untracked (ignored files included). ADR-018.
+// CheckClaudeConfig fails when the worktree's Claude Code configuration differs from the commit the issue branch
+// forked from the base branch (the merge base of HEAD and origin/<base>): changed, committed on the issue branch, or
+// present but untracked. At the root, ignored files count too; below it, ignored files are left out, so that what a
+// package manager unpacks (node_modules/x/AGENTS.md) does not stop every run. ADR-018.
+//
+// The merge base, not the tip of the base branch, is what the worktree is compared with: the base branch may change its
+// configuration after the worktree was made, and that must not keep the issue from running again. The configuration
+// at the merge base was committed by a maintainer, too.
 func (s *Space) CheckClaudeConfig(ctx context.Context) error {
 	dir := s.Dir()
-	changed, err := s.git(ctx, dir, nil, append([]string{"diff", "--name-only", s.base(), "--"}, claudeConfig...)...)
+	fork, err := s.git(ctx, dir, nil, "merge-base", "HEAD", s.base())
 	if err != nil {
 		return err
 	}
-	untracked, err := s.git(ctx, dir, nil, append([]string{"ls-files", "--others", "--"}, claudeConfig...)...)
+	all := append(append([]string(nil), rootClaudeConfig...), nestedClaudeConfig...)
+	changed, err := s.git(ctx, dir, nil, append([]string{"diff", "--no-renames", "--name-only", fork, "--"}, all...)...)
 	if err != nil {
 		return err
 	}
-	files := nonEmpty(strings.Split(changed+"\n"+untracked, "\n"))
+	untracked, err := s.git(ctx, dir, nil, append([]string{"ls-files", "--others", "--"}, rootClaudeConfig...)...)
+	if err != nil {
+		return err
+	}
+	nested, err := s.git(ctx, dir, nil, append([]string{"ls-files", "--others", "--exclude-standard", "--"}, nestedClaudeConfig...)...)
+	if err != nil {
+		return err
+	}
+	files := nonEmpty(strings.Split(changed+"\n"+untracked+"\n"+nested, "\n"))
 	if len(files) > 0 {
-		return fmt.Errorf("the Claude Code configuration differs from %s: %s", s.base(), strings.Join(files, ", "))
+		return fmt.Errorf("the Claude Code configuration differs from %s (the fork point of %s): %s", shortSHA(fork), s.base(), strings.Join(files, ", "))
 	}
 	return nil
+}
+
+func shortSHA(sha string) string {
+	if len(sha) > 12 {
+		return sha[:12]
+	}
+	return sha
 }
 
 func nonEmpty(xs []string) []string {
@@ -213,12 +240,27 @@ func nonEmpty(xs []string) []string {
 	return out
 }
 
-// protected are the paths a run must not change: directories end with a slash.
+// protected are the paths, from the root, a run must not change: directories end with a slash.
 var protected = []string{".github/workflows/", ".gitlab-ci.yml", ".claude/", ".mcp.json", "CLAUDE.md", "AGENTS.md"}
+
+// protectedFiles and protectedDirs are protected at any depth: Claude Code reads them in every directory.
+var (
+	protectedFiles = []string{"CLAUDE.md", "AGENTS.md"}
+	protectedDirs  = []string{".claude"}
+)
 
 func isProtected(path string, extra []string) bool {
 	for _, p := range append(append([]string(nil), protected...), extra...) {
 		if path == p || (strings.HasSuffix(p, "/") && strings.HasPrefix(path, p)) {
+			return true
+		}
+	}
+	elems := strings.Split(path, "/")
+	if slices.Contains(protectedFiles, elems[len(elems)-1]) {
+		return true
+	}
+	for _, e := range elems[:len(elems)-1] {
+		if slices.Contains(protectedDirs, e) {
 			return true
 		}
 	}
@@ -282,7 +324,9 @@ func (s *Space) CheckOutput(ctx context.Context, extraProtected, texts []string)
 		problems = append(problems, fmt.Sprintf("there is no commit ahead of %s", s.base()))
 		return problems, nil
 	}
-	names, err := s.git(ctx, dir, nil, "diff", "--name-only", s.base()+"...HEAD")
+	// --no-renames: a rename is listed as its old path and its new path, so moving a protected file out of a
+	// protected path is caught too.
+	names, err := s.git(ctx, dir, nil, "diff", "--no-renames", "--name-only", s.base()+"...HEAD")
 	if err != nil {
 		return nil, err
 	}

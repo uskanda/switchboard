@@ -69,6 +69,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.Set("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Referrer-Policy", "no-referrer")
+	// Every request, reads included, must name this address as its Host: a page that rebinds its own name to this
+	// address (DNS rebinding) still sends its own name, and must not read the inbox.
+	if r.Host != s.Listen {
+		send(w, http.StatusMisdirectedRequest, inboxapi.Error{Code: inboxapi.CodeInvalid, Message: "the web inbox answers only at http://" + s.Listen})
+		return
+	}
 	r = withSession(r)
 	switch {
 	case r.URL.Path == "/auth/login" && r.Method == http.MethodGet:
