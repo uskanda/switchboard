@@ -62,8 +62,14 @@ func (c *Config) check() error {
 	if err != nil {
 		return fmt.Errorf("listen must name an IP address, not %q: the Host check compares against this one value", host)
 	}
+	// An IPv4-mapped address ([::ffff:0.0.0.0]) is checked as the IPv4 address it maps.
+	ip = ip.Unmap()
 	if ip.IsUnspecified() {
 		return fmt.Errorf("listen %q would serve on every interface; write the LAN address of this host instead", c.Listen)
+	}
+	// ADR-036: the inbox has no authentication, so it is served only where the internet cannot reach it directly.
+	if !ip.IsLoopback() && !ip.IsPrivate() && !ip.IsLinkLocalUnicast() {
+		return fmt.Errorf("listen %q is not a loopback, private (10/8, 172.16/12, 192.168/16, fc00::/7) or link-local address; write the LAN address of this host instead", c.Listen)
 	}
 	return nil
 }

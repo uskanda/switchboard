@@ -110,7 +110,7 @@ func TestReplyFromElsewhereIsRefused(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			f := &fakeInbox{}
 			w := do(newServer(f), "POST", "/api/reply", `{"ref":"gh:o/r#12","text":"x"}`, h)
-			if w.Code != http.StatusForbidden && w.Code != http.StatusUnsupportedMediaType {
+			if w.Code != http.StatusForbidden && w.Code != http.StatusUnsupportedMediaType && w.Code != http.StatusMisdirectedRequest {
 				t.Fatalf("status = %d", w.Code)
 			}
 			if len(f.replies) != 0 {
@@ -131,6 +131,17 @@ func TestReadsAreServed(t *testing.T) {
 	var d inboxapi.Detail
 	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &d) != nil || d.Ref != "gl:nas/sb#6" {
 		t.Fatalf("issue: %d %s", w.Code, w.Body)
+	}
+}
+
+// A page that rebinds its own name to this address sends its own name as the Host, and must not read the inbox.
+func TestReadsUnderAnotherHostAreRefused(t *testing.T) {
+	s := newServer(&fakeInbox{})
+	for _, path := range []string{"/api/inbox", "/api/issue?ref=gh%3Ao%2Fr%2312", "/api/events", "/"} {
+		w := do(s, "GET", path, "", map[string]string{"Host": "evil.example:8783"})
+		if w.Code != http.StatusMisdirectedRequest || strings.Contains(w.Body.String(), "gh:o/r#12") {
+			t.Errorf("%s: %d %s", path, w.Code, w.Body)
+		}
 	}
 }
 
