@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { BackHandler, Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
-import { isInside } from "./lib/url";
+import { loginGitLab } from "./lib/api";
+import { staysInside } from "./lib/url";
 import { useColors } from "./theme";
 
 /** Target is the WUI page to show; n changes on each request, so the same page can be asked for twice. */
@@ -10,7 +11,8 @@ export type Target = { path: string; n: number };
 
 /**
  * WebScreen shows the WUI at origin in a WebView, below a slim bar whose button leads to the settings. Pages of the
- * WUI stay in the WebView; any other link opens in the default browser. Back goes back in the WebView while it can.
+ * WUI stay in the WebView, and so do those of the GitLab people log in on when the login is on (issue #15); any other
+ * link opens in the default browser. Back goes back in the WebView while it can.
  */
 export function WebScreen({ origin, target, onSettings }: { origin: string; target: Target; onSettings: () => void }) {
   const c = useColors();
@@ -24,6 +26,15 @@ export function WebScreen({ origin, target, onSettings }: { origin: string; targ
   const key = `${target.n}-${attempt}`;
   const [failure, setFailure] = useState<{ key: string; text: string } | null>(null);
   const failed = failure?.key === key ? failure.text : null;
+  const [gitlab, setGitlab] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    void loginGitLab(origin).then((g) => live && setGitlab(g));
+    return () => {
+      live = false;
+    };
+  }, [origin]);
 
   useEffect(() => {
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
@@ -70,7 +81,7 @@ export function WebScreen({ origin, target, onSettings }: { origin: string; targ
           style={{ backgroundColor: c.surface }}
           setSupportMultipleWindows={false}
           onShouldStartLoadWithRequest={(req) => {
-            if (isInside(origin, req.url) || req.url.startsWith("about:")) return true;
+            if (staysInside(origin, gitlab, req.url) || req.url.startsWith("about:")) return true;
             void Linking.openURL(req.url);
             return false;
           }}

@@ -25,3 +25,11 @@ export function isInside(origin: string, url: string): boolean {
 export function issuePath(ref: string, merge = false): string {
   return `/issue/${encodeURIComponent(ref)}${merge ? "?action=merge" : ""}`;
 }
+
+/**
+ * staysInside tells whether the WebView keeps url: a page of the WUI at origin, or, with the login on, a page of the
+ * GitLab people log in on (gitlab, from the WUI's /api/auth), so that the login comes back with its cookie.
+ */
+export function staysInside(origin: string, gitlab: string | null, url: string): boolean {
+  return isInside(origin, url) || (gitlab !== null && isInside(gitlab.replace(/\/+$/, ""), url));
+}

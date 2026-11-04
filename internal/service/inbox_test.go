@@ -43,6 +43,18 @@ func TestInboxCredentialsIncludeTheFCMKey(t *testing.T) {
 	}
 }
 
+// With inbox.auth, the inbox service also loads the client secret of the GitLab login; the agent's service does not.
+func TestInboxCredentialsIncludeTheClientSecret(t *testing.T) {
+	c := cfg()
+	c.Inbox.Auth = &config.InboxAuth{ClientID: "cid", ClientSecretRef: "switchboard/gitlab-oidc", MemberGroups: []string{"team"}}
+	if got := refsOf(InboxCredentials(c)); got != "switchboard/github-inbox switchboard/gitlab-inbox switchboard/gitlab-oidc" {
+		t.Fatalf("credentials = %s", got)
+	}
+	if got := refsOf(Credentials(c)); strings.Contains(got, "switchboard/gitlab-oidc") {
+		t.Fatalf("the agent's credentials hold the client secret: %s", got)
+	}
+}
+
 // The agent's service loads the Telegram bot token when it notifies; the inbox tokens stay out.
 func TestAgentCredentialsIncludeTheTelegramToken(t *testing.T) {
 	c := cfg()

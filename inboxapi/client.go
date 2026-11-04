@@ -29,7 +29,7 @@ type Client struct {
 func (c *Client) client() *http.Client {
 	c.once.Do(func() {
 		var d net.Dialer
-		c.http = &http.Client{Transport: &http.Transport{
+		c.http = &http.Client{Transport: sessionTransport{&http.Transport{
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 				sock := c.Socket
 				if sock == "" {
@@ -37,7 +37,7 @@ func (c *Client) client() *http.Client {
 				}
 				return d.DialContext(ctx, "unix", sock)
 			},
-		}}
+		}}}
 	})
 	return c.http
 }
