@@ -29,7 +29,7 @@ const targets = {
   status: 200,
   body: {
     items: [
-      { ref: "gh:o/r", host: "usknas" },
+      { ref: "gh:o/r", host: "box" },
       { ref: "gl:nas/sb", host: "laptop" },
     ],
     starts: [
@@ -49,7 +49,7 @@ async function openDialog() {
   );
   await userEvent.click(await screen.findByRole("button", { name: "新規issue" }));
   const dialog = await screen.findByRole("dialog", { name: "新規issue" });
-  await waitFor(() => expect(within(dialog).getByRole("combobox", { name: "プロジェクト" })).toHaveTextContent("o/r GitHub（担当：usknas）"));
+  await waitFor(() => expect(within(dialog).getByRole("combobox", { name: "プロジェクト" })).toHaveTextContent("o/r GitHub（担当：box）"));
   return dialog;
 }
 
@@ -64,10 +64,10 @@ describe("a new issue", () => {
     answer({ "GET /api/issue-targets": targets });
     const dialog = await openDialog();
     const project = within(dialog).getByRole("combobox", { name: "プロジェクト" });
-    expect(project).toHaveTextContent("o/r GitHub（担当：usknas）");
+    expect(project).toHaveTextContent("o/r GitHub（担当：box）");
     await userEvent.click(project);
     const list = await within(dialog).findByRole("listbox");
-    expect(within(list).getByRole("option", { name: "o/r GitHub（担当：usknas）" })).toHaveAttribute("data-state", "checked");
+    expect(within(list).getByRole("option", { name: "o/r GitHub（担当：box）" })).toHaveAttribute("data-state", "checked");
     expect(within(list).getByRole("option", { name: "nas/sb GitLab（担当：laptop）" })).toBeInTheDocument();
     await userEvent.keyboard("{Escape}");
     const ready = within(dialog).getByRole("radio", { name: /agent:ready/ });
@@ -197,7 +197,7 @@ describe("the project of a new issue", () => {
     const options = within(list).getAllByRole("option");
     // The icons are left out of the names, which read as the native options did.
     expect(options).toEqual([
-      within(list).getByRole("option", { name: "o/r GitHub（担当：usknas）" }),
+      within(list).getByRole("option", { name: "o/r GitHub（担当：box）" }),
       within(list).getByRole("option", { name: "nas/sb GitLab（担当：laptop）" }),
     ]);
     for (const o of options) expect(o.querySelector("[data-project-icon]")).not.toBeNull();

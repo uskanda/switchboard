@@ -45,6 +45,11 @@ type Forge struct {
 	FailSearch error
 	// FailRepoPrivate, when set, is returned by the next RepoPrivate call and then cleared.
 	FailRepoPrivate error
+	// FailUpdatedIssues, when set, is returned by the next UpdatedIssues call and then cleared.
+	FailUpdatedIssues error
+	// FailCreateChangeRequest, when set, is returned by the next CreateChangeRequest call and then cleared; no change
+	// request is opened.
+	FailCreateChangeRequest error
 	// FailCI, when set, is returned by every CommitChecks and CheckLog call.
 	FailCI error
 	ci     *ci
@@ -282,6 +287,10 @@ func (f *Forge) summary(is *issue) forge.IssueSummary {
 func (f *Forge) UpdatedIssues(_ context.Context, owner, name string, since time.Time) ([]forge.IssueSummary, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if err := f.FailUpdatedIssues; err != nil {
+		f.FailUpdatedIssues = nil
+		return nil, err
+	}
 	r, ok := f.repos[owner+"/"+name]
 	if !ok {
 		return nil, forge.ErrNotFound
@@ -501,6 +510,10 @@ func (f *Forge) EnsureLabel(_ context.Context, owner, name, label, _, _ string) 
 func (f *Forge) CreateChangeRequest(_ context.Context, cr forge.ChangeRequest) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if err := f.FailCreateChangeRequest; err != nil {
+		f.FailCreateChangeRequest = nil
+		return "", err
+	}
 	f.PRs = append(f.PRs, cr)
 	return fmt.Sprintf("https://forge.test/%s/%s/pull/%d", cr.Owner, cr.Repo, len(f.PRs)), nil
 }

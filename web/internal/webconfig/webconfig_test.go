@@ -41,7 +41,7 @@ func TestLoadRejectsAnUnsafeListen(t *testing.T) {
 		"global v4":   {"listen: 8.8.8.8:8783\n", "not a loopback, private"},
 		"global v6":   {"listen: \"[2001:db8::1]:8783\"\n", "not a loopback, private"},
 		"cgnat":       {"listen: 100.100.1.2:8783\n", "not a loopback, private"},
-		"host name":   {"listen: usknas.local:8783\n", "IP address"},
+		"host name":   {"listen: box.local:8783\n", "IP address"},
 		"no port":     {"listen: 192.168.0.82\n", "listen"},
 		"unknown key": {"listen: 192.168.0.82:8783\ntoken: x\n", "token"},
 	} {

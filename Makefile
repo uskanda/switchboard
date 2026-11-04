@@ -21,12 +21,12 @@ verify-vet:
 	@$(GO) vet ./... && echo "[vet] ok"
 
 verify-test:
-	@$(GO) test ./... && echo "[test] ok"
+	@$(GO) test -race ./... && echo "[test] ok"
 
 # web/ is a module of its own (the web inbox): the front end is checked and built first, then embedded in Go.
 verify-web:
 	@cd web/ui && pnpm install --frozen-lockfile --silent && pnpm typecheck && pnpm lint && pnpm test && pnpm build
-	@cd web && $(GO) vet ./... && $(GO) test ./... && echo "[web] ok"
+	@cd web && $(GO) vet ./... && $(GO) test -race ./... && echo "[web] ok"
 
 # app/ is the Android app, the web inbox in a WebView. Its checks need neither a JDK nor the Android SDK; app-apk does.
 verify-app:
