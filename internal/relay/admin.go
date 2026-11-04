@@ -49,6 +49,9 @@ func AddHook(ctx context.Context, cfg *config.Config, ref string, secretToken bo
 	if secretToken && p.Forge != "gl" {
 		return errors.New("--gitlab-token applies to GitLab projects only")
 	}
+	if secretToken && !cfg.Relay.WebhookOnLoopback() {
+		return fmt.Errorf("--gitlab-token is refused: %w", config.GitLabTokenOffLoopback(cfg.Relay.WebhookListen))
+	}
 	for _, h := range cfg.Relay.Hooks {
 		if h.Project == ref {
 			return fmt.Errorf("%s already has a webhook (key %s); remove it first with `switchboard relay hook remove %s`", ref, h.Key, ref)
@@ -95,13 +98,13 @@ func AddHook(ctx context.Context, cfg *config.Config, ref string, secretToken bo
 	return nil
 }
 
-// allowlistNote tells how to let GitLab send to a relay on its own host or network.
+// allowlistNote tells how to let GitLab send to a relay on its own host or on another machine of its LAN.
 func allowlistNote(cfg *config.Config) string {
 	host := cfg.Relay.WebhookURL
 	if u, err := url.Parse(cfg.Relay.WebhookURL); err == nil && u.Host != "" {
 		host = u.Host
 	}
-	return fmt.Sprintf("If the relay is on GitLab's host or network, GitLab sends to it only once %s is in "+
+	return fmt.Sprintf("If the relay is on GitLab's host or on its local network, GitLab sends to it only once %s is in "+
 		"Admin > Settings > Network > Outbound requests > \"Local IP addresses and domain names that hooks and integrations can access\". "+
 		"Keep \"Allow requests to the local network\" off. After a change, GitLab's background jobs may refuse the address for a few minutes.\n", host)
 }

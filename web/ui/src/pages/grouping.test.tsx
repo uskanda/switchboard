@@ -108,6 +108,16 @@ describe("the list grouped by project", () => {
     }
   });
 
+  it("starts each card's title a step closer to its top, where the project's line was", async () => {
+    answer({ "GET /api/inbox": listing });
+    at("/");
+    for (const a of within(cards(await section("返答待ち"))).getAllByRole("link")) {
+      expect(a).toHaveClass("pt-md");
+      expect(a).not.toHaveClass("p-lg");
+      expect(a).toHaveClass("px-lg", "pb-lg");
+    }
+  });
+
   it("leaves the project out of each row of the table too", async () => {
     answer({ "GET /api/inbox": listing });
     at("/");
@@ -158,6 +168,7 @@ describe("the grouping toggle", () => {
     for (const a of within(s).getAllByRole("link")) {
       expect(shown(a)).toMatch(/^[a-z]\/[a-z]#\d (GitHub|GitLab)/);
       expect(a.querySelector("[data-project-icon]")).not.toBeNull();
+      expect(a).toHaveClass("p-lg");
     }
     const table = within(await section("返答待ち")).getByRole("table");
     expect(within(table).getAllByRole("link").map((a) => shown(a))).toEqual([

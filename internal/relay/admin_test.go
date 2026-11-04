@@ -24,7 +24,7 @@ func adminConfig() *config.Config {
 			{Ref: "gl:nas/switchboard-sandbox", Forge: "gl", Owner: "nas", Repo: "switchboard-sandbox"},
 			{Ref: "gh:alice/sandbox", Forge: "gh", Owner: "alice", Repo: "sandbox"},
 		},
-		Relay: config.Relay{WebhookURL: "http://127.0.0.1:8781", SSEListen: "127.0.0.1:8782"},
+		Relay: config.Relay{WebhookListen: "127.0.0.1:8781", WebhookURL: "http://127.0.0.1:8781", SSEListen: "127.0.0.1:8782"},
 	}
 }
 
@@ -118,6 +118,29 @@ func TestAddHookWithASecretToken(t *testing.T) {
 	h := hooks.Of("nas", "switchboard-sandbox")[0]
 	if !h.SecretToken || strings.HasPrefix(h.Secret, "whsec_") {
 		t.Fatalf("hook = %+v", h)
+	}
+}
+
+// On a LAN address the X-Gitlab-Token would cross the network in clear, so --gitlab-token is refused before any
+// secret is made.
+func TestAddHookRefusesASecretTokenOffLoopback(t *testing.T) {
+	cfg := adminConfig()
+	cfg.Relay.WebhookListen, cfg.Relay.WebhookURL = "192.168.0.82:8781", "http://192.168.0.82:8781"
+	hooks, store := &fake.Hooks{}, memStore{}
+	err := AddHook(context.Background(), cfg, "gl:nas/switchboard-sandbox", true, hooks, store, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "signing token") || !strings.Contains(err.Error(), "192.168.0.82:8781") {
+		t.Fatalf("err = %v", err)
+	}
+	if len(store) != 0 || len(hooks.Of("nas", "switchboard-sandbox")) != 0 {
+		t.Fatalf("left: store %v, hooks %v", store, hooks.Of("nas", "switchboard-sandbox"))
+	}
+	// A signing token is still fine there.
+	out := &bytes.Buffer{}
+	if err := AddHook(context.Background(), cfg, "gl:nas/switchboard-sandbox", false, hooks, store, out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "192.168.0.82:8781") || !strings.Contains(out.String(), "Outbound requests") {
+		t.Fatalf("output:\n%s", out.String())
 	}
 }
 

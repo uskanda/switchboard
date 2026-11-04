@@ -145,7 +145,8 @@ function Row({ it, selected, grouped }: { it: ViewItem; selected?: string; group
  * CardList is issues as cards, one under another. A card's frame holds its link to the issue and, below a line, a done
  * issue's change and its merge button, which stay outside that link. Grouped by project, a card leaves out the
  * project's icon, reference and forge's badge, which its group's heading shows, and puts the issue's number before the
- * title, within the title's two lines.
+ * title, within the title's two lines. With no line for the project, the title would start lower than the card's
+ * last line ends above the bottom, its line height adding to the padding, so the padding above it is md, not lg.
  */
 function CardList({ items, selected, grouped }: { items: ViewItem[]; selected?: string; grouped: boolean }) {
   return (
@@ -164,7 +165,7 @@ function CardList({ items, selected, grouped }: { items: ViewItem[]; selected?: 
               <Link
                 to={issuePath(it.ref)}
                 aria-current={current ? "page" : undefined}
-                className="flex flex-col gap-xs rounded-md p-lg focus-visible:outline-none"
+                className={cn("flex flex-col gap-xs rounded-md focus-visible:outline-none", grouped ? "px-lg pt-md pb-lg" : "p-lg")}
               >
                 {!grouped && <IssueRef value={it.ref} className="self-start" />}
                 <span className="line-clamp-2 font-medium break-words" title={it.title}>

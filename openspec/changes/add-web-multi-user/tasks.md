@@ -5,7 +5,7 @@
 ## 1. 設定と検証
 
 - [x] 1.2 `internal/config`：認証を設定したとき、エージェントの身元が同じフォージの `trusted_authors` にあれば、誤りにする。身元は、フォージとプロジェクトごとの `agent_identity` である。テストで、GitLabとGitHubの両方の重なりと、認証なしでは誤りにならないことを確かめる
-- [x] 1.3 `docs/GUIDE.md` に複数の利用者の設定の例を足し、ADR-060を `docs/DECISIONS.md` に足す。`make verify` の文書の検査が通ることで確かめる
+- [x] 1.3 `docs/GUIDE.md` に複数の利用者の設定の例を足し、ADR-061を `docs/DECISIONS.md` に足す。`make verify` の文書の検査が通ることで確かめる
 
 ## 2. 権限の判定
 

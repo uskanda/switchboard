@@ -39,5 +39,5 @@
 - `internal/agent`：ADR-056の特例を、認証を設定しない構成に限る
 - `web/ui`：GitHubのプロジェクトの書き込みのボタンを、owner以外に出さない。信頼されない人への知らせを出す
 - `app/`：認証を設定したときの通知のボタンの動き
-- docs：ADR-060を足す（ADR-015、ADR-040、ADR-043、ADR-056を改める）。利用者の記述（`docs/GUIDE.md`、`docs/SECURITY.md`、`PRODUCT.md`）
+- docs：ADR-061を足す（ADR-015、ADR-040、ADR-043、ADR-056を改める）。利用者の記述（`docs/GUIDE.md`、`docs/SECURITY.md`、`PRODUCT.md`）
 - 依存：Web表示の認証（issue #15）の変更（ログインと利用者の文脈）
