@@ -81,6 +81,27 @@ func TestBody(t *testing.T) {
 	}
 }
 
+func TestBodyRefusesATitleChangedByAnUntrustedUser(t *testing.T) {
+	rec := &recorder{}
+	j := judge(rec)
+	is := &forge.Issue{IssueSummary: forge.IssueSummary{Ref: forge.IssueRef{Owner: "o", Repo: "r", Number: 1}, Title: "t"}, Body: "do x", Author: alice}
+	is.TitleEdit = forge.Edit{Edited: true, Editor: &alice}
+	if !j.Body(is) {
+		t.Error("a title renamed by a trusted user must be accepted")
+	}
+	is.TitleEdit = forge.Edit{Edited: true, Editor: &mallory}
+	if j.Body(is) {
+		t.Error("a title renamed by an untrusted user must be refused")
+	}
+	is.TitleEdit = forge.Edit{Edited: true, Unknown: true}
+	if j.Body(is) {
+		t.Error("a title renamed by an unknown user must be refused")
+	}
+	if r := rec.events[1]["reason"]; r != "title: last edited by an untrusted user" {
+		t.Errorf("reason = %v", r)
+	}
+}
+
 func TestClassifyComments(t *testing.T) {
 	rec := &recorder{}
 	j := judge(rec)

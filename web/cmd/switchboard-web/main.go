@@ -58,7 +58,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,
 	}
+	// Serve returns as soon as Shutdown begins; the requests still open are waited for through shutDown.
+	shutDown := make(chan struct{})
 	go func() {
+		defer close(shutDown)
 		<-ctx.Done()
 		shut, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -74,5 +77,6 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "switchboard-web: %v\n", err)
 		return 1
 	}
+	<-shutDown
 	return 0
 }

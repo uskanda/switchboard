@@ -58,7 +58,7 @@ func TestSaveOfInstructionsFromElsewhereIsRefused(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			f := &fakeInbox{}
 			w := do(newServer(f), "POST", "/api/instructions", `{"target":"","content":"x"}`, h)
-			if w.Code != http.StatusForbidden && w.Code != http.StatusUnsupportedMediaType {
+			if w.Code != http.StatusForbidden && w.Code != http.StatusUnsupportedMediaType && w.Code != http.StatusMisdirectedRequest {
 				t.Fatalf("status = %d", w.Code)
 			}
 			if len(f.saved) != 0 {

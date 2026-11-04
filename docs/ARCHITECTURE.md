@@ -14,18 +14,14 @@
                  └─────────▲───────────┘                        │  ID通知のみ        │
                            │                                     └────────┬─────────┘
           本文はローカルが │ 自分のトークンで再取得                         │ SSE / WebSocket
-          コメント・ラベル │ （フックが書き戻す）                          │ （ローカルから外向き接続）
+          コメント・ラベル │ （エージェントが書き戻す）                    │ （ローカルから外向き接続）
                            │                                              ▼
-            ┌──────────────┴──────────── 各端末（tmux / systemd 常駐）───────────────┐
-            │  ┌───────────────────────┐        ┌────────────────────────────┐   │
-            │  │ ローカルエージェント       │ ─────▶ │ Claude Code                 │   │
-            │  │ 投稿者検証・issue対応表   │        │ claude -p（必要時 --resume）│   │
-            │  └───────────────────────┘        └──────────────┬─────────────┘   │
-            │                                                  │ Stop / Notification│
-            │                                       ┌──────────▼───────────┐      │
-            │                                       │ フック                 │      │
-            │                                       │ コメント＋ラベル付け替え│      │
-            │                                       └──────────────────────┘      │
+            ┌──────────────┴──────────── 各端末（systemd 常駐）──────────────────────┐
+            │  ┌───────────────────────┐  起動   ┌────────────────────────────┐   │
+            │  │ ローカルエージェント       │ ─────▶ │ Claude Code（sandbox）       │   │
+            │  │ 投稿者検証・issue対応表   │ ◀───── │ claude -p（必要時 --resume）│   │
+            │  │ push・PR・コメント・ラベル │  終了   └────────────────────────────┘   │
+            │  └───────────────────────┘  （宣言の JSON と worktree を検査）         │
             └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -56,13 +52,13 @@
   5. プロンプトを組み立て `claude -p` を実行（3 章）
 - 排他：同一 issue の同時実行を防ぐロック（端末内はファイルロック、端末間は担当端末の固定で回避）
 
-### 2.3 フック（hooks）
-- Claude Code の Stop / Notification フックから呼ばれる小さなコマンド
-- 役割：
-  - 応答待ち → issue に質問をコメントし `agent:waiting` に付け替え、隠しマーカーを付与
-  - 完了 → 結果（PR URL 等）をコメントし `agent:done` に付け替え
-- issue との対応は環境変数（エージェントが起動時に設定する `SWITCHBOARD_ISSUE_REF` 等）で受け取る
-- フックの入力スキーマは Claude Code 側で変わりうるため、解析処理は adapters 層に置く
+### 2.3 書き戻し（エージェント）
+- Claude Code のフックは使わない（ADR-063）。`claude -p` は人の入力を待って止まらず（ADR-019）、プロセスの終了が実行の終わりになる
+- `claude -p` が終わると、エージェントが結果を書き戻す：
+  - 待ち → issue に質問をコメントし `agent:waiting` に付け替え、隠しマーカーを付与
+  - 完了 → push 前の検査を通してから push し、draft の PR/MR を作り、URL をコメントして `agent:done` に付け替え
+- 実行の終わり方は、`--json-schema` の構造化出力（宣言）で受け取る。CLI の出力形式への依存は `internal/claudecode` に置く
+- フォージへの書き込みはエージェントだけが行い、Claude の環境にはフォージのトークンも push の資格情報も渡さない（ADR-011）
 
 ### 2.4 受信箱（inbox）
 - 役割：全プロダクト横断の `agent:waiting` 一覧と、そこからの返答
@@ -82,7 +78,7 @@
   - issue の本文と、信頼済み投稿者のコメント（それ以外は除外、または「参考データ」として明示的に区切る）
   - リポジトリの CLAUDE.md
   - switchboard 用の追加指示（待ちになる条件、質問の書き方、禁止操作）
-- 権限：許可ツールを明示し、main への push・マージ・リリースを拒否する設定ファイルを使う
+- 権限：許可ツールを明示した設定ファイルを実行ごとに作る。main への push・マージ・リリースは、権限の拒否の規則ではすり抜けられる（V5）ので、それに頼らない。push はエージェントだけが issue のブランチに行い、Claude の環境には資格情報を渡さない。防壁は sandbox（ADR-057）と、push 前の検査（保護パス、秘密、ブランチ）である（ADR-063）
 - 作業場所：issue ごとに git worktree（`switchboard/issue-<n>` ブランチ）を切る
 
 ## 4. 処理フロー
@@ -93,8 +89,8 @@
 3. worktree を作成し `claude -p` を実行
 
 ### 4.2 応答待ち
-1. Claude が人間の判断を必要として停止
-2. フックが質問をコメントし `agent:waiting` に付け替え
+1. Claude が人間の判断を必要とし、質問を宣言して終了
+2. エージェントが質問をコメントし `agent:waiting` に付け替え
 3. 受信箱に表示される
 
 ### 4.3 応答
@@ -103,8 +99,8 @@
 3. エージェントが本文を再取得・投稿者検証 → `agent:running` → 再実行
 
 ### 4.4 完了
-1. Claude が PR を作成して終了
-2. フックが PR URL をコメントし `agent:done`
+1. Claude が issue のブランチにコミットし、完了を宣言して終了
+2. エージェントが push 前の検査を通して push し、draft の PR/MR を作り、URL をコメントして `agent:done`
 3. マージは人間が行う。受信箱のWeb表示の「マージ」のボタンからも行え、そのときは受信箱のサービスが受信箱のトークン（人の身元）でdraftを解除してマージする。issueのcloseはPR/MRの `Closes #N` に任せる（ADR-043）
 4. 押したマージがPR/MRとbaseの衝突で断られたときは、受信箱のサービスが依頼を状態ディレクトリの `inbox/automerge.json` に覚える。エージェントの直す実行が新しいdone（マーカーに `fix=<ci|push|conflict>`）を投稿し、PR/MRのheadがそのコミットなら、受信箱のサービスがそのコミットを指定してマージする。依頼は `inbox.refresh_interval` ごとに、画面がつながっていなくても調べる。押したあとに人の指示の実行が入ったとき、issueやPR/MRが閉じたとき、`waiting` に移ったとき、人がpushしたときは打ち切る。WUIの詳細のペインから取り消せる（ADR-048）
 
@@ -114,24 +110,27 @@
 3. CIが全部終わって失敗があれば、失敗したjobのログの末尾を非信頼のデータとして渡し、直す実行を始める（`agent:done` → `agent:running`）。上限を超えたら `waiting(reason=ci)`
 4. pushがnon-fast-forwardで拒否されたら、リモートのブランチをfetchし、同じ実行の枠のまま直す実行に引き継ぐ。権限と規則による拒否は `waiting(reason=push)`
 
-## 5. ディレクトリ構成（想定）
+## 5. ディレクトリ構成
 
 ```
 switchboard/
-├── CLAUDE.md
+├── AGENTS.md
 ├── README.md
 ├── config/
 │   └── switchboard.example.yaml
 ├── docs/
-├── cmd/ または src/cli/        # CLI エントリ（inbox / reply / agent / labels / relay）
-├── internal/ または src/
-│   ├── forge/                  # GitHub / GitLab クライアント
-│   ├── inbox/                  # 横断一覧の集約
-│   ├── agent/                  # 検知・検証・実行
-│   ├── relay/                  # 中継サーバー
+├── cmd/switchboard/            # CLI エントリ（agent / inbox / reply / labels / relay / service / doctor）
+├── inboxapi/                   # 受信箱のサービスと Web 表示の間の API（Unix ソケット）
+├── internal/
+│   ├── forge/                  # フォージの抽象と GitHub / GitLab / 偽のクライアント
+│   ├── agent/                  # 検知・検証・実行・書き戻し
+│   ├── claudecode/             # Claude Code の CLI・stream-json・設定の生成
+│   ├── trust/                  # 投稿者と編集者の検証
+│   ├── workspace/              # worktree、実行前と push 前の検査、push
+│   ├── inbox/、inboxserve/     # 横断一覧の集約と受信箱のサービス
+│   ├── relay/、relayclient/    # 中継サーバーとその購読
 │   ├── marker/                 # 隠しマーカーの生成・解析
-│   └── adapters/claudecode/    # Claude Code の CLI・hooks 依存部分
-└── hooks/                      # Claude Code に登録するフックスクリプト
+│   └── …                       # config、state、secret、service、doctor など
+├── web/                        # 受信箱の Web 表示（switchboard-web、別モジュール）
+└── app/                        # Android のアプリ（Web 表示を WebView で開く）
 ```
-
-技術スタック確定後（ADR-010）に具体化する。

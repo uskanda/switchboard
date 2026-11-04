@@ -29,7 +29,7 @@ type counting struct {
 	err      error
 }
 
-func (c *counting) SearchOpenIssuesWithLabel(ctx context.Context, scope string, labels ...string) ([]forge.IssueSummary, error) {
+func (c *counting) SearchOpenIssuesWithLabel(ctx context.Context, scope forge.Scope, labels ...string) ([]forge.IssueSummary, error) {
 	c.searches.Add(1)
 	if c.err != nil {
 		return nil, c.err

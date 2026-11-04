@@ -145,8 +145,8 @@ func (s Setup) Unit() string {
 		what, command, after = "web inbox", "serve", after+" "+InboxName
 	}
 	fmt.Fprintf(&b, "[Unit]\nDescription=switchboard %s\nAfter=%s\nWants=%s\n\n", what, after, after)
-	fmt.Fprintf(&b, "[Service]\nUser=%s\nEnvironment=HOME=%s\nEnvironment=PATH=%s\n", s.User, s.Home, s.Path)
-	fmt.Fprintf(&b, "ExecStart=%s %s --config %s\n", s.Binary, command, s.Config)
+	fmt.Fprintf(&b, "[Service]\nUser=%s\nEnvironment=%s\nEnvironment=%s\n", s.User, envWord("HOME="+s.Home), envWord("PATH="+s.Path))
+	fmt.Fprintf(&b, "ExecStart=%s %s --config %s\n", execWord(s.Binary), command, execWord(s.Config))
 	if s.Kind == KindInbox {
 		// Only the inbox's unit owns the directory: systemd removes a unit's RuntimeDirectory when the unit stops,
 		// and the web inbox, running as the same user, opens the socket in it.
@@ -157,6 +157,21 @@ func (s Setup) Unit() string {
 	}
 	fmt.Fprintf(&b, "Restart=on-failure\nRestartSec=30s\n\n[Install]\nWantedBy=multi-user.target\n")
 	return b.String()
+}
+
+// envWord is one assignment of Environment=, and execWord one word of ExecStart=, written as systemd reads them:
+// a "%" doubled (specifiers), in ExecStart a "$" doubled (variables), and the whole put in double quotes, with "\" and
+// '"' escaped, when it holds a space, a quote or a backslash. Unquoted, a path with a space would be cut there.
+func envWord(s string) string { return systemdWord(strings.ReplaceAll(s, "%", "%%")) }
+func execWord(s string) string {
+	return systemdWord(strings.ReplaceAll(strings.ReplaceAll(s, "%", "%%"), "$", "$$"))
+}
+
+func systemdWord(s string) string {
+	if s != "" && !strings.ContainsAny(s, " \t\"'\\") {
+		return s
+	}
+	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(s) + `"`
 }
 
 // Step is one command run through sudo. Stdin, when set, is fed to it and never shown: it carries a token.
@@ -171,6 +186,13 @@ func (s Step) String() string { return "sudo " + strings.Join(s.Args, " ") }
 // InstallSteps places the credentials and the unit (written to unitFile beforehand), then enables and restarts the
 // service. token reads each agent token, from the Secret Service.
 func (s Setup) InstallSteps(unitFile string, token func(ref string) (string, error)) ([]Step, error) {
+	refs := make([]string, 0, len(s.Creds))
+	for _, c := range s.Creds {
+		refs = append(refs, c.Ref)
+	}
+	if err := secret.CredentialNameClash(refs); err != nil {
+		return nil, err
+	}
 	steps := []Step{{Args: []string{"install", "-d", "-m", "0700", CredDir}}}
 	for _, c := range s.Creds {
 		t, err := token(c.Ref)

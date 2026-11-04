@@ -1,14 +1,19 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/uskanda/switchboard/internal/agent"
 	"github.com/uskanda/switchboard/internal/config"
+	"github.com/uskanda/switchboard/internal/forge"
+	"github.com/uskanda/switchboard/internal/forge/fake"
 	"github.com/uskanda/switchboard/internal/forge/github"
 	"github.com/uskanda/switchboard/internal/forge/gitlab"
+	"github.com/uskanda/switchboard/internal/state"
 	"github.com/uskanda/switchboard/internal/trust"
 )
 
@@ -92,6 +97,68 @@ projects:
 		if r == "gl-other" {
 			t.Fatal("asked for the token of another host's project")
 		}
+	}
+}
+
+// With GitHub and GitLab in one configuration, each project trusts only the user IDs of its own forge: the same
+// login is another account, with another ID, on the other forge.
+func TestJudgeGivesEachProjectTheIDsOfItsOwnForge(t *testing.T) {
+	cfg := load(t, `version: 1
+host: {name: here}
+forges:
+  github: {token_ref: gh-agent, inbox_token_ref: gh-inbox, agent_identity: bot}
+  gitlab: {base_url: "https://gl.test", token_ref: gl-agent, inbox_token_ref: gl-inbox, agent_identity: bot}
+trusted_authors: {github: [me], gitlab: [me]}
+projects:
+  - {ref: "gh:o/r", path: /src/r, host: here}
+  - {ref: "gl:nas/a", path: /src/a, host: here}
+  - {ref: "gl:nas/b", path: /src/b, host: here, token_ref: gl-bot, agent_identity: project_7_bot}
+`)
+	gh := fake.New(nil)
+	gh.AddUser("me", 1)
+	gh.AddUser("bot", 2)
+	gl := fake.NewGitLab(nil)
+	gl.AddUser("me", 100)
+	gl.AddUser("bot", 200)
+	gl.AddUser("project_7_bot", 700)
+	routes := map[string]agent.Route{"gh:o/r": {Forge: gh}, "gl:nas/a": {Forge: gl}, "gl:nas/b": {Forge: gl}}
+	c := newConn(cfg, func(string) (string, error) { return "t", nil })
+	d := state.Dir{Path: t.TempDir()}
+	for _, kind := range []string{forge.GitHub, forge.GitLab} {
+		if err := c.judge(context.Background(), kind, routes, d, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ghj, glj := routes["gh:o/r"].Judge, routes["gl:nas/a"].Judge
+	if ghj == nil || glj == nil || routes["gl:nas/b"].Judge != glj {
+		t.Fatalf("judges: gh %p, gl:nas/a %p, gl:nas/b %p", ghj, glj, routes["gl:nas/b"].Judge)
+	}
+	if !ghj.Trusted[1] || ghj.Trusted[100] || ghj.AgentID != 2 {
+		t.Errorf("GitHub judge = %+v", ghj)
+	}
+	if !glj.Trusted[100] || glj.Trusted[1] || glj.AgentID != 200 {
+		t.Errorf("GitLab judge = %+v", glj)
+	}
+	nasB := forge.IssueRef{Forge: forge.GitLab, Owner: "nas", Repo: "b", Number: 1}
+	if glj.AgentIDOf(nasB) != 700 || ghj.AgentIDOf(forge.IssueRef{Owner: "o", Repo: "r"}) != 2 {
+		t.Errorf("agent IDs: nas/b %d", glj.AgentIDOf(nasB))
+	}
+}
+
+// A forge no project of this host is on gets no judge, and its client is never asked.
+func TestJudgeOfAForgeWithoutProjectsDoesNothing(t *testing.T) {
+	cfg := load(t, `version: 1
+host: {name: here}
+forges:
+  github: {token_ref: gh-agent, inbox_token_ref: gh-inbox, agent_identity: bot}
+trusted_authors: {github: [me]}
+projects:
+  - {ref: "gh:o/r", path: /src/r, host: here}
+`)
+	routes := map[string]agent.Route{"gh:o/r": {}}
+	c := newConn(cfg, func(string) (string, error) { return "t", nil })
+	if err := c.judge(context.Background(), forge.GitLab, routes, state.Dir{Path: t.TempDir()}, nil); err != nil || routes["gh:o/r"].Judge != nil {
+		t.Fatalf("err = %v, judge = %v", err, routes["gh:o/r"].Judge)
 	}
 }
 

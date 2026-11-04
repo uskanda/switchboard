@@ -3,6 +3,7 @@ package relay
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"time"
@@ -13,6 +14,12 @@ import (
 // Serve runs the receiver on webhookLn and the SSE hub on sseLn until ctx ends. The two never share a listener, so
 // the webhook port can be published without exposing the stream (design.md 4.7).
 func Serve(ctx context.Context, cfg config.Relay, webhookLn, sseLn net.Listener, secret func(ref string) (string, error), logf func(string, ...any)) error {
+	// An empty secret would verify signatures made with an empty key, which anyone can make.
+	for _, h := range cfg.Hooks {
+		if s, err := secret(h.SecretRef); err == nil && s == "" {
+			return fmt.Errorf("the webhook secret %s of %s is empty", h.SecretRef, h.Project)
+		}
+	}
 	hosts := map[string]string{}
 	for _, h := range cfg.Hosts {
 		hosts[h.Name] = h.TokenHash

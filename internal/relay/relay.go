@@ -3,16 +3,14 @@
 // keeps no body, title, comment or login.
 package relay
 
-import "errors"
+import (
+	"errors"
 
-// Event is what the relay sends to the agents.
-type Event struct {
-	Forge    string `json:"forge"` // "gh" or "gl"
-	Project  string `json:"project"`
-	Issue    int    `json:"issue"`
-	Kind     string `json:"kind"`
-	Delivery string `json:"delivery"`
-}
+	"github.com/uskanda/switchboard/internal/event"
+)
+
+// Event is what the relay sends to the agents; its subscribers read it as event.Event.
+type Event = event.Event
 
 // ErrSignature reports a webhook whose signature does not verify.
 var ErrSignature = errors.New("signature does not verify")

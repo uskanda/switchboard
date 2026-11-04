@@ -43,6 +43,13 @@ type Forge struct {
 	failThreadOf             *forge.IssueRef // FailNthThreadOf: only the calls for this issue count
 	// FailSearch, when set, is returned by the next SearchOpenIssuesWithLabel call and then cleared.
 	FailSearch error
+	// FailRepoPrivate, when set, is returned by the next RepoPrivate call and then cleared.
+	FailRepoPrivate error
+	// FailUpdatedIssues, when set, is returned by the next UpdatedIssues call and then cleared.
+	FailUpdatedIssues error
+	// FailCreateChangeRequest, when set, is returned by the next CreateChangeRequest call and then cleared; no change
+	// request is opened.
+	FailCreateChangeRequest error
 	// FailCI, when set, is returned by every CommitChecks and CheckLog call.
 	FailCI error
 	ci     *ci
@@ -166,6 +173,16 @@ func (f *Forge) EditBody(ref forge.IssueRef, body string, editor forge.User) {
 	is.data.UpdatedAt = f.now()
 }
 
+// EditTitle renames the issue as editor.
+func (f *Forge) EditTitle(ref forge.IssueRef, title string, editor forge.User) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	is := f.issue(ref)
+	is.data.Title = title
+	is.data.TitleEdit = forge.Edit{Edited: true, Editor: &editor}
+	is.data.UpdatedAt = f.now()
+}
+
 // LoseBodyEditor replaces the issue body by someone the forge does not name, as when GitLab's system notes are beyond
 // what was fetched.
 func (f *Forge) LoseBodyEditor(ref forge.IssueRef, body string) {
@@ -270,6 +287,10 @@ func (f *Forge) summary(is *issue) forge.IssueSummary {
 func (f *Forge) UpdatedIssues(_ context.Context, owner, name string, since time.Time) ([]forge.IssueSummary, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if err := f.FailUpdatedIssues; err != nil {
+		f.FailUpdatedIssues = nil
+		return nil, err
+	}
 	r, ok := f.repos[owner+"/"+name]
 	if !ok {
 		return nil, forge.ErrNotFound
@@ -489,6 +510,10 @@ func (f *Forge) EnsureLabel(_ context.Context, owner, name, label, _, _ string) 
 func (f *Forge) CreateChangeRequest(_ context.Context, cr forge.ChangeRequest) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if err := f.FailCreateChangeRequest; err != nil {
+		f.FailCreateChangeRequest = nil
+		return "", err
+	}
 	f.PRs = append(f.PRs, cr)
 	return fmt.Sprintf("https://forge.test/%s/%s/pull/%d", cr.Owner, cr.Repo, len(f.PRs)), nil
 }
@@ -520,6 +545,10 @@ func (f *Forge) ClosePR(i int) {
 func (f *Forge) RepoPrivate(_ context.Context, owner, name string) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if err := f.FailRepoPrivate; err != nil {
+		f.FailRepoPrivate = nil
+		return false, err
+	}
 	r, ok := f.repos[owner+"/"+name]
 	if !ok {
 		return false, forge.ErrNotFound
@@ -539,8 +568,8 @@ func (f *Forge) User(_ context.Context, login string) (*forge.User, error) {
 }
 
 // SearchOpenIssuesWithLabel implements forge.Forge. A GitHub fake ignores the scope and searches every repository;
-// a GitLab fake searches the one project the scope names, as GitLab does.
-func (f *Forge) SearchOpenIssuesWithLabel(_ context.Context, scope string, labels ...string) ([]forge.IssueSummary, error) {
+// a GitLab fake searches the projects the scope names, as GitLab does.
+func (f *Forge) SearchOpenIssuesWithLabel(_ context.Context, scope forge.Scope, labels ...string) ([]forge.IssueSummary, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if err := f.FailSearch; err != nil {
@@ -549,7 +578,7 @@ func (f *Forge) SearchOpenIssuesWithLabel(_ context.Context, scope string, label
 	}
 	var out []forge.IssueSummary
 	for name, r := range f.repos {
-		if f.kind == forge.GitLab && name != scope {
+		if f.kind == forge.GitLab && !contains(scope.Projects, name) {
 			continue
 		}
 		for _, is := range r.issues {

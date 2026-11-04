@@ -59,7 +59,13 @@ cat <<'JSON'
 JSON
 `
 
-func TestIssueFromReadyThroughReplyToDone(t *testing.T) {
+func TestIssueFromReadyThroughReplyToDone(t *testing.T) { flow(t, "bot") }
+
+// With the agent posting as the human (ADR-015, Phase 1), the markers alone tell the agent's posts from the replies.
+func TestIssueFromReadyThroughReplyToDoneOnTheHumansAccount(t *testing.T) { flow(t, "me") }
+
+// flow takes an issue from ready through a question and its reply to done, with the agent posting as agentLogin.
+func flow(t *testing.T, agentLogin string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	root := t.TempDir()
@@ -98,7 +104,7 @@ func TestIssueFromReadyThroughReplyToDone(t *testing.T) {
 	yml := fmt.Sprintf(`version: 1
 host: {name: laptop}
 forges:
-  github: {token_ref: t, inbox_token_ref: i, agent_identity: bot, search_scope: "user:me"}
+  github: {token_ref: t, inbox_token_ref: i, agent_identity: %s, search_scope: "user:me"}
 trusted_authors: {github: [me]}
 claude: {binary: %s}
 projects:
@@ -106,7 +112,7 @@ projects:
     path: %s
     host: laptop
     verify_command: test -f dry-run.txt
-`, bin, clone)
+`, agentLogin, bin, clone)
 	if err := os.WriteFile(cfgPath, []byte(yml), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -117,9 +123,11 @@ projects:
 
 	f := fake.New(nil)
 	me := f.AddUser("me", 1)
-	f.AddUser("bot", 2)
+	if agentLogin != "me" {
+		f.AddUser(agentLogin, 2)
+	}
 	f.AddRepo("me", "tool", true)
-	if _, err := labels.Sync(ctx, f.As("bot"), cfg.Projects, cfg.Labels); err != nil {
+	if _, err := labels.Sync(ctx, f.As(agentLogin), cfg.Projects, cfg.Labels); err != nil {
 		t.Fatal(err)
 	}
 	ref := f.AddIssue("me", "tool", 7, "Add --dry-run", "Add a --dry-run flag that prints what would change.", me)
@@ -127,7 +135,7 @@ projects:
 
 	dir := state.Dir{Path: filepath.Join(root, "state")}
 	audit := dir.Audit()
-	agentForge := f.As("bot")
+	agentForge := f.As(agentLogin)
 	j, err := trust.Resolve(ctx, agentForge, dir, cfg.TrustedAuthors.GitHub, cfg.Forges.GitHub.AgentIdentity, audit)
 	if err != nil {
 		t.Fatal(err)
@@ -191,7 +199,7 @@ projects:
 	// The thread: claim, question, reply, claim, done; every agent post carries its marker.
 	var states []string
 	for _, c := range f.CommentsOf(ref) {
-		if m, ok := marker.Parse(c.Body); ok && c.Author.Login == "bot" {
+		if m, ok := marker.Parse(c.Body); ok && c.Author.Login == agentLogin {
 			states = append(states, m.State)
 		} else {
 			states = append(states, "reply by "+c.Author.Login)

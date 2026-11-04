@@ -61,6 +61,34 @@ func TestUnit(t *testing.T) {
 	}
 }
 
+// A path with a space stays one word, and a "%" or a "$" is not read as a specifier or a variable.
+func TestUnitQuotesWhatSystemdWouldSplit(t *testing.T) {
+	s := setup()
+	s.Home, s.Path = "/home/my user", "/home/my user/bin:/usr/bin"
+	s.Binary, s.Config = "/opt/sb 100%/switchboard", "/home/my user/$cfg/config.yaml"
+	u := s.Unit()
+	for _, want := range []string{
+		"Environment=\"HOME=/home/my user\"\n",
+		"Environment=\"PATH=/home/my user/bin:/usr/bin\"\n",
+		"ExecStart=\"/opt/sb 100%%/switchboard\" agent run --config \"/home/my user/$$cfg/config.yaml\"\n",
+	} {
+		if !strings.Contains(u, want) {
+			t.Errorf("the unit lacks %q:\n%s", want, u)
+		}
+	}
+	if got := execWord(`a"b\c`); got != `"a\"b\\c"` {
+		t.Errorf("execWord = %s", got)
+	}
+}
+
+func TestInstallStepsRefuseCredentialsThatShareAName(t *testing.T) {
+	s := setup()
+	s.Creds = append(s.Creds, Credential{Ref: "switchboard_github", Name: "switchboard_github"})
+	if _, err := s.InstallSteps("/tmp/unit", tokens); err == nil || !strings.Contains(err.Error(), "switchboard/github, switchboard_github") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func tokens(ref string) (string, error) { return "secret-of-" + ref, nil }
 
 // The tokens go in on standard input; no step shows one.

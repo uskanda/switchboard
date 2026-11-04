@@ -22,6 +22,31 @@ func TestSettingsAddTheExtraAllowsOnce(t *testing.T) {
 	}
 }
 
+// The rules a run gets are listed in full, so that a rule added or lost by accident shows here.
+func TestSettingsAreExactly(t *testing.T) {
+	s := settings("make  verify", []string{"Skill"})
+	wantAllow := []string{
+		"Read", "Edit", "Write", "Glob", "Grep", "WebSearch",
+		"Bash(git status)", "Bash(git status *)", "Bash(git diff)", "Bash(git diff *)",
+		"Bash(git log)", "Bash(git log *)", "Bash(git add)", "Bash(git add *)",
+		"Bash(git commit)", "Bash(git commit *)", "Bash(git merge)", "Bash(git merge *)",
+		"Bash(make)", "Bash(make *)", "Skill",
+	}
+	wantDeny := []string{"Bash(git push)", "Bash(git push *)", "Bash(git rebase)", "Bash(git rebase *)", "Bash(gh)", "Bash(gh *)", "WebFetch"}
+	if !slices.Equal(s.Allow, wantAllow) {
+		t.Errorf("allow = %q\nwant    %q", s.Allow, wantAllow)
+	}
+	if !slices.Equal(s.Deny, wantDeny) {
+		t.Errorf("deny = %q\nwant   %q", s.Deny, wantDeny)
+	}
+	if want := []string{"make verify", "git", "git *"}; !slices.Equal(s.Unsandboxed, want) {
+		t.Errorf("unsandboxed = %q, want %q", s.Unsandboxed, want)
+	}
+	if s := settings(""); !slices.Equal(s.Allow, wantAllow[:18]) || !slices.Equal(s.Unsandboxed, []string{"git", "git *"}) {
+		t.Errorf("without a verify command: allow = %q, unsandboxed = %q", s.Allow, s.Unsandboxed)
+	}
+}
+
 // extraAllows configures Skill for every project and Bash(openspec *) for o/r.
 func extraAllows(c *config.Config) {
 	c.Agent.AllowToolsExtra = []string{"Skill"}

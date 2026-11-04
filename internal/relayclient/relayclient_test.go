@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/uskanda/switchboard/internal/relay"
+	"github.com/uskanda/switchboard/internal/event"
 )
 
 // server sends one event per connection, numbered on from the client's Last-Event-ID, then drops the connection.
@@ -38,10 +38,10 @@ func TestReconnectsWithLastEventID(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var mu sync.Mutex
-	var got []relay.Event
+	var got []event.Event
 	var states []bool
 	c := &Client{URL: srv.URL + "/events", Token: "tok", MinBackoff: time.Millisecond, MaxBackoff: 5 * time.Millisecond, Logf: func(string, ...any) {}}
-	go c.Run(ctx, func(e relay.Event) {
+	go c.Run(ctx, func(e event.Event) {
 		mu.Lock()
 		got = append(got, e)
 		if len(got) == 3 {
@@ -86,7 +86,7 @@ func TestRefusedTokenIsReportedAndRetried(t *testing.T) {
 	c := &Client{URL: srv.URL, Token: "bad", MinBackoff: time.Millisecond, MaxBackoff: 10 * time.Millisecond,
 		Logf: func(f string, a ...any) { lmu.Lock(); logs = append(logs, fmt.Sprintf(f, a...)); lmu.Unlock() }}
 	ups := 0
-	c.Run(ctx, func(relay.Event) {}, func(up bool) {
+	c.Run(ctx, func(event.Event) {}, func(up bool) {
 		if up {
 			ups++
 		}
@@ -100,6 +100,56 @@ func TestRefusedTokenIsReportedAndRetried(t *testing.T) {
 	defer lmu.Unlock()
 	if len(logs) == 0 || !contains(logs[0], "401") {
 		t.Fatalf("logs %v", logs)
+	}
+}
+
+// A stream that stays open but sends nothing for Idle is dropped and opened again, so that a connection a NAT lost
+// silently does not leave the agent believing it is connected.
+func TestASilentStreamIsDroppedAfterIdle(t *testing.T) {
+	var mu sync.Mutex
+	conns := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		conns++
+		mu.Unlock()
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, ": ping\n\n")
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var smu sync.Mutex
+	var states []bool
+	done := make(chan struct{})
+	c := &Client{URL: srv.URL, Token: "tok", Idle: 30 * time.Millisecond, MinBackoff: time.Millisecond, MaxBackoff: time.Millisecond,
+		Logf: func(string, ...any) {}}
+	go func() {
+		defer close(done)
+		c.Run(ctx, func(event.Event) {}, func(up bool) {
+			smu.Lock()
+			states = append(states, up)
+			if len(states) == 3 {
+				cancel()
+			}
+			smu.Unlock()
+		})
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the silent stream was never dropped")
+	}
+	smu.Lock()
+	defer smu.Unlock()
+	if len(states) < 3 || !states[0] || states[1] || !states[2] {
+		t.Fatalf("states = %v, want connected, lost, connected", states)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if conns < 2 {
+		t.Fatalf("connections = %d, want a second one after the idle drop", conns)
 	}
 }
 

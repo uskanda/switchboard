@@ -7,14 +7,14 @@ import (
 	"time"
 
 	"github.com/uskanda/switchboard/internal/config"
+	"github.com/uskanda/switchboard/internal/event"
 	"github.com/uskanda/switchboard/internal/forge"
-	"github.com/uskanda/switchboard/internal/relay"
 )
 
 // Subscriber is the relay's event stream (relayclient.Client). Run follows it until ctx ends, passing each event to
 // on and each connection change to state.
 type Subscriber interface {
-	Run(ctx context.Context, on func(relay.Event), state func(connected bool))
+	Run(ctx context.Context, on func(event.Event), state func(connected bool))
 }
 
 // interval is how long the loop waits between polls: reconcile_interval while the relay is up and has a webhook for
@@ -126,7 +126,7 @@ func (a *Agent) onRelayState(up bool) {
 
 // onEvent schedules a refresh of the event's project, if it is one of this host's. The event says only that
 // something changed: what changed is read from the forge, as on a poll.
-func (a *Agent) onEvent(e relay.Event) {
+func (a *Agent) onEvent(e event.Event) {
 	p, ok := a.projectOf(e)
 	if !ok {
 		return
@@ -153,7 +153,7 @@ func (a *Agent) onEvent(e relay.Event) {
 }
 
 // projectOf finds this host's project an event is about. Project paths compare without case, as the forges do.
-func (a *Agent) projectOf(e relay.Event) (config.Project, bool) {
+func (a *Agent) projectOf(e event.Event) (config.Project, bool) {
 	for _, p := range a.projectList() {
 		if p.Forge == e.Forge && strings.EqualFold(p.FullName(), e.Project) {
 			return p, true

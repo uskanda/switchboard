@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -19,12 +20,12 @@ import (
 	"time"
 
 	"github.com/uskanda/switchboard/inboxapi"
-	"github.com/uskanda/switchboard/internal/agent"
 	"github.com/uskanda/switchboard/internal/config"
 	editorpkg "github.com/uskanda/switchboard/internal/editor"
 	"github.com/uskanda/switchboard/internal/forge"
 	"github.com/uskanda/switchboard/internal/labels"
 	"github.com/uskanda/switchboard/internal/marker"
+	"github.com/uskanda/switchboard/internal/postfmt"
 )
 
 // Inbox reads the forges of the configured projects.
@@ -129,7 +130,7 @@ func (b *Inbox) forgeOf(kind string) forge.Forge {
 // project returns the configured project of an issue.
 func (b *Inbox) project(kind, owner, repo string) (config.Project, bool) {
 	for _, p := range b.Config.Projects {
-		if kindOf(p) == kind && p.Owner == owner && p.Repo == repo {
+		if kindOf(p) == kind && strings.EqualFold(p.Owner, owner) && strings.EqualFold(p.Repo, repo) {
 			return p, true
 		}
 	}
@@ -283,32 +284,31 @@ func (b *Inbox) uses(kind string) bool {
 	return false
 }
 
-// list reads one forge's waiting, running and queued issues. GitHub is searched once over search_scope; GitLab is
-// read project by project, since it has no search over the configured projects alone. An issue with a start label
-// is listed only once the agent has queued it.
+// scopeOf is where the issues of one forge are searched: the configured projects of that forge, or GitHub's
+// search_scope when it is set. Without either, nothing is searched, never the whole of GitHub.
+func (b *Inbox) scopeOf(kind string) forge.Scope {
+	var s forge.Scope
+	if kind == forge.GitHub {
+		s.Query = b.Config.Forges.GitHub.SearchScope
+	}
+	for _, p := range b.Config.Projects {
+		if kindOf(p) == kind && !slices.Contains(s.Projects, p.FullName()) {
+			s.Projects = append(s.Projects, p.FullName())
+		}
+	}
+	return s
+}
+
+// list reads one forge's waiting, running and queued issues within its scope. An issue with a start label is listed
+// only once the agent has queued it.
 func (b *Inbox) list(ctx context.Context, kind string) ([]Item, error) {
 	f := b.forgeOf(kind)
 	if f == nil {
 		return nil, errors.New("no client")
 	}
-	var found []forge.IssueSummary
-	if kind == forge.GitHub {
-		s, err := f.SearchOpenIssuesWithLabel(ctx, b.Config.Forges.GitHub.SearchScope, b.listed()...)
-		if err != nil {
-			return nil, err
-		}
-		found = s
-	} else {
-		for _, p := range b.Config.Projects {
-			if kindOf(p) != kind {
-				continue
-			}
-			s, err := f.SearchOpenIssuesWithLabel(ctx, p.FullName(), b.listed()...)
-			if err != nil {
-				return nil, fmt.Errorf("%s: %w", p.Ref, err)
-			}
-			found = append(found, s...)
-		}
+	found, err := f.SearchOpenIssuesWithLabel(ctx, b.scopeOf(kind), b.listed()...)
+	if err != nil {
+		return nil, err
 	}
 	ids := map[string]int64{}
 	var items []Item
@@ -475,15 +475,15 @@ func orQ(s string) string {
 }
 
 // body returns a post without its marker line.
-func body(post string) string {
-	lines := strings.Split(strings.TrimRight(post, " \t\r\n"), "\n")
+func body(text string) string {
+	lines := strings.Split(strings.TrimRight(text, " \t\r\n"), "\n")
 	return strings.TrimRight(strings.Join(lines[:len(lines)-1], "\n"), " \t\r\n")
 }
 
 // Excerpt is the start of the question in an agent post, on one line: the paragraph after the question label, or
 // else the first paragraph after the heading.
-func Excerpt(post string) string {
-	if q := agent.Question(body(post)); q != "" {
+func Excerpt(text string) string {
+	if q := postfmt.Question(body(text)); q != "" {
 		return clip(q, 72)
 	}
 	return "?"

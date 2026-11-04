@@ -46,6 +46,7 @@ func events(t *testing.T, f *streamInbox) <-chan string {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+"/api/events", nil)
+	req.Host = listen
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)

@@ -1,8 +1,9 @@
 package agent
 
 import (
-	"strings"
 	"time"
+
+	"github.com/uskanda/switchboard/internal/postfmt"
 )
 
 // texts are the fixed parts of what the agent posts, in one language (comments.language).
@@ -55,7 +56,7 @@ var english = texts{
 	doneTitle:       "The work is done",
 
 	soFar:      "What was done",
-	question:   "Question",
+	question:   postfmt.QuestionEnglish,
 	noQuestion: "The run did not state a question. Reply with how to proceed.",
 	denied:     "Refused operations",
 	reply:      "Reply to this issue to run the agent again.",
@@ -150,7 +151,7 @@ var japanese = texts{
 	doneTitle:       "作業が終わりました",
 
 	soFar:      "ここまでの作業",
-	question:   "質問",
+	question:   postfmt.QuestionJapanese,
 	noQuestion: "実行は質問を残しませんでした。進め方を返信してください。",
 	denied:     "拒否された操作",
 	reply:      "このissueに返信すると、エージェントが再び実行します。",
@@ -245,29 +246,4 @@ func textsFor(lang string) texts {
 		return japanese
 	}
 	return english
-}
-
-// QuestionLabels are the lines that introduce the question in the agent's posts, in every language. The inbox
-// uses them to quote the question.
-func QuestionLabels() []string {
-	return []string{"**" + english.question + "**", "**" + japanese.question + "**"}
-}
-
-// Question is the question in the text of an agent post (without its marker), on one line: the paragraph after the
-// question label, or else the first paragraph after the heading. It is "" when there is none.
-func Question(text string) string {
-	for _, l := range QuestionLabels() {
-		if i := strings.LastIndex(text, l+"\n"); i >= 0 {
-			text = text[i+len(l):]
-			break
-		}
-	}
-	for _, para := range strings.Split(text, "\n\n") {
-		p := strings.TrimSpace(para)
-		if p == "" || strings.HasPrefix(p, "#") || (strings.HasPrefix(p, "**") && strings.HasSuffix(p, "**")) {
-			continue
-		}
-		return strings.Join(strings.Fields(p), " ")
-	}
-	return ""
 }

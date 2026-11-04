@@ -21,14 +21,3 @@ func TestOAuthClientSendsABearerToken(t *testing.T) {
 		t.Fatalf("Authorization = %q, PRIVATE-TOKEN = %q; want the bearer only", auth, private)
 	}
 }
-
-func TestTokenScopes(t *testing.T) {
-	s, c := newServer(t)
-	s.on("GET /api/v4/personal_access_tokens/self", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"id":1,"name":"inbox","scopes":["read_api","read_user"]}`))
-	})
-	got, err := c.TokenScopes(context.Background())
-	if err != nil || len(got) != 2 || got[0] != "read_api" {
-		t.Fatalf("scopes = %v, %v", got, err)
-	}
-}

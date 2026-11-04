@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -326,18 +327,27 @@ func (c *Client) Thread(ctx context.Context, ref forge.IssueRef) (*forge.Issue, 
 	return is, comments, nil
 }
 
-const editQuery = `query($owner: String!, $repo: String!, $number: Int!) {
+// editQuery reads who last edited the body, who last renamed the title, and one page of comments with who last
+// edited each. $after is the cursor of the page before; null for the first.
+const editQuery = `query($owner: String!, $repo: String!, $number: Int!, $after: String) {
   repository(owner: $owner, name: $repo) {
     issue(number: $number) {
       lastEditedAt
       editor { login ... on User { databaseId } ... on Bot { databaseId } }
-      comments(first: 100) {
-        pageInfo { hasNextPage }
+      timelineItems(last: 1, itemTypes: [RENAMED_TITLE_EVENT]) {
+        nodes { ... on RenamedTitleEvent { actor { login ... on User { databaseId } ... on Bot { databaseId } } } }
+      }
+      comments(first: 100, after: $after) {
+        pageInfo { hasNextPage endCursor }
         nodes { databaseId lastEditedAt editor { login ... on User { databaseId } ... on Bot { databaseId } } }
       }
     }
   }
 }`
+
+// maxEditPages bounds how many pages of comments the edit query reads (10,000 comments). A comment beyond them is
+// marked Unknown.
+const maxEditPages = 100
 
 type gqlActor struct {
 	Login      string `json:"login"`
@@ -360,16 +370,34 @@ func (e gqlEdited) edit() forge.Edit {
 	return forge.Edit{Edited: true, Editor: &forge.User{Login: e.Editor.Login, ID: e.Editor.DatabaseID}}
 }
 
-// edits is who last edited the body of an issue and each comment the edit query returned, by comment ID.
-type edits struct {
-	body     forge.Edit
-	comments map[int64]forge.Edit
+// titleEdit is the edit of the title by the last RenamedTitleEvent: none when the title was never renamed, Unknown
+// when the event names no actor (a deleted account).
+func titleEdit(events []struct {
+	Actor *gqlActor `json:"actor"`
+}) forge.Edit {
+	if len(events) == 0 {
+		return forge.Edit{}
+	}
+	a := events[len(events)-1].Actor
+	if a == nil || a.DatabaseID == 0 {
+		return forge.Edit{Edited: true, Unknown: true}
+	}
+	return forge.Edit{Edited: true, Editor: &forge.User{Login: a.Login, ID: a.DatabaseID}}
 }
 
-// apply fills in who last edited the body and each comment. A comment the query did not return (beyond its first
-// page) is marked Unknown, so that trust decisions treat it as edited by an untrusted user.
+// edits is who last edited the body and the title of an issue and each comment the edit query returned, by comment
+// ID.
+type edits struct {
+	body, title forge.Edit
+	comments    map[int64]forge.Edit
+}
+
+// apply fills in who last edited the body, the title and each comment. A comment the query did not return (posted
+// while it read, or beyond maxEditPages) is marked Unknown, so that trust decisions treat it as edited by an
+// untrusted user.
 func (e *edits) apply(is *forge.Issue, comments []forge.Comment) {
 	is.BodyEdit = e.body
+	is.TitleEdit = e.title
 	for i := range comments {
 		ed, ok := e.comments[comments[i].ID]
 		if !ok {
@@ -379,34 +407,54 @@ func (e *edits) apply(is *forge.Issue, comments []forge.Comment) {
 	}
 }
 
-// edits reads who last edited the body and the first page of comments of an issue.
+// edits reads who last edited the body and the title of an issue, and every page of its comments, oldest first.
 func (c *Client) edits(ctx context.Context, ref forge.IssueRef) (*edits, error) {
-	in := map[string]any{"query": editQuery, "variables": map[string]any{"owner": ref.Owner, "repo": ref.Repo, "number": ref.Number}}
-	var out struct {
-		Data struct {
-			Repository struct {
-				Issue struct {
-					gqlEdited
-					Comments struct {
-						Nodes []gqlEdited `json:"nodes"`
-					} `json:"comments"`
-				} `json:"issue"`
-			} `json:"repository"`
-		} `json:"data"`
-		Errors []struct {
-			Message string `json:"message"`
-		} `json:"errors"`
-	}
-	if _, err := c.do(ctx, http.MethodPost, c.graphqlURL, in, &out, nil); err != nil {
-		return nil, err
-	}
-	if len(out.Errors) > 0 {
-		return nil, fmt.Errorf("github: graphql: %s", out.Errors[0].Message)
-	}
-	gi := out.Data.Repository.Issue
-	e := &edits{body: gi.edit(), comments: map[int64]forge.Edit{}}
-	for _, n := range gi.Comments.Nodes {
-		e.comments[n.DatabaseID] = n.edit()
+	var e *edits
+	var after any
+	for page := 0; page < maxEditPages; page++ {
+		in := map[string]any{"query": editQuery, "variables": map[string]any{"owner": ref.Owner, "repo": ref.Repo, "number": ref.Number, "after": after}}
+		var out struct {
+			Data struct {
+				Repository struct {
+					Issue struct {
+						gqlEdited
+						TimelineItems struct {
+							Nodes []struct {
+								Actor *gqlActor `json:"actor"`
+							} `json:"nodes"`
+						} `json:"timelineItems"`
+						Comments struct {
+							PageInfo struct {
+								HasNextPage bool   `json:"hasNextPage"`
+								EndCursor   string `json:"endCursor"`
+							} `json:"pageInfo"`
+							Nodes []gqlEdited `json:"nodes"`
+						} `json:"comments"`
+					} `json:"issue"`
+				} `json:"repository"`
+			} `json:"data"`
+			Errors []struct {
+				Message string `json:"message"`
+			} `json:"errors"`
+		}
+		if _, err := c.do(ctx, http.MethodPost, c.graphqlURL, in, &out, nil); err != nil {
+			return nil, err
+		}
+		if len(out.Errors) > 0 {
+			return nil, fmt.Errorf("github: graphql: %s", out.Errors[0].Message)
+		}
+		gi := out.Data.Repository.Issue
+		if e == nil {
+			e = &edits{body: gi.edit(), title: titleEdit(gi.TimelineItems.Nodes), comments: map[int64]forge.Edit{}}
+		}
+		for _, n := range gi.Comments.Nodes {
+			e.comments[n.DatabaseID] = n.edit()
+		}
+		info := gi.Comments.PageInfo
+		if !info.HasNextPage || info.EndCursor == "" {
+			break
+		}
+		after = info.EndCursor
 	}
 	return e, nil
 }
@@ -532,10 +580,53 @@ func (c *Client) User(ctx context.Context, login string) (*forge.User, error) {
 
 var repoFromURL = regexp.MustCompile(`/repos/([^/]+)/([^/]+)$`)
 
-// SearchOpenIssuesWithLabel implements forge.Forge. It reads the first 100 results, which covers any realistic
-// number of waiting issues.
-// Several labels go into one qualifier, label:"a","b", which matches any of them (V28).
-func (c *Client) SearchOpenIssuesWithLabel(ctx context.Context, scope string, labels ...string) ([]forge.IssueSummary, error) {
+// reposPerSearch is how many repo: qualifiers one search holds, well within its limit of 256 characters.
+const reposPerSearch = 4
+
+// searchQueries are the search qualifiers that cover scope: its query when set, else its projects as repo:
+// qualifiers, a few to a search. A scope with neither has no query: an empty one would search the whole of GitHub.
+func searchQueries(scope forge.Scope) []string {
+	if scope.Query != "" {
+		return []string{scope.Query}
+	}
+	var repos []string
+	for _, p := range scope.Projects {
+		if q := "repo:" + p; !slices.Contains(repos, q) {
+			repos = append(repos, q)
+		}
+	}
+	var out []string
+	for len(repos) > 0 {
+		n := min(reposPerSearch, len(repos))
+		out = append(out, strings.Join(repos[:n], " "))
+		repos = repos[n:]
+	}
+	return out
+}
+
+// SearchOpenIssuesWithLabel implements forge.Forge. Each search reads the first 100 results, which covers any
+// realistic number of waiting issues.
+func (c *Client) SearchOpenIssuesWithLabel(ctx context.Context, scope forge.Scope, labels ...string) ([]forge.IssueSummary, error) {
+	var res []forge.IssueSummary
+	seen := map[forge.IssueRef]bool{}
+	for _, q := range searchQueries(scope) {
+		found, err := c.search(ctx, q, labels)
+		if err != nil {
+			return nil, err
+		}
+		for _, s := range found {
+			if !seen[s.Ref] {
+				seen[s.Ref] = true
+				res = append(res, s)
+			}
+		}
+	}
+	return res, nil
+}
+
+// search runs one issue search within the qualifiers scope. Several labels go into one qualifier, label:"a","b",
+// which matches any of them (V28).
+func (c *Client) search(ctx context.Context, scope string, labels []string) ([]forge.IssueSummary, error) {
 	quoted := make([]string, len(labels))
 	for i, l := range labels {
 		quoted[i] = strconv.Quote(l)

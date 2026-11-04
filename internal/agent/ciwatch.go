@@ -105,14 +105,6 @@ func (a *Agent) watching() bool {
 	return false
 }
 
-// searchScope is the scope SearchOpenIssuesWithLabel takes for the issues of p.
-func searchScope(p config.Project) string {
-	if p.Forge == forge.GitLab {
-		return p.FullName() // GitLab searches one project, named by its path
-	}
-	return "repo:" + p.FullName()
-}
-
 // scanWatches finds the done issues of this host's projects to watch: the latest post of the agent is a done post
 // naming a commit and a change request. An issue found with nothing to watch is read again only when it changes.
 func (a *Agent) scanWatches(ctx context.Context) {
@@ -124,7 +116,7 @@ func (a *Agent) scanWatches(ctx context.Context) {
 		if _, ok := f.(forge.CI); !ok {
 			continue
 		}
-		list, err := f.SearchOpenIssuesWithLabel(ctx, searchScope(p), a.Config.Labels.Done)
+		list, err := f.SearchOpenIssuesWithLabel(ctx, forge.Projects(p.FullName()), a.Config.Labels.Done)
 		if err != nil {
 			a.logf("%s: search the done issues: %v", p.Ref, err)
 			continue
