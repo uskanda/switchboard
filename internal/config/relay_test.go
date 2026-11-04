@@ -65,6 +65,51 @@ func TestRelayRejects(t *testing.T) {
 	}
 }
 
+func TestRelayListensOnALANAddress(t *testing.T) {
+	cfg, err := Load(write(t, withRelay("  webhook_listen: 192.168.0.82:8781\n")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Relay.WebhookURL != "http://192.168.0.82:8781" || cfg.Relay.SSEListen != "127.0.0.1:8782" {
+		t.Fatalf("relay = %+v", cfg.Relay)
+	}
+	for _, ok := range []string{"127.0.0.1:8781", "[::1]:8781", "[fd00::5]:8781"} {
+		if _, err := Load(write(t, withRelay("  webhook_listen: \""+ok+"\"\n"))); err != nil {
+			t.Errorf("%s: %v", ok, err)
+		}
+	}
+}
+
+func TestRelayRejectsAnUnsafeWebhookListen(t *testing.T) {
+	for name, c := range map[string]struct{ listen, want string }{
+		"all ipv4":   {"0.0.0.0:8781", "every interface"},
+		"all ipv6":   {"[::]:8781", "every interface"},
+		"host name":  {"localhost:8781", "IP address"},
+		"no port":    {"192.168.0.82", "relay.webhook_listen"},
+		"empty host": {":8781", "IP address"},
+	} {
+		_, err := Load(write(t, withRelay("  webhook_listen: \""+c.listen+"\"\n")))
+		if err == nil || !strings.Contains(err.Error(), "relay.webhook_listen") || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: err = %v, want relay.webhook_listen and %q", name, err, c.want)
+		}
+	}
+}
+
+func TestRelayRejectsGitLabTokenOffLoopback(t *testing.T) {
+	token := func(listen string) string {
+		return strings.Replace(withRelay("  webhook_listen: \""+listen+"\"\n"), "      secret_ref: switchboard/relay-hook-1\n", "      secret_ref: switchboard/relay-hook-1\n      gitlab_token: true\n", 1)
+	}
+	_, err := Load(write(t, token("192.168.0.82:8781")))
+	if err == nil || !strings.Contains(err.Error(), "relay.hooks[0].gitlab_token") || !strings.Contains(err.Error(), "signing token") {
+		t.Fatalf("gitlab_token on a LAN address: err = %v", err)
+	}
+	for _, ok := range []string{"127.0.0.1:8781", "[::1]:8781"} {
+		if _, err := Load(write(t, token(ok))); err != nil {
+			t.Errorf("gitlab_token on %s: %v", ok, err)
+		}
+	}
+}
+
 func TestAgentRelayMode(t *testing.T) {
 	body := strings.Replace(valid, "projects:\n", "agent:\n  poll_interval: 30s\n  relay:\n    url: http://127.0.0.1:8782/events\n    token_ref: switchboard/relay-ubuntu-a\nprojects:\n", 1)
 	cfg, err := Load(write(t, body))
