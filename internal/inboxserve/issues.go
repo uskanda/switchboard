@@ -45,10 +45,13 @@ func starts(l config.Labels) []inboxapi.IssueStart {
 }
 
 // issueTargets serves GET /v1/issue-targets.
-func (s *Server) issueTargets(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) issueTargets(w http.ResponseWriter, r *http.Request) {
 	cfg := s.newIssuesConfig()
 	out := inboxapi.IssueTargets{Items: []inboxapi.IssueTarget{}, Starts: starts(cfg.Labels)}
 	for _, p := range cfg.Projects {
+		if !s.sees(r.Context(), p.Ref) {
+			continue
+		}
 		out.Items = append(out.Items, inboxapi.IssueTarget{Ref: p.Ref, Host: p.Host, PlanFirst: p.PlanFirst})
 	}
 	send(w, http.StatusOK, out)
@@ -109,7 +112,16 @@ func (s *Server) createIssue(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, inboxapi.CodeInvalid, fmt.Sprintf("%q is not a start label of the configuration", req.Start))
 		return
 	}
+	if !s.sees(r.Context(), p.Ref) {
+		fail(w, http.StatusUnprocessableEntity, inboxapi.CodeUnknownProject, req.Ref+" is not a project you may see")
+		return
+	}
 	issues := s.NewIssues.Issues[p.Forge]
+	if f, err := s.writer(r.Context(), p.Forge); failWrite(w, err) {
+		return
+	} else if f != nil {
+		issues = f
+	}
 	if issues == nil {
 		fail(w, http.StatusBadGateway, inboxapi.CodeForge, "no client for the forge of "+p.Ref)
 		return
@@ -119,6 +131,7 @@ func (s *Server) createIssue(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadGateway, inboxapi.CodeForge, err.Error())
 		return
 	}
+	s.act(r.Context(), "issue.create", is.Ref.String())
 	s.mu.Lock()
 	s.cached = nil
 	s.mu.Unlock()

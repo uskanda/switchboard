@@ -75,6 +75,8 @@ export function autoMergeReason(reason: string | undefined): string {
       return "受信箱のトークンに、マージする権限がありません。";
     case "user":
       return "取り消しました。";
+    case "restarted":
+      return "受信箱のサービスが再起動し、マージを頼んだ人が分からなくなりました。もう一度マージを押してください。";
   }
   return reason ?? "";
 }
@@ -153,6 +155,8 @@ export type Detail = {
   created_at?: string | null;
   body?: string;
   comments?: Comment[];
+  /** With the login on, whether the agent takes the logged-in person's reply as an instruction (trusted_authors). */
+  trusted?: boolean;
 };
 
 /**

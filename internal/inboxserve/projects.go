@@ -48,6 +48,9 @@ func (s *Server) projectConfig() *config.Config {
 
 // projects serves GET (list) and POST (add one) of /v1/projects.
 func (s *Server) projects(w http.ResponseWriter, r *http.Request) {
+	if !s.adminOnly(w, r) {
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
 		cfg := s.projectConfig()
@@ -143,6 +146,7 @@ func (s *Server) addProject(w http.ResponseWriter, r *http.Request) {
 	if next.Agent.Relay != nil && p.Forge == forge.GitLab {
 		out.Webhook = "switchboard relay hook add " + p.Ref
 	}
+	s.act(r.Context(), "project.add", out.Project.Ref)
 	send(w, http.StatusCreated, out)
 }
 

@@ -308,6 +308,21 @@ func TestStartLabelOfATrustedAgentAccountStartsARun(t *testing.T) {
 	}
 }
 
+func TestWithTheLoginOnAStartLabelOfTheAgentAccountStartsNothing(t *testing.T) {
+	// With inbox.auth, ADR-056 does not hold: the agent's start label without a resume mark is never a person's, even
+	// when its account is somehow a trusted one (issue #146).
+	x := newH(t, "", func(c *config.Config) {
+		c.TrustedAuthors.GitHub = []string{"master", "agent"}
+		c.Inbox.Auth = &config.InboxAuth{ClientID: "cid", ClientSecretRef: "s", MemberGroups: []string{"team"}}
+	})
+	x.f.AddLabel(x.ref, "agent:ready", x.bot)
+	x.poll()
+	x.settle()
+	if x.starts() != 0 {
+		t.Fatalf("starts = %d, want 0 with the login on", x.starts())
+	}
+}
+
 func TestStartLabelOfAnUntrustedAgentAccountStartsNothing(t *testing.T) {
 	x := newH(t, "", nil)
 	x.f.AddLabel(x.ref, "agent:ready", x.bot)

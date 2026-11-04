@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"slices"
 
 	"github.com/uskanda/switchboard/internal/claudecode"
 	"github.com/uskanda/switchboard/internal/config"
@@ -36,6 +37,16 @@ type Doctor struct {
 // versioned is a forge that reports its version, as GitLab does.
 type versioned interface {
 	Version(ctx context.Context) (string, error)
+}
+
+// scoped is a client whose token tells its scopes, as GitLab's personal access tokens do.
+type scoped interface {
+	TokenScopes(ctx context.Context) ([]string, error)
+}
+
+// owned is a client that tells whose its token is.
+type owned interface {
+	TokenOwner(ctx context.Context) (string, error)
 }
 
 // numbered is a forge whose projects have numeric IDs behind their paths, as GitLab's do.
@@ -70,9 +81,42 @@ func (d *Doctor) Run(ctx context.Context) int {
 			d.forge(ctx, kind)
 		}
 	}
+	d.auth(ctx)
 	d.claude(ctx)
 	d.gh(ctx)
 	return d.failures
+}
+
+// auth checks, with inbox.auth set, what makes several people on the web inbox safe (issue #146): GitLab's inbox
+// token only reads, the owner's replies are instructions, and the GitHub inbox token, which the owner writes with, is
+// a trusted author's. A token that cannot be read was reported by the forge's checks.
+func (d *Doctor) auth(ctx context.Context) {
+	cfg := d.Config
+	a := cfg.Inbox.Auth
+	if a == nil {
+		return
+	}
+	if a.Owner != "" && !slices.Contains(cfg.TrustedAuthors.GitLab, a.Owner) {
+		d.warn("inbox.auth.owner %s is not in trusted_authors.gitlab: the agent does not take the owner's replies as instructions", a.Owner)
+	}
+	if ref := cfg.Forges.GitLab.InboxTokenRef; ref != "" {
+		if token, err := d.Secrets.Token(ref); err == nil {
+			if sc, ok := d.Forge(forge.GitLab, token).(scoped); ok {
+				if scopes, err := sc.TokenScopes(ctx); err == nil && slices.Contains(scopes, "api") {
+					d.warn("forges.gitlab.inbox_token_ref has the api scope: with inbox.auth it only reads, so give it read_api; people write with their own login")
+				}
+			}
+		}
+	}
+	if uses(cfg, forge.GitHub) && cfg.Forges.GitHub.InboxTokenRef != "" {
+		if token, err := d.Secrets.Token(cfg.Forges.GitHub.InboxTokenRef); err == nil {
+			if o, ok := d.Forge(forge.GitHub, token).(owned); ok {
+				if login, err := o.TokenOwner(ctx); err == nil && !slices.Contains(cfg.TrustedAuthors.GitHub, login) {
+					d.warn("the GitHub inbox token is %s's, who is not in trusted_authors.github: the owner's replies on GitHub are not taken as instructions", login)
+				}
+			}
+		}
+	}
 }
 
 // uses reports whether a project is on the forge; a project without a forge (as Phase 1 code built them) is GitHub.

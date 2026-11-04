@@ -3,6 +3,7 @@ package inboxserve
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -22,18 +23,21 @@ type AutoMerger interface {
 
 // waitForFix keeps the merge of ref at sha, which the forge refused, when the inbox says it waits for the agent to
 // fix a conflict, and reports whether it does. Without a store, or when the inbox cannot tell, it does not.
-func (s *Server) waitForFix(ctx context.Context, b Inbox, ref forge.IssueRef, sha string) bool {
+func (s *Server) waitForFix(ctx context.Context, b Inbox, m forge.Merges, ref forge.IssueRef, sha string) bool {
 	am, ok := b.(AutoMerger)
 	if s.AutoMerge == nil || !ok {
 		return false
 	}
-	r, err := am.AutoMergeCandidate(ctx, s.Merges[ref.Kind()], ref, sha)
+	r, err := am.AutoMergeCandidate(ctx, m, ref, sha)
 	if err != nil || r == nil {
 		return false
 	}
 	if err := s.AutoMerge.Put(*r); err != nil {
 		s.logf("automerge: keep %s: %v", r.Ref, err)
 		return false
+	}
+	if sess := SessionFrom(ctx); s.Users != nil && sess != nil {
+		s.Users.ask(r.Ref, sess)
 	}
 	s.audit("automerge.requested", *r, "")
 	s.listingChanged()
@@ -53,6 +57,10 @@ func (s *Server) cancelAutoMerge(w http.ResponseWriter, r *http.Request) {
 		failWith(w, err)
 		return
 	}
+	if !s.sees(r.Context(), ref.String()) {
+		fail(w, http.StatusNotFound, inboxapi.CodeNotFound, ref.String()+" is not one you may see")
+		return
+	}
 	pending, waits := s.AutoMerge.Get(ref.String())
 	ok, err := s.AutoMerge.Cancel(ref.String())
 	switch {
@@ -64,6 +72,7 @@ func (s *Server) cancelAutoMerge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit("automerge.cancelled", pending, automerge.ReasonUser)
+	s.act(r.Context(), "automerge.cancel", ref.String())
 	s.listingChanged()
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -103,9 +112,21 @@ func (s *Server) autoMergeOnce(ctx context.Context) {
 			return
 		}
 		kind, _, _ := strings.Cut(r.Ref, ":")
-		c, cancel := context.WithTimeout(ctx, FetchTimeout)
-		st, err := am.AutoMergeStep(c, s.Merges[kind], r)
-		cancel()
+		m := s.Merges[kind]
+		var st inbox.AutoMergeStep
+		var err error
+		if s.Users != nil && kind == forge.GitLab {
+			// With the login on, a GitLab merge is made as whoever asked for it; a restart forgot them (issue #146).
+			if m, err = s.Users.mergesOf(ctx, r.Ref); errors.Is(err, errForgotten) {
+				st = inbox.AutoMergeStep{Outcome: automerge.Cancelled, Reason: automerge.ReasonRestarted}
+				err = nil
+			}
+		}
+		if err == nil && st.Outcome == "" {
+			c, cancel := context.WithTimeout(ctx, FetchTimeout)
+			st, err = am.AutoMergeStep(c, m, r)
+			cancel()
+		}
 		if err != nil {
 			s.logf("automerge: %s: %v", r.Ref, err)
 			continue
@@ -120,6 +141,9 @@ func (s *Server) autoMergeOnce(ctx context.Context) {
 			r.SHA = st.SHA
 		}
 		s.audit("automerge."+st.Outcome, r, st.Reason)
+		if s.Users != nil {
+			s.Users.forget(r.Ref)
+		}
 		changed = true
 	}
 	if changed {

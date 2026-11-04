@@ -43,6 +43,7 @@ func (s *Server) authStatus(w http.ResponseWriter, r *http.Request) {
 		out.GitLab = s.GitLab
 		if sess, err := s.Auth.Lookup(r.Context(), r.Header.Get(inboxapi.SessionHeader)); err == nil {
 			out.User = sess.User
+			out.Admin = s.Users == nil || s.Users.Admin(sess)
 		}
 	}
 	send(w, http.StatusOK, out)

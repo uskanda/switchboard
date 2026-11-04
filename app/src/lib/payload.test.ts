@@ -29,6 +29,10 @@ describe("routeOf", () => {
     expect(routeOf("merge", done)).toEqual({ kind: "open", path: "/issue/gh%3Ao%2Fr%2312?action=merge" });
   });
 
+  it("opens the plan instead of approving it while the WUI asks for a login", () => {
+    expect(routeOf("approve", plan, true)).toEqual({ kind: "open", path: "/issue/gh%3Ao%2Fr%2320" });
+  });
+
   it("approves only a plan, with the start of its wait", () => {
     expect(routeOf("approve", plan)).toEqual({ kind: "approve", ref: "gh:o/r#20", since: "2026-11-02T09:30:00Z" });
     expect(routeOf("approve", { ...plan, reason: "question" })).toEqual({ kind: "open", path: "/issue/gh%3Ao%2Fr%2320" });

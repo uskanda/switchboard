@@ -163,6 +163,15 @@ func (c *Client) do(ctx context.Context, method, rawURL string, in, out any, hea
 	return resp, nil
 }
 
+// TokenOwner returns the login of whoever the client's token belongs to.
+func (c *Client) TokenOwner(ctx context.Context) (string, error) {
+	var u struct {
+		Login string `json:"login"`
+	}
+	_, err := c.do(ctx, http.MethodGet, c.url("/user", nil), nil, &u, nil)
+	return u.Login, err
+}
+
 func (c *Client) url(path string, q url.Values) string {
 	u := c.baseURL + path
 	if len(q) > 0 {

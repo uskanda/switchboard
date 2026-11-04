@@ -10,14 +10,17 @@ export const CHANNEL = "switchboard";
 export const CATEGORY_PLAN = "plan";
 export const CATEGORY_MERGE = "done-merge";
 
-/** setUpNotifications creates the channel and the categories, and shows notifications that arrive in the foreground. */
-export async function setUpNotifications(): Promise<void> {
+/**
+ * setUpNotifications creates the channel and the categories, and shows notifications that arrive in the foreground.
+ * With the WUI's login on, 承認 opens the app on the plan instead of approving in the background (issue #146).
+ */
+export async function setUpNotifications(loginOn = false): Promise<void> {
   Notifications.setNotificationHandler({
     handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }),
   });
   await Notifications.setNotificationChannelAsync(CHANNEL, { name: "待ちと完了", importance: Notifications.AndroidImportance.HIGH });
   await Notifications.setNotificationCategoryAsync(CATEGORY_PLAN, [
-    { identifier: APPROVE, buttonTitle: "承認", options: { opensAppToForeground: false } },
+    { identifier: APPROVE, buttonTitle: "承認", options: { opensAppToForeground: loginOn } },
   ]);
   await Notifications.setNotificationCategoryAsync(CATEGORY_MERGE, [
     { identifier: MERGE, buttonTitle: "マージ", options: { opensAppToForeground: true } },
@@ -45,6 +48,8 @@ function refusal(r: Exclude<Result, { ok: true }>): string {
   switch (r.code) {
     case "stale":
       return "計画が出し直されたか、もう承認を待っていません。アプリで開いて確かめてください。";
+    case "unauthenticated":
+      return "受信箱にログインが要ります。アプリで開いて承認してください。";
     case "unreachable":
       return "受信箱のWeb表示に届きませんでした。家のWi-Fiにつながっているか確かめてください。";
   }
@@ -56,11 +61,11 @@ function refusal(r: Exclude<Result, { ok: true }>): string {
  * task, which has no screen), approve sends the approval and removes the notification, and a refused approval is
  * told in a local notification. Each press is acted on once.
  */
-export async function handleResponse(response: Notifications.NotificationResponse, origin: string, open?: (path: string) => void) {
+export async function handleResponse(response: Notifications.NotificationResponse, origin: string, open?: (path: string) => void, loginOn = false) {
   const request = response.notification.request;
   const p = payloadOf(request.content.data);
   if (!p) return;
-  const route = routeOf(response.actionIdentifier, p);
+  const route = routeOf(response.actionIdentifier, p, loginOn);
   if (route.kind === "open" && !open) return;
   if (!(await claim(`${request.identifier}:${response.actionIdentifier}`))) return;
   if (route.kind === "open") {

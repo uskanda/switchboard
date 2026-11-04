@@ -487,6 +487,11 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
                 返答
               </label>
               <div id="reply-hint">
+                {detail.trusted === false && (
+                  <p role="note" className="mb-xs rounded-sm bg-attention-container p-sm text-label-md text-attention">
+                    あなたはこのプロジェクトの信頼済みのユーザー（trusted_authors）ではありません。返答は投稿されますが、エージェントへの指示としては扱われません。
+                  </p>
+                )}
                 <PlanHint reason={detail.reason} word={word} answerable={!!plan} />
               </div>
               <Textarea
