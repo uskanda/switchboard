@@ -25,6 +25,10 @@ func (s *Server) mergeStatus(w http.ResponseWriter, r *http.Request) {
 		failWith(w, err)
 		return
 	}
+	if !s.sees(r.Context(), ref.String()) {
+		fail(w, http.StatusNotFound, inboxapi.CodeNotFound, ref.String()+" is not one you may see")
+		return
+	}
 	mb, ok := b.(MergeStatusReader)
 	if !ok {
 		fail(w, http.StatusNotFound, inboxapi.CodeNotFound, "this inbox does not read change requests")

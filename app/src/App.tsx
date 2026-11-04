@@ -2,7 +2,7 @@ import * as Notifications from "expo-notifications";
 import { useEffect, useState } from "react";
 import { View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { registerDevice } from "./lib/api";
+import { loginGitLab, registerDevice } from "./lib/api";
 import { loadOrigin, saveOrigin } from "./lib/settings";
 import { handleResponse, registerForPush, setUpNotifications } from "./notifications";
 import { SettingsScreen } from "./SettingsScreen";
@@ -19,11 +19,26 @@ export function App() {
   const [editing, setEditing] = useState(false);
   const [target, setTarget] = useState<Target>({ path: "/", n: 0 });
   const response = Notifications.useLastNotificationResponse();
+  // Whether the WUI asks for a login (issue #146); null until its /api/auth is read, which counts as on.
+  const [loginOn, setLoginOn] = useState<boolean | null>(null);
 
   useEffect(() => {
     void loadOrigin().then(setOrigin);
     void setUpNotifications().catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (!origin) return;
+    let live = true;
+    void loginGitLab(origin).then((g) => {
+      if (!live) return;
+      setLoginOn(g !== null);
+      void setUpNotifications(g !== null).catch(() => undefined);
+    });
+    return () => {
+      live = false;
+    };
+  }, [origin]);
 
   useEffect(() => {
     if (!origin) return;
@@ -34,8 +49,8 @@ export function App() {
 
   useEffect(() => {
     if (!origin || !response) return;
-    void handleResponse(response, origin, (path) => setTarget((t) => ({ path, n: t.n + 1 })));
-  }, [origin, response]);
+    void handleResponse(response, origin, (path) => setTarget((t) => ({ path, n: t.n + 1 })), loginOn ?? true);
+  }, [origin, response, loginOn]);
 
   let screen;
   if (origin === undefined) {

@@ -48,7 +48,7 @@ function AsOf({ inbox, liveUntil }: { inbox: Inbox; liveUntil: string | null }) 
  * to the list. While an issue waits, its count is bold in the attention color. On a narrow screen the settings link
  * stays on the first line, beside the name, and the counts and the state wrap below them. The counts are of the rows
  * as the list shows them, with what this tab asked of the issues laid over the listing (lib/pending.ts). With the
- * login on, the GitLab user logged in and the logout follow the settings link.
+ * login on, the GitLab user logged in and the logout follow the settings link, which only an admin gets.
  */
 export function Header() {
   const { inbox, view, live, liveUntil } = useInbox();
@@ -88,9 +88,11 @@ export function Header() {
         </p>
         </div>
         <div className="ml-auto flex items-center gap-lg">
-          <Link to="/settings" className="inline-flex min-h-11 items-center text-label-md text-muted underline">
-            設定
-          </Link>
+          {(!status.enabled || status.admin) && (
+            <Link to="/settings" className="inline-flex min-h-11 items-center text-label-md text-muted underline">
+              設定
+            </Link>
+          )}
           {status.user && (
             <p className="flex items-center gap-sm text-label-md text-muted">
               <span>{status.user}</span>

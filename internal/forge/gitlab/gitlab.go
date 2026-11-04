@@ -25,13 +25,40 @@ import (
 // Client talks to one GitLab instance with one token.
 type Client struct {
 	token   string
+	bearer  bool   // the token is an OAuth access token, sent as a bearer token
 	baseURL string // the instance, such as https://gitlab.com, without /api/v4
 	http    *http.Client
 }
 
-// New returns a client for the GitLab at baseURL authenticated with token.
+// New returns a client for the GitLab at baseURL authenticated with token, a personal, project or group access token.
 func New(token, baseURL string) *Client {
 	return &Client{token: token, baseURL: strings.TrimRight(baseURL, "/"), http: &http.Client{Timeout: 30 * time.Second}}
+}
+
+// NewOAuth returns a client authenticated with an OAuth access token: the token of a person logged in to the web
+// inbox, which GitLab takes as a bearer token only (issue #146).
+func NewOAuth(token, baseURL string) *Client {
+	c := New(token, baseURL)
+	c.bearer = true
+	return c
+}
+
+// authorize puts the client's token on req.
+func (c *Client) authorize(h http.Header) {
+	if c.bearer {
+		h.Set("Authorization", "Bearer "+c.token)
+		return
+	}
+	h.Set("PRIVATE-TOKEN", c.token)
+}
+
+// TokenScopes returns the scopes of the client's personal access token.
+func (c *Client) TokenScopes(ctx context.Context) ([]string, error) {
+	var t struct {
+		Scopes []string `json:"scopes"`
+	}
+	_, err := c.do(ctx, http.MethodGet, c.url("/personal_access_tokens/self", nil), nil, &t)
+	return t.Scopes, err
 }
 
 // apiError is a non-2xx response. The message comes from GitLab's JSON body; the token is never part of it.
@@ -70,7 +97,7 @@ func (c *Client) do(ctx context.Context, method, rawURL string, in, out any) (*h
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("PRIVATE-TOKEN", c.token)
+	c.authorize(req.Header)
 	req.Header.Set("User-Agent", "switchboard")
 	if in != nil {
 		req.Header.Set("Content-Type", "application/json")

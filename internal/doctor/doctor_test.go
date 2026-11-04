@@ -256,3 +256,47 @@ func TestCIReadableWithTheAgentToken(t *testing.T) {
 	}
 	w.expect(t, "warn", "Actions: Read")
 }
+
+// tokenForge is a forge whose token has scopes and an owner, as the GitLab and GitHub clients report.
+type tokenForge struct {
+	forge.Forge
+	scopes []string
+	login  string
+}
+
+func (s tokenForge) TokenScopes(context.Context) ([]string, error) { return s.scopes, nil }
+func (s tokenForge) TokenOwner(context.Context) (string, error)    { return s.login, nil }
+
+func TestInboxAuthWarnsOnAWritingInboxTokenAndAnUntrustedOwner(t *testing.T) {
+	w := newWorld(t)
+	w.cfg.Inbox.Auth = &config.InboxAuth{ClientID: "cid", ClientSecretRef: "s", MemberGroups: []string{"team"}, Owner: "olivia"}
+	w.cfg.Forges.GitLab = config.GitLab{TokenRef: "agent", InboxTokenRef: "inbox", AgentIdentity: "bot"}
+	w.cfg.TrustedAuthors.GitLab = []string{"me"}
+	w.d.Forge = func(kind, token string) forge.Forge {
+		if token == "i" && kind == forge.GitLab {
+			return tokenForge{Forge: w.f, scopes: []string{"api"}}
+		}
+		if token == "i" {
+			return tokenForge{Forge: w.f, login: "someone"}
+		}
+		return w.f
+	}
+	w.run(t)
+	w.expect(t, "warn", "forges.gitlab.inbox_token_ref has the api scope")
+	w.expect(t, "warn", "inbox.auth.owner olivia is not in trusted_authors.gitlab")
+	w.expect(t, "warn", "the GitHub inbox token is someone's, who is not in trusted_authors.github")
+}
+
+func TestWithoutInboxAuthNoMultiUserWarnings(t *testing.T) {
+	w := newWorld(t)
+	w.d.Forge = func(_, token string) forge.Forge {
+		if token == "i" {
+			return tokenForge{Forge: w.f, login: "someone"}
+		}
+		return w.f
+	}
+	w.run(t)
+	if strings.Contains(w.out.String(), "trusted_authors.github") {
+		t.Fatalf("a multi-user warning without inbox.auth:\n%s", w.out.String())
+	}
+}
