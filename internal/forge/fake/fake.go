@@ -166,6 +166,16 @@ func (f *Forge) EditBody(ref forge.IssueRef, body string, editor forge.User) {
 	is.data.UpdatedAt = f.now()
 }
 
+// EditTitle renames the issue as editor.
+func (f *Forge) EditTitle(ref forge.IssueRef, title string, editor forge.User) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	is := f.issue(ref)
+	is.data.Title = title
+	is.data.TitleEdit = forge.Edit{Edited: true, Editor: &editor}
+	is.data.UpdatedAt = f.now()
+}
+
 // LoseBodyEditor replaces the issue body by someone the forge does not name, as when GitLab's system notes are beyond
 // what was fetched.
 func (f *Forge) LoseBodyEditor(ref forge.IssueRef, body string) {

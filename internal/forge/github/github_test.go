@@ -1,6 +1,7 @@
 package github
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -29,6 +30,7 @@ func newServer(t *testing.T) (*server, *Client) {
 	s := &server{t: t, handlers: map[string]http.HandlerFunc{}}
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
+		r.Body = io.NopCloser(bytes.NewReader(b))
 		s.mu.Lock()
 		s.log = append(s.log, r)
 		s.bodies = append(s.bodies, string(b))
@@ -171,12 +173,12 @@ func TestThreadMergesEditInformation(t *testing.T) {
 	}
 }
 
-func TestThreadMarksCommentsBeyondTheGraphQLPageUnknown(t *testing.T) {
+func TestThreadMarksCommentsMissingFromTheEditQueryUnknown(t *testing.T) {
 	s, c := newServer(t)
 	s.on("GET /repos/o/r/issues/7", jsonReply(map[string]any{"number": 7, "user": map[string]any{"login": "alice", "id": 1}}))
 	s.on("GET /repos/o/r/issues/7/comments", jsonReply([]map[string]any{{"id": 11, "user": map[string]any{"login": "alice", "id": 1}}}))
 	s.on("POST /graphql", jsonReply(map[string]any{"data": map[string]any{"repository": map[string]any{"issue": map[string]any{
-		"comments": map[string]any{"pageInfo": map[string]any{"hasNextPage": true}, "nodes": []map[string]any{}},
+		"comments": map[string]any{"pageInfo": map[string]any{"hasNextPage": false}, "nodes": []map[string]any{}},
 	}}}}))
 	_, comments, err := c.Thread(ctx, forge.IssueRef{Owner: "o", Repo: "r", Number: 7})
 	if err != nil {
@@ -184,6 +186,84 @@ func TestThreadMarksCommentsBeyondTheGraphQLPageUnknown(t *testing.T) {
 	}
 	if !comments[0].Edit.Unknown {
 		t.Errorf("a comment missing from the edit query must be unknown: %+v", comments[0].Edit)
+	}
+}
+
+// More than 100 comments: the edit query follows the cursor, so the editor of the 101st comment is known.
+func TestThreadReadsEveryPageOfEdits(t *testing.T) {
+	s, c := newServer(t)
+	s.on("GET /repos/o/r/issues/7", jsonReply(map[string]any{"number": 7, "user": map[string]any{"login": "alice", "id": 1}}))
+	var restComments []map[string]any
+	for id := 1; id <= 101; id++ {
+		restComments = append(restComments, map[string]any{"id": id, "user": map[string]any{"login": "alice", "id": 1}})
+	}
+	s.on("GET /repos/o/r/issues/7/comments", jsonReply(restComments))
+	s.on("POST /graphql", func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			Variables struct {
+				After *string `json:"after"`
+			} `json:"variables"`
+		}
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &in)
+		var nodes []map[string]any
+		info := map[string]any{"hasNextPage": true, "endCursor": "c100"}
+		from, to := 1, 100
+		if in.Variables.After != nil {
+			if *in.Variables.After != "c100" {
+				t.Errorf("after = %q", *in.Variables.After)
+			}
+			from, to = 101, 101
+			info = map[string]any{"hasNextPage": false, "endCursor": "c101"}
+		}
+		for id := from; id <= to; id++ {
+			nodes = append(nodes, map[string]any{"databaseId": id, "lastEditedAt": "2026-10-29T00:25:00Z", "editor": map[string]any{"login": "alice", "databaseId": 1}})
+		}
+		jsonReply(map[string]any{"data": map[string]any{"repository": map[string]any{"issue": map[string]any{
+			"comments": map[string]any{"pageInfo": info, "nodes": nodes},
+		}}}})(w, r)
+	})
+	_, comments, err := c.Thread(ctx, forge.IssueRef{Owner: "o", Repo: "r", Number: 7})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(comments) != 101 {
+		t.Fatalf("%d comments", len(comments))
+	}
+	if e := comments[100].Edit; e.Unknown || e.Editor == nil || e.Editor.ID != 1 {
+		t.Errorf("the editor of the 101st comment = %+v", e)
+	}
+}
+
+func TestThreadReadsWhoRenamedTheTitle(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		events []map[string]any
+		want   forge.Edit
+	}{
+		{"never renamed", nil, forge.Edit{}},
+		{"renamed", []map[string]any{{"actor": map[string]any{"login": "bob", "databaseId": 2}}, {"actor": map[string]any{"login": "mallory", "databaseId": 9}}},
+			forge.Edit{Edited: true, Editor: &forge.User{Login: "mallory", ID: 9}}},
+		{"renamed by a deleted account", []map[string]any{{"actor": nil}}, forge.Edit{Edited: true, Unknown: true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, c := newServer(t)
+			s.on("GET /repos/o/r/issues/7", jsonReply(map[string]any{"number": 7, "user": map[string]any{"login": "alice", "id": 1}}))
+			s.on("GET /repos/o/r/issues/7/comments", jsonReply([]map[string]any{}))
+			s.on("POST /graphql", jsonReply(map[string]any{"data": map[string]any{"repository": map[string]any{"issue": map[string]any{
+				"timelineItems": map[string]any{"nodes": tc.events},
+				"comments":      map[string]any{"pageInfo": map[string]any{"hasNextPage": false}, "nodes": []map[string]any{}},
+			}}}}))
+			is, _, err := c.Thread(ctx, forge.IssueRef{Owner: "o", Repo: "r", Number: 7})
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := is.TitleEdit
+			if got.Edited != tc.want.Edited || got.Unknown != tc.want.Unknown || (got.Editor == nil) != (tc.want.Editor == nil) ||
+				(got.Editor != nil && *got.Editor != *tc.want.Editor) {
+				t.Errorf("TitleEdit = %+v, want %+v", got, tc.want)
+			}
+		})
 	}
 }
 

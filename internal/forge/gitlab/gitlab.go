@@ -206,11 +206,16 @@ type glNote struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// maxNotePages bounds how many pages of notes Thread reads (100 notes each).
-const maxNotePages = 10
+// The bodies of the system notes GitLab writes when the description or the title changes. A title note goes on with
+// the old and the new title ("changed title from **a** to **b**"), so it is matched by its start, and a title that
+// holds "description" cannot pass for a description note.
+const (
+	descriptionNote = "changed the description"
+	titleNotePrefix = "changed title "
+)
 
-// Thread implements forge.Forge. The body's last editor is the author of the last system note about the
-// description (V21). When the notes run past maxNotePages, a later one may hide, so the editor is unknown.
+// Thread implements forge.Forge, reading every page of the notes. The body's last editor is the author of the last
+// system note about the description (V21); the title's, of the last one about the title.
 // The issue, its notes and who edited them are three requests that need nothing of one another, so they are sent
 // at once.
 func (c *Client) Thread(ctx context.Context, ref forge.IssueRef) (*forge.Issue, []forge.Comment, error) {
@@ -219,8 +224,7 @@ func (c *Client) Thread(ctx context.Context, ref forge.IssueRef) (*forge.Issue, 
 		wg                          sync.WaitGroup
 		gi                          glIssue
 		comments                    []forge.Comment
-		editor                      *forge.User
-		more                        bool
+		bodyEditor, titleEditor     *forge.User
 		byID                        map[int64]forge.Edit
 		issueErr, notesErr, editErr error
 	)
@@ -231,13 +235,16 @@ func (c *Client) Thread(ctx context.Context, ref forge.IssueRef) (*forge.Issue, 
 	}()
 	go func() {
 		defer wg.Done()
-		more, notesErr = pages(ctx, c, c.url(base+"/notes", url.Values{"sort": {"asc"}, "order_by": {"created_at"}, "per_page": {"100"}}), maxNotePages,
+		_, notesErr = pages(ctx, c, c.url(base+"/notes", url.Values{"sort": {"asc"}, "order_by": {"created_at"}, "per_page": {"100"}}), 0,
 			func(p []glNote) {
 				for _, n := range p {
 					if n.System {
-						if strings.Contains(n.Body, "description") {
-							u := n.Author.user()
-							editor = &u
+						u := n.Author.user()
+						switch {
+						case strings.TrimSpace(n.Body) == descriptionNote:
+							bodyEditor = &u
+						case strings.HasPrefix(n.Body, titleNotePrefix):
+							titleEditor = &u
 						}
 						continue
 					}
@@ -254,11 +261,11 @@ func (c *Client) Thread(ctx context.Context, ref forge.IssueRef) (*forge.Issue, 
 		return nil, nil, err
 	}
 	is := &forge.Issue{IssueSummary: gi.summary(ref.Owner, ref.Repo), Body: gi.Description, Author: gi.Author.user(), CreatedAt: gi.CreatedAt}
-	switch {
-	case more:
-		is.BodyEdit = forge.Edit{Edited: true, Unknown: true}
-	case editor != nil:
-		is.BodyEdit = forge.Edit{Edited: true, Editor: editor}
+	if bodyEditor != nil {
+		is.BodyEdit = forge.Edit{Edited: true, Editor: bodyEditor}
+	}
+	if titleEditor != nil {
+		is.TitleEdit = forge.Edit{Edited: true, Editor: titleEditor}
 	}
 	// A comment the query did not return is marked Unknown, so that trust decisions treat it as edited by an
 	// untrusted user.
@@ -272,14 +279,21 @@ func (c *Client) Thread(ctx context.Context, ref forge.IssueRef) (*forge.Issue, 
 	return is, comments, nil
 }
 
-// editQuery asks for the newest notes, the ones a reply is in.
-const editQuery = `query($path: ID!, $iid: String!) {
+// editQuery asks for a page of the notes, newest first: $before is the cursor of the page after, null for the newest.
+const editQuery = `query($path: ID!, $iid: String!, $before: String) {
   project(fullPath: $path) {
     issue(iid: $iid) {
-      notes(last: 100) { nodes { id lastEditedBy { id username } } }
+      notes(last: 100, before: $before) {
+        pageInfo { hasPreviousPage startCursor }
+        nodes { id lastEditedBy { id username } }
+      }
     }
   }
 }`
+
+// maxEditPages bounds how many pages of notes the edit query reads (10,000 notes). A note beyond them is marked
+// Unknown.
+const maxEditPages = 100
 
 type gqlUser struct {
 	ID       string `json:"id"` // gid://gitlab/User/<n>
@@ -292,43 +306,55 @@ func gid(s string) int64 {
 	return n
 }
 
-// edits reads who last edited each of the newest notes, by note ID. lastEditedBy is set only for an edited note
-// (V21).
+// edits reads who last edited each note, by note ID, from the newest page back to the oldest. lastEditedBy is set
+// only for an edited note (V21).
 func (c *Client) edits(ctx context.Context, ref forge.IssueRef) (map[int64]forge.Edit, error) {
-	in := map[string]any{"query": editQuery, "variables": map[string]any{"path": ref.Project(), "iid": strconv.Itoa(ref.Number)}}
-	var out struct {
-		Data struct {
-			Project struct {
-				Issue struct {
-					Notes struct {
-						Nodes []struct {
-							ID           string   `json:"id"`
-							LastEditedBy *gqlUser `json:"lastEditedBy"`
-						} `json:"nodes"`
-					} `json:"notes"`
-				} `json:"issue"`
-			} `json:"project"`
-		} `json:"data"`
-		Errors []struct {
-			Message string `json:"message"`
-		} `json:"errors"`
-	}
-	if _, err := c.do(ctx, http.MethodPost, c.baseURL+"/api/graphql", in, &out); err != nil {
-		return nil, err
-	}
-	if len(out.Errors) > 0 {
-		return nil, fmt.Errorf("gitlab: graphql: %s", out.Errors[0].Message)
-	}
 	byID := map[int64]forge.Edit{}
-	for _, n := range out.Data.Project.Issue.Notes.Nodes {
-		e := forge.Edit{}
-		if n.LastEditedBy != nil {
-			e = forge.Edit{Edited: true, Editor: &forge.User{Login: n.LastEditedBy.Username, ID: gid(n.LastEditedBy.ID)}}
-			if e.Editor.ID == 0 {
-				e = forge.Edit{Edited: true, Unknown: true}
-			}
+	var before any
+	for page := 0; page < maxEditPages; page++ {
+		in := map[string]any{"query": editQuery, "variables": map[string]any{"path": ref.Project(), "iid": strconv.Itoa(ref.Number), "before": before}}
+		var out struct {
+			Data struct {
+				Project struct {
+					Issue struct {
+						Notes struct {
+							PageInfo struct {
+								HasPreviousPage bool   `json:"hasPreviousPage"`
+								StartCursor     string `json:"startCursor"`
+							} `json:"pageInfo"`
+							Nodes []struct {
+								ID           string   `json:"id"`
+								LastEditedBy *gqlUser `json:"lastEditedBy"`
+							} `json:"nodes"`
+						} `json:"notes"`
+					} `json:"issue"`
+				} `json:"project"`
+			} `json:"data"`
+			Errors []struct {
+				Message string `json:"message"`
+			} `json:"errors"`
 		}
-		byID[gid(n.ID)] = e
+		if _, err := c.do(ctx, http.MethodPost, c.baseURL+"/api/graphql", in, &out); err != nil {
+			return nil, err
+		}
+		if len(out.Errors) > 0 {
+			return nil, fmt.Errorf("gitlab: graphql: %s", out.Errors[0].Message)
+		}
+		notes := out.Data.Project.Issue.Notes
+		for _, n := range notes.Nodes {
+			e := forge.Edit{}
+			if n.LastEditedBy != nil {
+				e = forge.Edit{Edited: true, Editor: &forge.User{Login: n.LastEditedBy.Username, ID: gid(n.LastEditedBy.ID)}}
+				if e.Editor.ID == 0 {
+					e = forge.Edit{Edited: true, Unknown: true}
+				}
+			}
+			byID[gid(n.ID)] = e
+		}
+		if !notes.PageInfo.HasPreviousPage || notes.PageInfo.StartCursor == "" {
+			break
+		}
+		before = notes.PageInfo.StartCursor
 	}
 	return byID, nil
 }

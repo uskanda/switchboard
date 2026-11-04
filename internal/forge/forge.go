@@ -157,9 +157,11 @@ type IssueSummary struct {
 // Issue is one issue with its body.
 type Issue struct {
 	IssueSummary
-	Body      string
-	Author    User
-	BodyEdit  Edit
+	Body     string
+	Author   User
+	BodyEdit Edit
+	// TitleEdit is who last changed the title after the issue was opened.
+	TitleEdit Edit
 	CreatedAt time.Time
 }
 

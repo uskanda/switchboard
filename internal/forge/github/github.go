@@ -317,18 +317,27 @@ func (c *Client) Thread(ctx context.Context, ref forge.IssueRef) (*forge.Issue, 
 	return is, comments, nil
 }
 
-const editQuery = `query($owner: String!, $repo: String!, $number: Int!) {
+// editQuery reads who last edited the body, who last renamed the title, and one page of comments with who last
+// edited each. $after is the cursor of the page before; null for the first.
+const editQuery = `query($owner: String!, $repo: String!, $number: Int!, $after: String) {
   repository(owner: $owner, name: $repo) {
     issue(number: $number) {
       lastEditedAt
       editor { login ... on User { databaseId } ... on Bot { databaseId } }
-      comments(first: 100) {
-        pageInfo { hasNextPage }
+      timelineItems(last: 1, itemTypes: [RENAMED_TITLE_EVENT]) {
+        nodes { ... on RenamedTitleEvent { actor { login ... on User { databaseId } ... on Bot { databaseId } } } }
+      }
+      comments(first: 100, after: $after) {
+        pageInfo { hasNextPage endCursor }
         nodes { databaseId lastEditedAt editor { login ... on User { databaseId } ... on Bot { databaseId } } }
       }
     }
   }
 }`
+
+// maxEditPages bounds how many pages of comments the edit query reads (10,000 comments). A comment beyond them is
+// marked Unknown.
+const maxEditPages = 100
 
 type gqlActor struct {
 	Login      string `json:"login"`
@@ -351,16 +360,34 @@ func (e gqlEdited) edit() forge.Edit {
 	return forge.Edit{Edited: true, Editor: &forge.User{Login: e.Editor.Login, ID: e.Editor.DatabaseID}}
 }
 
-// edits is who last edited the body of an issue and each comment the edit query returned, by comment ID.
-type edits struct {
-	body     forge.Edit
-	comments map[int64]forge.Edit
+// titleEdit is the edit of the title by the last RenamedTitleEvent: none when the title was never renamed, Unknown
+// when the event names no actor (a deleted account).
+func titleEdit(events []struct {
+	Actor *gqlActor `json:"actor"`
+}) forge.Edit {
+	if len(events) == 0 {
+		return forge.Edit{}
+	}
+	a := events[len(events)-1].Actor
+	if a == nil || a.DatabaseID == 0 {
+		return forge.Edit{Edited: true, Unknown: true}
+	}
+	return forge.Edit{Edited: true, Editor: &forge.User{Login: a.Login, ID: a.DatabaseID}}
 }
 
-// apply fills in who last edited the body and each comment. A comment the query did not return (beyond its first
-// page) is marked Unknown, so that trust decisions treat it as edited by an untrusted user.
+// edits is who last edited the body and the title of an issue and each comment the edit query returned, by comment
+// ID.
+type edits struct {
+	body, title forge.Edit
+	comments    map[int64]forge.Edit
+}
+
+// apply fills in who last edited the body, the title and each comment. A comment the query did not return (posted
+// while it read, or beyond maxEditPages) is marked Unknown, so that trust decisions treat it as edited by an
+// untrusted user.
 func (e *edits) apply(is *forge.Issue, comments []forge.Comment) {
 	is.BodyEdit = e.body
+	is.TitleEdit = e.title
 	for i := range comments {
 		ed, ok := e.comments[comments[i].ID]
 		if !ok {
@@ -370,34 +397,54 @@ func (e *edits) apply(is *forge.Issue, comments []forge.Comment) {
 	}
 }
 
-// edits reads who last edited the body and the first page of comments of an issue.
+// edits reads who last edited the body and the title of an issue, and every page of its comments, oldest first.
 func (c *Client) edits(ctx context.Context, ref forge.IssueRef) (*edits, error) {
-	in := map[string]any{"query": editQuery, "variables": map[string]any{"owner": ref.Owner, "repo": ref.Repo, "number": ref.Number}}
-	var out struct {
-		Data struct {
-			Repository struct {
-				Issue struct {
-					gqlEdited
-					Comments struct {
-						Nodes []gqlEdited `json:"nodes"`
-					} `json:"comments"`
-				} `json:"issue"`
-			} `json:"repository"`
-		} `json:"data"`
-		Errors []struct {
-			Message string `json:"message"`
-		} `json:"errors"`
-	}
-	if _, err := c.do(ctx, http.MethodPost, c.graphqlURL, in, &out, nil); err != nil {
-		return nil, err
-	}
-	if len(out.Errors) > 0 {
-		return nil, fmt.Errorf("github: graphql: %s", out.Errors[0].Message)
-	}
-	gi := out.Data.Repository.Issue
-	e := &edits{body: gi.edit(), comments: map[int64]forge.Edit{}}
-	for _, n := range gi.Comments.Nodes {
-		e.comments[n.DatabaseID] = n.edit()
+	var e *edits
+	var after any
+	for page := 0; page < maxEditPages; page++ {
+		in := map[string]any{"query": editQuery, "variables": map[string]any{"owner": ref.Owner, "repo": ref.Repo, "number": ref.Number, "after": after}}
+		var out struct {
+			Data struct {
+				Repository struct {
+					Issue struct {
+						gqlEdited
+						TimelineItems struct {
+							Nodes []struct {
+								Actor *gqlActor `json:"actor"`
+							} `json:"nodes"`
+						} `json:"timelineItems"`
+						Comments struct {
+							PageInfo struct {
+								HasNextPage bool   `json:"hasNextPage"`
+								EndCursor   string `json:"endCursor"`
+							} `json:"pageInfo"`
+							Nodes []gqlEdited `json:"nodes"`
+						} `json:"comments"`
+					} `json:"issue"`
+				} `json:"repository"`
+			} `json:"data"`
+			Errors []struct {
+				Message string `json:"message"`
+			} `json:"errors"`
+		}
+		if _, err := c.do(ctx, http.MethodPost, c.graphqlURL, in, &out, nil); err != nil {
+			return nil, err
+		}
+		if len(out.Errors) > 0 {
+			return nil, fmt.Errorf("github: graphql: %s", out.Errors[0].Message)
+		}
+		gi := out.Data.Repository.Issue
+		if e == nil {
+			e = &edits{body: gi.edit(), title: titleEdit(gi.TimelineItems.Nodes), comments: map[int64]forge.Edit{}}
+		}
+		for _, n := range gi.Comments.Nodes {
+			e.comments[n.DatabaseID] = n.edit()
+		}
+		info := gi.Comments.PageInfo
+		if !info.HasNextPage || info.EndCursor == "" {
+			break
+		}
+		after = info.EndCursor
 	}
 	return e, nil
 }

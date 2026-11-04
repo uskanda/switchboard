@@ -1,6 +1,7 @@
 package gitlab
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -29,6 +30,7 @@ func newServer(t *testing.T) (*server, *Client) {
 	s := &server{t: t, handlers: map[string]http.HandlerFunc{}}
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
+		r.Body = io.NopCloser(bytes.NewReader(b))
 		s.mu.Lock()
 		s.log = append(s.log, r)
 		s.bodies = append(s.bodies, string(b))
@@ -249,21 +251,81 @@ func TestThreadWithoutDescriptionNoteIsUnedited(t *testing.T) {
 	}
 }
 
-// Past maxNotePages pages, a later description change may hide, so the body's editor is unknown.
-func TestThreadBeyondTheNotePagesLosesTheBodyEditor(t *testing.T) {
+// More than 1000 notes: every page is read, so the newest comment and the last description change are seen.
+func TestThreadReadsEveryPageOfNotes(t *testing.T) {
 	s, c := newServer(t)
 	s.on("GET "+proj+"/issues/3", jsonReply(map[string]any{"iid": 3, "title": "t", "description": "b", "state": "opened", "author": user(1, "alice")}))
 	s.on("GET "+proj+"/issues/3/notes", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Link", fmt.Sprintf(`<http://%s%s/issues/3/notes?sort=asc&page=99>; rel="next"`, r.Host, proj))
-		jsonReply([]any{})(w, r)
+		page := 1
+		fmt.Sscan(r.URL.Query().Get("page"), &page)
+		if page < 12 {
+			w.Header().Set("Link", fmt.Sprintf(`<http://%s%s/issues/3/notes?sort=asc&page=%d>; rel="next"`, r.Host, proj, page+1))
+			jsonReply([]map[string]any{{"id": page, "system": false, "body": "c", "author": user(1, "alice")}})(w, r)
+			return
+		}
+		jsonReply([]map[string]any{
+			{"id": 1000, "system": true, "body": "changed the description", "author": user(2, "bob")},
+			{"id": 1001, "system": false, "body": "newest", "author": user(1, "alice")},
+		})(w, r)
 	})
+	s.on("POST /api/graphql", jsonReply(map[string]any{"data": map[string]any{"project": map[string]any{"issue": map[string]any{"notes": map[string]any{"nodes": []any{}}}}}}))
+	is, cs, err := c.Thread(ctx, ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cs) != 12 || cs[11].Body != "newest" {
+		t.Fatalf("comments = %+v", cs)
+	}
+	if is.BodyEdit.Unknown || is.BodyEdit.Editor == nil || is.BodyEdit.Editor.ID != 2 {
+		t.Fatalf("BodyEdit = %+v", is.BodyEdit)
+	}
+}
+
+// A title that holds "description" does not make whoever renamed the issue its body's editor.
+func TestThreadTellsTitleNotesFromDescriptionNotes(t *testing.T) {
+	s, c := newServer(t)
+	s.on("GET "+proj+"/issues/3", jsonReply(map[string]any{"iid": 3, "title": "fix the description", "description": "b", "state": "opened", "author": user(1, "alice")}))
+	s.on("GET "+proj+"/issues/3/notes", jsonReply([]map[string]any{
+		{"id": 80, "system": true, "body": "changed the description", "author": user(1, "alice")},
+		{"id": 81, "system": true, "body": "changed title from **x** to **fix the description**", "author": user(9, "mallory")},
+	}))
 	s.on("POST /api/graphql", jsonReply(map[string]any{"data": map[string]any{"project": map[string]any{"issue": map[string]any{"notes": map[string]any{"nodes": []any{}}}}}}))
 	is, _, err := c.Thread(ctx, ref)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !is.BodyEdit.Edited || !is.BodyEdit.Unknown {
-		t.Fatalf("BodyEdit = %+v", is.BodyEdit)
+	if is.BodyEdit.Editor == nil || is.BodyEdit.Editor.ID != 1 {
+		t.Errorf("BodyEdit = %+v", is.BodyEdit)
+	}
+	if !is.TitleEdit.Edited || is.TitleEdit.Editor == nil || is.TitleEdit.Editor.ID != 9 {
+		t.Errorf("TitleEdit = %+v", is.TitleEdit)
+	}
+}
+
+// More than 100 notes: the edit query follows the cursor back, so the editor of an older note is known.
+func TestThreadReadsEveryPageOfNoteEdits(t *testing.T) {
+	s, c := newServer(t)
+	s.on("GET "+proj+"/issues/3", jsonReply(map[string]any{"iid": 3, "title": "t", "description": "b", "state": "opened", "author": user(1, "alice")}))
+	s.on("GET "+proj+"/issues/3/notes", jsonReply([]map[string]any{
+		{"id": 1, "system": false, "body": "old", "author": user(1, "alice")},
+		{"id": 2, "system": false, "body": "new", "author": user(1, "alice")},
+	}))
+	s.on("POST /api/graphql", func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(b), `"before":"c2"`) {
+			jsonReply(map[string]any{"data": map[string]any{"project": map[string]any{"issue": map[string]any{"notes": map[string]any{
+				"pageInfo": map[string]any{"hasPreviousPage": false}, "nodes": []any{map[string]any{"id": "gid://gitlab/Note/1", "lastEditedBy": nil}}}}}}})(w, r)
+			return
+		}
+		jsonReply(map[string]any{"data": map[string]any{"project": map[string]any{"issue": map[string]any{"notes": map[string]any{
+			"pageInfo": map[string]any{"hasPreviousPage": true, "startCursor": "c2"}, "nodes": []any{map[string]any{"id": "gid://gitlab/Note/2", "lastEditedBy": nil}}}}}}})(w, r)
+	})
+	_, cs, err := c.Thread(ctx, ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cs[0].Edit.Unknown || cs[1].Edit.Unknown {
+		t.Fatalf("edits = %+v / %+v", cs[0].Edit, cs[1].Edit)
 	}
 }
 
