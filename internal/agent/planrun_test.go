@@ -11,6 +11,7 @@ import (
 	"github.com/uskanda/switchboard/internal/config"
 	"github.com/uskanda/switchboard/internal/forge"
 	"github.com/uskanda/switchboard/internal/instructions"
+	"github.com/uskanda/switchboard/internal/postfmt"
 )
 
 func questions(qs ...[3]string) string {
@@ -190,7 +191,7 @@ func TestPlanCommentsStartWithTheTitle(t *testing.T) {
 			if p.Marker.Reason != tc.reason || paragraphAfterHeading(p.Body) != tc.want {
 				t.Fatalf("marker=%+v; the paragraph after the heading is not %q:\n%s", p.Marker, tc.want, p.Body)
 			}
-			if got := Question(p.Body); got != tc.want {
+			if got := postfmt.Question(p.Body); got != tc.want {
 				t.Fatalf("Question = %q, want %q", got, tc.want)
 			}
 		})
@@ -213,7 +214,7 @@ func TestPlanRunWithoutATitleIsAnError(t *testing.T) {
 
 func TestQuestionOfAnOldPlanCommentWithoutATitle(t *testing.T) {
 	old := "### The plan is ready for approval\n\n# Plan\n\n- Add greeting.txt.\n\nReply `/ok` to approve."
-	if got := Question(old); got != "- Add greeting.txt." {
+	if got := postfmt.Question(old); got != "- Add greeting.txt." {
 		t.Fatalf("Question = %q", got)
 	}
 }

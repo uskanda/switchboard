@@ -2,7 +2,7 @@
 
 ## Context
 
-動機はproposal.mdのWhyを参照。受信箱の一覧の質問の冒頭（`inbox.Excerpt`）と待ちの通知は、どちらも`agent.Question`でコメントから段落を1つ拾う。`agent.Question`は、質問のラベルが無ければ、見出しの次の最初の段落を返す。ただし、`**`で始まり`**`で終わる段落（「**What was done**」のような小見出し）は飛ばす。Web UIの一覧（`InboxList.tsx`の`plainText`）は、その文から`**`と`` ` ``を除いて出す。決めたことはgrilling.mdに記録してある。
+動機はproposal.mdのWhyを参照。受信箱の一覧の質問の冒頭（`inbox.Excerpt`）と待ちの通知は、どちらも`postfmt.Question`（以前は`agent.Question`）でコメントから段落を1つ拾う。`postfmt.Question`は、質問のラベルが無ければ、見出しの次の最初の段落を返す。ただし、`**`で始まり`**`で終わる段落（「**What was done**」のような小見出し）は飛ばす。Web UIの一覧（`InboxList.tsx`の`plainText`）は、その文から`**`と`` ` ``を除いて出す。決めたことはgrilling.mdに記録してある。
 
 ## Goals / Non-Goals
 
@@ -20,7 +20,7 @@
 
 ### 題の段落は`**計画：** 〈題〉`にする
 
-段落は`**`で始まるが`**`では終わらないので、`agent.Question`の小見出しの飛ばしに当たらず、そのまま拾われる。題は`strings.Fields`で1行にまとめる。ラベルはコメントの言語の`texts`に`planLabel`として持たせる（日本語は`計画：`、英語は`Plan:`）。
+段落は`**`で始まるが`**`では終わらないので、`postfmt.Question`の小見出しの飛ばしに当たらず、そのまま拾われる。題は`strings.Fields`で1行にまとめる。ラベルはコメントの言語の`texts`に`planLabel`として持たせる（日本語は`計画：`、英語は`Plan:`）。
 
 ### 題が無い宣言は異常として扱う
 

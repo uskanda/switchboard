@@ -2,7 +2,7 @@
 
 ## 1. 計画の宣言とコメントの書式
 
-- [x] 1.1 `internal/agent/planrun_test.go`に、質問と計画のコメントの見出しの次の段落が`**計画：** 〈題〉`（英語は`**Plan:** 〈title〉`）になり、`agent.Question`がその段落を返すテストを足す。題の無い宣言と空白だけの題が`waiting(reason=error)`になるテスト、題の無い古いコメントで`agent.Question`が今までの段落を返すテストも足す。既存のテストの宣言に`title`を足す
+- [x] 1.1 `internal/agent/planrun_test.go`に、質問と計画のコメントの見出しの次の段落が`**計画：** 〈題〉`（英語は`**Plan:** 〈title〉`）になり、`postfmt.Question`がその段落を返すテストを足す。題の無い宣言と空白だけの題が`waiting(reason=error)`になるテスト、題の無い古いコメントで`postfmt.Question`が今までの段落を返すテストも足す。既存のテストの宣言に`title`を足す
 - [x] 1.2 `PlanSchema`と`PlanDeclaration`に`title`を足し、`planDeclaration`で空白だけの題を異常とする。`messages.go`に`planLabel`を足し、`planQuestions`と`planText`の先頭に題の段落を置く。1.1のテストが通ることを`make verify`で確かめる
 
 ## 2. 通知
