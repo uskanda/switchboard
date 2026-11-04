@@ -1,6 +1,8 @@
 module github.com/uskanda/switchboard/web
 
-go 1.24.7
+go 1.26.0
+
+toolchain go1.26.10
 
 replace github.com/uskanda/switchboard => ../
 
