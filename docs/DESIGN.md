@@ -11,7 +11,7 @@
 
 ## 1. 設計の要点
 
-1. **Goの単一バイナリ**（ADR-010）。CLI・常駐エージェント・中継をすべて `switchboard` のサブコマンドにする。受信箱のWeb表示だけは別のバイナリ（`switchboard-web`）である。Claude Codeのフックは使わない（ADR-061）
+1. **Goの単一バイナリ**（ADR-010）。CLI・常駐エージェント・中継をすべて `switchboard` のサブコマンドにする。受信箱のWeb表示だけは別のバイナリ（`switchboard-web`）である。Claude Codeのフックは使わない（ADR-063）
 2. **`claude -p` の終了を状態遷移点にする**。ヘッドレス実行は「止まって待つ」のではなく「質問を残して終了する」（事前許可のないツールも確認待ちにならず拒否される〔確認済C15〕）。終了時の構造化出力（終了プロトコル、5章）からwaiting / done / errorを判定する
 3. **フォージへの書き込みはエージェントに一本化**。`claude -p` の終了後に、エージェントが検査と書き戻しを行う（仕様変更）
 4. **pushとPR作成もエージェントが行う**。Claude Codeのプロセスにはフォージの資格情報を渡さず、ローカルコミットまでに留める（仕様変更）
@@ -69,7 +69,7 @@ ADR-008（受信箱用トークンの分離）はADR-015とセットで解決す
  └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-フックは使わない（ADR-061）。push / PRもエージェント経由である。
+フックは使わない（ADR-063）。push / PRもエージェント経由である。
 
 ---
 
@@ -197,7 +197,7 @@ prompt.md（stdin）
 - 新規起動時はissue全体を、`--resume` 時は `ack` 以降の信頼済みコメントだけを渡す
 - 区切りタグによる分離は緩和策であって保証ではない。公開リポジトリでは `include_untrusted: false` を強制する
 
-### 4.5 フック（採用しない、ADR-061）
+### 4.5 フック（採用しない、ADR-063）
 
 当初は `switchboard hook <event>` として、PreToolUse（文字列による追加の拒否とログ）、PermissionRequest（拒否の記録）、Stop（宣言の漏れの差し戻し）を同じバイナリから呼ぶ案だった。どれも実装していない。
 
@@ -236,10 +236,10 @@ $ switchboard inbox
 ### 4.7 中継（`internal/relay`、Phase 4）
 
 - リスナーを2つに分ける
-  - webhook受信：`127.0.0.1:<port>`（既定8781）で待つ。当面は公開せず、同じ端末のGitLabからだけ受ける（ADR-007）。公開するときは、このポートだけを公開する。パスは `/webhook/{github|gitlab}/<hook-key>`。`hook-key` でプロジェクトごとのwebhookシークレットを引き、1つのシークレット漏えいの影響をそのプロジェクトに限定する
+  - webhook受信：既定は `127.0.0.1:8781` で待つ。`relay.webhook_listen` にこの端末のLANのIPアドレスを書けば、LANの別の機械のGitLabからも受ける（ADR-060）。ホスト名とすべてのインターフェース（`0.0.0.0`、`::`）は設定の誤りとして拒む。インターネットには公開しない（ADR-007）。公開するときは、このポートだけを公開する。パスは `/webhook/{github|gitlab}/<hook-key>`。`hook-key` でプロジェクトごとのwebhookシークレットを引き、1つのシークレット漏えいの影響をそのプロジェクトに限定する
   - SSE配信：`127.0.0.1:<port>`（既定8782）で待ち、アドレスは設定で変えられる。端末ごとのbearerトークン（中継側はハッシュのみ保持）で認証（ADR-035）
 - 処理順：ボディ上限（例5 MiB）→ 署名検証 → 配信IDで重複排除（LRU、72時間）→ 対象イベントだけ抽出 → 残りを破棄
-  - 署名検証：GitHubは `X-Hub-Signature-256`（HMAC-SHA256）を検証する。GitLabは署名トークン（`webhook-id` / `webhook-timestamp` / `webhook-signature`、GitLab 19.0以降）で検証する。鍵は `whsec_` を除いてbase64を解いた32バイトで、`<webhook-id>.<webhook-timestamp>.<ボディ>` に署名する。タイムスタンプが5分を外れたら破棄し、リプレイを防ぐ。署名トークンが使えないプロジェクトに限り、`gitlab_token: true` で `X-Gitlab-Token` の定数時間の比較を許す〔確認済C9、V16〕（ADR-017）
+  - 署名検証：GitHubは `X-Hub-Signature-256`（HMAC-SHA256）を検証する。GitLabは署名トークン（`webhook-id` / `webhook-timestamp` / `webhook-signature`、GitLab 19.0以降）で検証する。鍵は `whsec_` を除いてbase64を解いた32バイトで、`<webhook-id>.<webhook-timestamp>.<ボディ>` に署名する。タイムスタンプが5分を外れたら破棄し、リプレイを防ぐ。署名トークンが使えないプロジェクトに限り、`gitlab_token: true` で `X-Gitlab-Token` の定数時間の比較を許す〔確認済C9、V16〕（ADR-017）。webhook受信がループバックでないときは、平文のシークレットがLANを流れるので `gitlab_token` を拒む（ADR-060）
   - 配信ID：GitHubは `X-GitHub-Delivery` を使う。手動再送でも同じ値になる〔確認済C8〕。GitLabは `Idempotency-Key`（= `webhook-id`）を使う。再試行しても同じ値になる〔確認済C10〕。`X-Gitlab-Event-UUID` は使わない
 - GitHubは失敗した配信を自動では再送しない〔確認済C8〕。中継が落ちている間のイベントは失われる前提で、reconcileのポーリングで必ず回収する
 - 対象イベントは次のとおり。
@@ -260,7 +260,7 @@ $ switchboard inbox
 - エージェントは、届いたイベントのプロジェクトを3秒まとめてから、ポーリングと同じ処理で取り直す。つながっている間は `reconcile_interval`（既定10分）ごと、切れている間は `poll_interval` ごとにポーリングし、つながったときと切れたときはすぐに1回ポーリングする
 - 中継のサービスは `switchboard service install --relay` で置き、webhookのシークレットだけをクレデンシャルにする
 
-ADR-007（公開方法）は、当面は公開しないと決めた。公開するときは、中継用のサーバーを別に用意して改めて決める。
+ADR-007（公開方法）は、当面は公開しないと決めた。ADR-060で、LANのアドレスで待つことまでは認めた。インターネットに公開するときは、中継用のサーバーを別に用意して改めて決める。
 
 ---
 
@@ -296,7 +296,7 @@ Claudeには最終出力として次のどちらかを返させる。
 受け取り方は次の2段構えとする。
 
 1. `--json-schema` による構造化出力を使う。結果はresultの `structured_output` に入り、有効な出力なしで終わると `structured_output` が付かない〔確認済C16、実機確認はV8〕
-2. 1が実機で期待どおり動かない場合の予備として、最終メッセージ末尾の `<switchboard-outcome>{…}</switchboard-outcome>` を解析し、Stopフックで出力漏れを差し戻す案があった。V8で1が動くと確かめたので、予備は作っていない（ADR-061）
+2. 1が実機で期待どおり動かない場合の予備として、最終メッセージ末尾の `<switchboard-outcome>{…}</switchboard-outcome>` を解析し、Stopフックで出力漏れを差し戻す案があった。V8で1が動くと確かめたので、予備は作っていない（ADR-063）
 
 エージェントは次の順で判定する。
 
@@ -356,7 +356,7 @@ CI設定の変更を止める理由：pushしただけでCIが走るため、CI�
 | L0 フォージ側 | トークンの最小権限（Workflows 権限なし、admin なし）、main のブランチ保護 / ルールセット、PR は draft。ただし GitHub Free の**非公開**リポジトリではブランチ保護もルールセットも使えない〔確認済 C1〕。その場合 L0 はトークン権限だけになるので、エージェントは push の refspec を `switchboard/issue-<n>` に固定し、ベースブランチへの push をコードで禁止する | ○ | Phase 1 |
 | L1 資格情報の分離 | Claude Code を資格情報のない環境で動かす。推奨は専用 OS ユーザー（`switchboard`）で実行し、Claude のサブスク認証はそのユーザーで `claude setup-token`（1 年有効の OAuth トークン、CI・スクリプト向け〔確認済 C21〕）を使う〔利用規約上の扱いは V6、実機は V10〕。併用として Claude Code のサンドボックス（下記の注意つき）〔`-p` での適用は V9〕 | ○ | Phase 1 は環境変数の除去のみ、Phase 3 で OS ユーザー分離 |
 | L2 Claude Code の権限設定 | 許可ツールの明示、`git push` / `gh` / `glab` / ネットワーク系の deny。deny はどの設定ソースの allow よりも先に評価される〔確認済 C18、実機は V5〕。ただし Bash ルールは境界ではない〔確認済 C18〕 | △ | Phase 1 |
-| L3 PreToolUse フック | 文字列ベースの追加拒否とログ | × | 採用しない（ADR-061） |
+| L3 PreToolUse フック | 文字列ベースの追加拒否とログ | × | 採用しない（ADR-063） |
 | L4 資源制限 | タイムアウト、max-turns、同時実行数、worktree への作業限定 | △ | Phase 1 |
 | L5 出力検査 | 6.3 の push 前検査、投稿前の秘密情報検査 | ○（出口） | Phase 1 |
 
@@ -366,7 +366,7 @@ CI設定の変更を止める理由：pushしただけでCIが走るため、CI�
 - 覆うのはシェルコマンドとその子プロセスだけ。ファイル系ツール・MCPサーバー・フックはサンドボックスの外で動く
 - `sandbox.filesystem.denyRead` はReadツールを止めず、`sandbox.network.allowedDomains` はWebFetchを制限しない。権限ルール側の `Read(~/.ssh/**)` 等のdenyとWebFetchのdenyを必ず併用する
 
-正直な評価：Phase 1の時点ではL1が弱く、Claudeが同じOSユーザーの `~/.ssh` 等に到達できた。そのため、当初は自分の非公開リポジトリに限って運用した（ADR-023）。その後、sandboxを常に有効にし（ADR-057）、資格情報の置き場所を `denyRead` に入れ、タイトルと本文とコメントの編集者まで検証するようにした。公開リポジトリも対象にする（ADR-060）。公開リポジトリでは `include_untrusted` を拒み、指示として採るのは `trusted_authors` の入力だけである。
+正直な評価：Phase 1の時点ではL1が弱く、Claudeが同じOSユーザーの `~/.ssh` 等に到達できた。そのため、当初は自分の非公開リポジトリに限って運用した（ADR-023）。その後、sandboxを常に有効にし（ADR-057）、資格情報の置き場所を `denyRead` に入れ、タイトルと本文とコメントの編集者まで検証するようにした。公開リポジトリも対象にする（ADR-062）。公開リポジトリでは `include_untrusted` を拒み、指示として採るのは `trusted_authors` の入力だけである。
 
 ---
 
@@ -494,7 +494,7 @@ switchboard/
 
 ### 11.1 Phase 1 で作る範囲（ROADMAP.md の Phase 1 に対して）
 
-- 本書の4.2（GitHubのみ）、4.3（ポーリングのみ）、4.4、4.6（GitHubのみ）、5章、6章、7章のL0・L2・L4・L5とL1のうち環境変数の除去、8章。4.5のフックとL3は採用しない（ADR-061）
+- 本書の4.2（GitHubのみ）、4.3（ポーリングのみ）、4.4、4.6（GitHubのみ）、5章、6章、7章のL0・L2・L4・L5とL1のうち環境変数の除去、8章。4.5のフックとL3は採用しない（ADR-063）
 - 先送り：GitLab（Phase 2）、OSユーザー分離とbotアカウント（Phase 3）、中継（Phase 4）
 
 ### 11.2 既存の検証項目（V1〜V6）への影響

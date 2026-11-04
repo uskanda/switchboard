@@ -216,7 +216,7 @@ func (a *Agent) cloneURL(p config.Project) string {
 	return "https://github.com/" + p.Owner + "/" + p.Repo + ".git"
 }
 
-// allowed applies the untrusted-input policy to a project. A public repository is served (ADR-060), but may not take
+// allowed applies the untrusted-input policy to a project. A public repository is served (ADR-062), but may not take
 // untrusted input as reference data: only include_untrusted on one refuses the project. A refused project is logged
 // and audited.
 func (a *Agent) allowed(p config.Project, private bool) bool {

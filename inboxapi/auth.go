@@ -27,6 +27,8 @@ type AuthStatus struct {
 	Enabled bool   `json:"enabled"`
 	User    string `json:"user,omitempty"`
 	GitLab  string `json:"gitlab,omitempty"`
+	// Admin tells whether the person logged in may edit the instructions and add projects (issue #146).
+	Admin bool `json:"admin,omitempty"`
 }
 
 // AuthStartRequest is POST /v1/auth/start: Redirect is the web inbox's /auth/callback.

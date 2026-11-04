@@ -18,7 +18,8 @@ func (c *Client) ProjectAvatar(ctx context.Context, owner, repo string) ([]byte,
 	if err != nil {
 		return nil, err
 	}
-	auth := http.Header{"PRIVATE-TOKEN": {c.token}}
+	auth := http.Header{}
+	c.authorize(auth)
 	data, err := forge.GetImage(ctx, c.http, c.url(project(owner, repo)+"/avatar", nil), base.Host, auth)
 	if !errors.Is(err, forge.ErrNotFound) {
 		return data, err

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"slices"
 	"strings"
 
 	"github.com/uskanda/switchboard/internal/claudecode"
@@ -37,6 +38,11 @@ type Doctor struct {
 // versioned is a forge that reports its version, as GitLab does.
 type versioned interface {
 	Version(ctx context.Context) (string, error)
+}
+
+// owned is a client that tells whose its token is.
+type owned interface {
+	TokenOwner(ctx context.Context) (string, error)
 }
 
 // numbered is a forge whose projects have numeric IDs behind their paths, as GitLab's do.
@@ -71,9 +77,42 @@ func (d *Doctor) Run(ctx context.Context) int {
 			d.forge(ctx, kind)
 		}
 	}
+	d.auth(ctx)
 	d.claude(ctx)
 	d.gh(ctx)
 	return d.failures
+}
+
+// auth checks, with inbox.auth set, what makes several people on the web inbox safe (issue #146): GitLab's inbox
+// token only reads, the owner's replies are instructions, and the GitHub inbox token, which the owner writes with, is
+// a trusted author's. A token that cannot be read was reported by the forge's checks.
+func (d *Doctor) auth(ctx context.Context) {
+	cfg := d.Config
+	a := cfg.Inbox.Auth
+	if a == nil {
+		return
+	}
+	if a.Owner != "" && !slices.Contains(cfg.TrustedAuthors.GitLab, a.Owner) {
+		d.warn("inbox.auth.owner %s is not in trusted_authors.gitlab: the agent does not take the owner's replies as instructions", a.Owner)
+	}
+	if ref := cfg.Forges.GitLab.InboxTokenRef; ref != "" {
+		if token, err := d.Secrets.Token(ref); err == nil {
+			if tp, ok := d.Forge(forge.GitLab, token).(forge.TokenProber); ok {
+				if ts, err := tp.TokenScopes(ctx); err == nil && ts.Known && slices.Contains(ts.Scopes, "api") {
+					d.warn("forges.gitlab.inbox_token_ref has the api scope: with inbox.auth it only reads, so give it read_api; people write with their own login")
+				}
+			}
+		}
+	}
+	if uses(cfg, forge.GitHub) && cfg.Forges.GitHub.InboxTokenRef != "" {
+		if token, err := d.Secrets.Token(cfg.Forges.GitHub.InboxTokenRef); err == nil {
+			if o, ok := d.Forge(forge.GitHub, token).(owned); ok {
+				if login, err := o.TokenOwner(ctx); err == nil && !slices.Contains(cfg.TrustedAuthors.GitHub, login) {
+					d.warn("the GitHub inbox token is %s's, who is not in trusted_authors.github: the owner's replies on GitHub are not taken as instructions", login)
+				}
+			}
+		}
+	}
 }
 
 // uses reports whether a project is on the forge; a project without a forge (as Phase 1 code built them) is GitHub.
@@ -110,7 +149,7 @@ func (d *Doctor) forge(ctx context.Context, kind string) {
 	} else {
 		d.ok("agent token (%s %s) found", label, tokenRef)
 		f = d.Forge(kind, token)
-		agentKnown = d.scopes(ctx, f, kind, "agent token")
+		agentKnown = d.scopes(ctx, f, kind, "agent token", false)
 	}
 	inboxLabel := "inbox_token_ref"
 	if kind == forge.GitLab {
@@ -129,7 +168,8 @@ func (d *Doctor) forge(ctx context.Context, kind string) {
 		}
 		d.ok("inbox token (%s %s) found; merging from the web inbox needs %s", inboxLabel, ref, needs)
 		inf := d.Forge(kind, token)
-		d.scopes(ctx, inf, kind, "inbox token")
+		// With inbox.auth, people write to GitLab with their own login, and the inbox token only reads (ADR-061).
+		d.scopes(ctx, inf, kind, "inbox token", kind == forge.GitLab && cfg.Inbox.Auth != nil)
 		d.inboxCI(ctx, inf, kind)
 	}
 	if v, ok := f.(versioned); ok && kind == forge.GitLab {
@@ -163,7 +203,7 @@ func (d *Doctor) forge(ctx context.Context, kind string) {
 			} else {
 				d.ok("%s: agent token (token_ref %s) found", p.Ref, p.TokenRef)
 				pf = d.Forge(kind, token)
-				known = d.scopes(ctx, pf, kind, p.Ref+": agent token")
+				known = d.scopes(ctx, pf, kind, p.Ref+": agent token", false)
 			}
 			if j != nil {
 				d.ok("%s: agent identity %s is user ID %d (recorded)", p.Ref, p.AgentIdentity, j.AgentIDs[p.Ref])
@@ -187,8 +227,9 @@ var broadGitLabScopes = map[string]bool{"sudo": true, "admin_mode": true}
 // scopes checks the scopes of the token behind f, named who, and reports whether they are known (AGENTS.md: least
 // privilege). A token without the scope switchboard needs fails; one with more than it needs is a warning. A GitHub
 // fine-grained token tells nothing of its permissions: its reads are tried on each project instead (probe), and its
-// writes, which cannot be tried without a side effect, are only named.
-func (d *Doctor) scopes(ctx context.Context, f forge.Forge, kind, who string) bool {
+// writes, which cannot be tried without a side effect, are only named. A GitLab token that only reads (readOnly) needs
+// read_api, or api.
+func (d *Doctor) scopes(ctx context.Context, f forge.Forge, kind, who string, readOnly bool) bool {
 	tp, ok := f.(forge.TokenProber)
 	if !ok {
 		return true
@@ -212,7 +253,10 @@ func (d *Doctor) scopes(ctx context.Context, f forge.Forge, kind, who string) bo
 	}
 	list := strings.Join(ts.Scopes, ", ")
 	switch {
-	case kind == forge.GitLab && !has["api"]:
+	case kind == forge.GitLab && readOnly && !has["api"] && !has["read_api"]:
+		d.fail("%s has the scopes [%s]; with inbox.auth it needs the read_api scope", who, list)
+		return true
+	case kind == forge.GitLab && !readOnly && !has["api"]:
 		d.fail("%s has the scopes [%s]; switchboard needs the api scope", who, list)
 		return true
 	case kind != forge.GitLab && !has["repo"] && !has["public_repo"]:
@@ -294,7 +338,7 @@ func (d *Doctor) project(ctx context.Context, f forge.Forge, p config.Project) {
 	}
 	d.ci(ctx, f, p)
 	if !private {
-		d.warn("%s is not private (public, or internal on GitLab): anyone who can see it can comment on its issues; only the input of trusted_authors is taken, include_untrusted is refused, and claude runs in the sandbox (ADR-060, docs/SECURITY.md)", p.Ref)
+		d.warn("%s is not private (public, or internal on GitLab): anyone who can see it can comment on its issues; only the input of trusted_authors is taken, include_untrusted is refused, and claude runs in the sandbox (ADR-062, docs/SECURITY.md)", p.Ref)
 		return
 	}
 	d.ok("%s is private", p.Ref)

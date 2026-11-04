@@ -9,7 +9,7 @@
 - [x] Stop / Notification フックの入力内容（session_id、cwd、待ち理由が取れるか）
 - [x] `claude -p` 実行中に人間の判断が必要になったときの挙動
 - [ ] `--resume` の条件と、対話中セッションと重なった場合の挙動（条件は確認済み。重なった場合は未確認）
-- [x] 許可ツール・拒否ルールの設定で main への push・マージを確実に止められるか（止められない。V5。防壁はsandboxとpush前の検査とした、ADR-061）
+- [x] 許可ツール・拒否ルールの設定で main への push・マージを確実に止められるか（止められない。V5。防壁はsandboxとpush前の検査とした、ADR-063）
 
 完了条件：検証項目がすべて「結果」欄つきで埋まっている
 
@@ -18,7 +18,7 @@
 - [x] 設定ファイル読み込み（対象リポジトリ・端末対応・trusted_authors）
 - [x] `switchboard labels sync`
 - [x] エージェント：ポーリングで `agent:ready` / 信頼済みコメントを検知 → `claude -p` 実行
-- [x] 書き戻し：待ち・完了時のコメントとラベル付け替え、隠しマーカー（フックではなく、`claude -p` の終了後にエージェントが行う。ADR-011、ADR-061）
+- [x] 書き戻し：待ち・完了時のコメントとラベル付け替え、隠しマーカー（フックではなく、`claude -p` の終了後にエージェントが行う。ADR-011、ADR-063）
 - [x] `switchboard inbox` / `switchboard reply`
 
 完了条件：issue に `agent:ready` を付けると、待ち→返答→PR 作成まで手でコマンドを打たずに回る
@@ -113,6 +113,7 @@
 | V53 | `--resume <A> --fork-session` に `--session-id <B>` を併せたとき、分岐先のIDは `B` になるか。再開した実行で、ツール、スキーマ、追記するシステムプロンプトは新しい値になるか。無いセッションを再開すると何が返るか | 分岐先のIDは `B` になった。`--tools` と `--json-schema` は新しい値が使われた。`--append-system-prompt-file` は使われず、最初の実行のシステムプロンプトのままだった。キャッシュの有効期間は1時間で、ツールとシステムプロンプトが同じなら前回の履歴がキャッシュから読まれた。ツールを変えると読まれなかった。無いセッションでは、終了コード1で、resultは `error_during_execution`、`num_turns` は0、`errors` は `No conversation found with session ID: <A>` だった。claude 2.1.316 | 2026-11-03 |
 | V55 | 受信箱のWeb表示から、実物のGitLabのOpenID Connectでログインできるか。`/oauth/userinfo` の `groups` に、所属するグループと下位のグループのフルパスが入るか。グループから外した人が、トークンの更新のあとに締め出されるか | 未確認（`add-web-oidc-login` の実装の時点。usknasのGitLabで確かめる） | |
 | V56 | 認証を設定した受信箱で、Androidのアプリの外の `fetch`（端末の登録と、通知からの承認）に、WebViewのセッションのcookieが付くか。付かなければ、端末の登録をWebViewの画面から行う形に変える | 未確認（`add-web-oidc-login` の実装の時点。実機のAndroidで確かめる） | |
+| V57 | 実物のGitLabで、ログインした2人のmemberのそれぞれの返答が、その人のコメントとして残るか。OAuthのアクセストークン（`Authorization: Bearer`）で、コメント、マージ、issueの作成ができるか。読めないプロジェクトが一覧に出ないか | 未確認（`add-web-multi-user` の実装の時点。usknasのGitLabで確かめる） | |
 
 ### 検証で分かった、設計に関わる点
 

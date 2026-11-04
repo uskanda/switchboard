@@ -48,6 +48,9 @@ func (s *Server) projectConfig() *config.Config {
 
 // projects serves GET (list) and POST (add one) of /v1/projects.
 func (s *Server) projects(w http.ResponseWriter, r *http.Request) {
+	if !s.adminOnly(w, r) {
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
 		cfg := s.projectConfig()
@@ -139,10 +142,11 @@ func (s *Server) addProject(w http.ResponseWriter, r *http.Request) {
 			out.Project = s.Projects.state(r.Context(), next, q, s.now())
 		}
 	}
-	// Only GitLab, on the relay's machine, can send to the relay (ADR-007); a GitHub project is polled.
+	// Only GitLab, on the relay's machine or its LAN, can send to the relay (ADR-007, ADR-060); a GitHub project is polled.
 	if next.Agent.Relay != nil && p.Forge == forge.GitLab {
 		out.Webhook = "switchboard relay hook add " + p.Ref
 	}
+	s.act(r.Context(), "project.add", out.Project.Ref)
 	send(w, http.StatusCreated, out)
 }
 

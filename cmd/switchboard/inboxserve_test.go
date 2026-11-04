@@ -139,8 +139,13 @@ func TestInboxPushIsOffWithoutTheSetting(t *testing.T) {
 
 const inboxAuthSetting = "inbox:\n  auth: {client_id: cid, client_secret_ref: switchboard/gitlab-oidc, member_groups: [team]}\n"
 
+// withBots is body with every agent a bot: with inbox.auth, no agent may post as a trusted author (issue #146).
+func withBots(body string) string {
+	return strings.ReplaceAll(body, "agent_identity: me", "agent_identity: gl-bot")
+}
+
 func TestInboxAuthReadsTheClientSecret(t *testing.T) {
-	cfg := load(t, bothForges+inboxAuthSetting)
+	cfg := load(t, withBots(bothForges)+inboxAuthSetting)
 	var read []string
 	a, err := inboxAuth(cfg, func(ref string) (string, error) { read = append(read, ref); return "the-secret", nil })
 	if err != nil {
@@ -159,7 +164,7 @@ func TestInboxAuthReadsTheClientSecret(t *testing.T) {
 }
 
 func TestInboxAuthFailsWithoutTheClientSecret(t *testing.T) {
-	cfg := load(t, bothForges+inboxAuthSetting)
+	cfg := load(t, withBots(bothForges)+inboxAuthSetting)
 	missing := func(ref string) (string, error) { return "", fmt.Errorf("no token for %s in the Secret Service", ref) }
 	if _, err := inboxAuth(cfg, missing); err == nil || !strings.Contains(err.Error(), "switchboard/gitlab-oidc") {
 		t.Fatalf("err = %v, want the client_secret_ref named", err)

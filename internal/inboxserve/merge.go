@@ -36,7 +36,18 @@ func (s *Server) merge(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusNotFound, inboxapi.CodeNotFound, "this inbox does not merge")
 		return
 	}
-	err = mb.Merge(r.Context(), s.Merges[ref.Kind()], ref, req.SHA)
+	if !s.sees(r.Context(), ref.String()) {
+		fail(w, http.StatusNotFound, inboxapi.CodeNotFound, ref.String()+" is not one you may see")
+		return
+	}
+	m := s.Merges[ref.Kind()]
+	if f, err := s.writer(r.Context(), ref.Kind()); failWrite(w, err) {
+		return
+	} else if f != nil {
+		m = f
+	}
+	s.act(r.Context(), "merge", ref.String())
+	err = mb.Merge(r.Context(), m, ref, req.SHA)
 	var nm *forge.NotMergeableError
 	switch {
 	case err == nil:
@@ -47,7 +58,7 @@ func (s *Server) merge(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusConflict, inboxapi.CodeStale, "the change request has commits the page did not show; open it again")
 		return
 	case errors.As(err, &nm):
-		if s.waitForFix(r.Context(), b, ref, req.SHA) {
+		if s.waitForFix(r.Context(), b, m, ref, req.SHA) {
 			send(w, http.StatusAccepted, inboxapi.MergeAnswer{Code: inboxapi.CodeAutoMergePending,
 				Message: "the change request conflicts with its base; it is merged once the agent has fixed the conflict"})
 			return

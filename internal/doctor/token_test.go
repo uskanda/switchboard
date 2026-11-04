@@ -3,8 +3,10 @@ package doctor
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
+	"github.com/uskanda/switchboard/internal/config"
 	"github.com/uskanda/switchboard/internal/forge"
 	"github.com/uskanda/switchboard/internal/forge/fake"
 )
@@ -75,6 +77,30 @@ func TestGitLabTokenNeedsTheAPIScope(t *testing.T) {
 		}
 		w.run(t)
 		w.expect(t, c.level, c.text)
+	}
+}
+
+// With inbox.auth, the GitLab inbox token only reads (ADR-061): read_api is what it should have, not a failure.
+func TestGitLabInboxTokenOnlyReadsWithInboxAuth(t *testing.T) {
+	w := newWorld(t)
+	g, _ := withGitLab(t, w, "private")
+	w.cfg.Inbox.Auth = &config.InboxAuth{ClientID: "cid", ClientSecretRef: "s", MemberGroups: []string{"team"}}
+	agent := prober{Forge: g, scopes: &forge.TokenScopes{Known: true, Scopes: []string{"api"}}}
+	inbox := prober{Forge: g, scopes: &forge.TokenScopes{Known: true, Scopes: []string{"read_api"}}}
+	inner := w.d.Forge
+	w.d.Forge = func(kind, token string) forge.Forge {
+		switch {
+		case kind == forge.GitLab && token == "gi":
+			return inbox
+		case kind == forge.GitLab:
+			return agent
+		}
+		return inner(kind, token)
+	}
+	w.run(t)
+	w.expect(t, "ok", "inbox token has the scopes [read_api]")
+	if strings.Contains(w.out.String(), "[read_api]; switchboard needs") {
+		t.Fatalf("a read-only inbox token failed with inbox.auth:\n%s", w.out.String())
 	}
 }
 

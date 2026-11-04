@@ -39,6 +39,7 @@ func (s *Server) devices(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, inboxapi.CodeInvalid, "the device could not be registered")
 		return
 	}
+	s.act(r.Context(), "device.register", "")
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -55,6 +56,10 @@ func (s *Server) approve(w http.ResponseWriter, r *http.Request) {
 		failWith(w, err)
 		return
 	}
+	if !s.sees(r.Context(), ref.String()) {
+		fail(w, http.StatusNotFound, inboxapi.CodeNotFound, ref.String()+" is not one you may see")
+		return
+	}
 	d, err := s.inbox().Detail(r.Context(), ref)
 	if err != nil {
 		failWith(w, err)
@@ -68,10 +73,13 @@ func (s *Server) approve(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	if err := s.inbox().Reply(r.Context(), ref, d.ApproveWord, false); err != nil {
-		failWith(w, err)
+	if err := s.replyAs(r.Context(), ref, d.ApproveWord, false); err != nil {
+		if !failWrite(w, writeErr(err)) {
+			failWith(w, err)
+		}
 		return
 	}
+	s.act(r.Context(), "approve", ref.String())
 	s.mu.Lock()
 	s.cached = nil
 	s.mu.Unlock()

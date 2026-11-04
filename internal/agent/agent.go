@@ -672,9 +672,10 @@ func (a *Agent) decide(ctx context.Context, p config.Project, ref forge.IssueRef
 	if byAgent {
 		// Only the agent's own resume mark lets a start label it put start a run. The run goes on with the cycle the
 		// limited run was in, as a resume on a reply does (ADR-053). Without the mark, the label is a person's when the
-		// agent's account is also a trusted user's, which the forge cannot tell apart (ADR-056).
+		// agent's account is also a trusted user's, which the forge cannot tell apart (ADR-056). With the web inbox's
+		// login on, people and the agent post as different accounts, and the exception does not hold (issue #146).
 		if pl.resumeNote = pl.limitResume(); pl.resumeNote == 0 {
-			if !j.ReadyLabel(ref, actor) {
+			if a.Config.Inbox.Auth != nil || !j.ReadyLabel(ref, actor) {
 				return nil, nil
 			}
 			byAgent = false

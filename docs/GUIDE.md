@@ -55,7 +55,7 @@ cp config/switchboard.example.yaml ~/.config/switchboard/config.yaml
 switchboard doctor
 ```
 
-Phase 1では、エージェントの投稿も自分のアカウントで行う。`trusted_authors` には自分だけを書く。公開リポジトリも対象にできるが、`include_untrusted` は使えない（ADR-060）。`claude` は自分のOSユーザーのsandboxの中で動くため、詳しくは [SECURITY.md](SECURITY.md) を読むこと。
+Phase 1では、エージェントの投稿も自分のアカウントで行う。`trusted_authors` には自分だけを書く。公開リポジトリも対象にできるが、`include_untrusted` は使えない（ADR-062）。`claude` は自分のOSユーザーのsandboxの中で動くため、詳しくは [SECURITY.md](SECURITY.md) を読むこと。
 
 `switchboard doctor` は、トークンの権限も診断する。GitLabのトークンとGitHubのclassic PATはスコープを読み、足りなければ失敗、広すぎれば警告にする。GitHubのfine-grained PATは権限を返さないので、各プロジェクトのissue、PR、contentsを読めるかだけを試す。書き込みの権限は確かめられない。
 
@@ -301,7 +301,10 @@ make restart
 
 既定では、エージェントはポーリングで更新を見つける。返答してから実行が始まるまで、最大で `poll_interval` だけかかる。中継（`switchboard relay serve`）を置くと、フォージのwebhookを受けた中継がissueのIDだけをエージェントへ配り、エージェントは数秒で取り直す。中継は、issueの本文、コメント、タイトル、ユーザー名を持たず、フォージのトークンも持たない。
 
-今の版の中継は、受け口を `127.0.0.1` で待ち、公開しない。同じ端末で動くGitLabのプロジェクトに使う。GitHub.comからのwebhookには公開の受け口が要るので、GitHubのプロジェクトは当面ポーリングで扱う。
+今の版の中継は、インターネットには公開しない。GitLabのプロジェクトに使い、受け口の置き方は次の2通りある。GitHub.comからのwebhookには公開の受け口が要るので、GitHubのプロジェクトは当面ポーリングで扱う。
+
+- GitLabが中継と同じ端末にある：既定のまま、受け口を `127.0.0.1:8781` で待つ
+- GitLabがLANの別の機械にある：受け口をこの端末のLANのアドレスで待つ。手順の終わりの「別の機械のGitLabから受ける」を見る
 
 中継につながっている間、エージェントは、`relay.hooks` にwebhookを登録したプロジェクトを `reconcile_interval`（既定10分）ごとに照合する。webhookの無いプロジェクト（たとえばGitHubのプロジェクト）には中継からイベントが届かないので、中継につながっていても `poll_interval` ごとにポーリングする。中継が止まったら、すぐに全プロジェクトが `poll_interval` のポーリングに戻り、中継が戻ったらつなぎ直す。
 
@@ -313,7 +316,7 @@ make restart
    switchboard relay token add <端末名>
    ```
 
-2. GitLabの管理画面で、`Admin > Settings > Network > Outbound requests` を開く。「Local IP addresses and domain names that hooks and integrations can access」に、`127.0.0.1:8781` を足す。「Allow requests to the local network from webhooks and integrations」はオフのままにする。足してから数分の間、GitLabのバックグラウンドの処理は、このアドレスへの送信を拒むことがある
+2. GitLabの管理画面で、`Admin > Settings > Network > Outbound requests` を開く。「Local IP addresses and domain names that hooks and integrations can access」に、受け口のアドレスとポート（既定は `127.0.0.1:8781`）を足す。「Allow requests to the local network from webhooks and integrations」はオフのままにする。足してから数分の間、GitLabのバックグラウンドの処理は、このアドレスへの送信を拒むことがある
 3. プロジェクトのwebhookを登録する。シークレットはSecret Serviceに置かれ、受信箱のトークンでwebhookが登録される。GitLabでは、署名トークンで登録する。トークンに権限が無ければ、画面から登録する手順が、シークレットとともに1回だけ表示される
 
    ```bash
@@ -349,7 +352,29 @@ make restart
 
 GitLabは、4回続けて失敗したwebhookを一時的に止める。中継を長く止めると、webhookも止まりうる。止まっている間の更新も、照合で処理される。webhookを有効に戻すには、GitLabのプロジェクトの `Settings > Webhooks` でテストを送る。
 
-署名トークンを使えないGitLabでは、`relay hook add --gitlab-token` で、`X-Gitlab-Token` を使って登録できる。このとき、設定の項目に `gitlab_token: true` が付く。`X-Gitlab-Token` は平文の共有シークレットなので、署名トークンが使えるならそちらを使う。
+署名トークンを使えないGitLabでは、`relay hook add --gitlab-token` で、`X-Gitlab-Token` を使って登録できる。このとき、設定の項目に `gitlab_token: true` が付く。`X-Gitlab-Token` は平文の共有シークレットなので、署名トークンが使えるならそちらを使う。受け口をLANのアドレスで待つときは、`--gitlab-token` と `gitlab_token: true` は使えない。
+
+#### 別の機械のGitLabから受ける
+
+GitLabがLANの別の機械にあるときは、受け口をこの端末のLANのアドレスで待つ。受け口はHTTPのままなので、LANの中ではwebhookのペイロード（issueの本文やコメント）が平文で流れる。インターネットには公開しない。
+
+1. 設定の `relay:` 節に、この端末のLANのIPアドレスとポートを書く。ホスト名と、すべてのインターフェース（`0.0.0.0`、`::`）は、設定の誤りとして拒まれる。`webhook_url` を書かなければ、`http://<webhook_listen>` がGitLabに登録される
+
+   ```yaml
+   relay:
+     webhook_listen: 192.168.0.82:8781
+   ```
+
+2. この端末のファイアウォールで、GitLabの機械からこのポートへの受信を許す（例：`sudo ufw allow from <GitLabのアドレス> to any port 8781 proto tcp`）
+3. 手順2の許可リストには、このアドレスとポート（例：`192.168.0.82:8781`）を足す。「Allow requests to the local network from webhooks and integrations」はオフのままにする
+4. webhookは署名トークンで登録する。署名トークンはGitLab 19.0以降で使える。平文のシークレットがLANを流れるのを避けるため、`relay hook add --gitlab-token` は断られ、`gitlab_token: true` の項目は設定の誤りになる。19.0より古いGitLabのプロジェクトは、webhookを登録せずにポーリングで扱う
+
+GitLabのHTTPSの証明書が私設のCAのものなら、そのCAの証明書をこの端末のOSの信頼ストアに入れる。switchboardのAPIの呼び出しも、clone、fetch、pushのgitも、OSの信頼ストアを読む。systemdで常駐するサービスにも、そのまま効く。
+
+```bash
+sudo cp <私設のCA>.crt /usr/local/share/ca-certificates/
+sudo update-ca-certificates
+```
 
 ### 待ちと完了をTelegramに知らせる
 
@@ -468,6 +493,25 @@ Web表示は、端末で受信ポートを開く唯一の部品である（ADR-0
 Web表示は当面HTTPで待つので、セッションのcookieは平文で流れる。同じLANで盗み見た人は、その利用者として操作できる。家の外から使うときと、信頼できない機器があるLANでは使わない（#155）。
 
 Androidのアプリでは、GitLabのログインの画面もアプリの中に開く。
+
+#### 複数の人で使う
+
+`inbox.auth` を書くと、複数の人で1つの受信箱を共有できる（ADR-061）。Web表示とアプリからのGitLabへの返答、承認、issueの作成、マージは、ログインした人のGitLabの権限で行われ、その人の操作としてフォージに残る。エージェントの書き込みは、エージェントのトークン（bot）の権限で行う。
+
+- 一覧と1件の表示には、その人が読めるGitLabのプロジェクトだけが出る
+- GitHubのプロジェクトは、`owner` の人にだけ出る。書き込みは、GitHubの受信箱のトークンで行う
+- 追加の指示の編集とプロジェクトの追加は、`admin_groups` の人と `owner` だけができる
+- `trusted_authors` に無い人の返答も投稿されるが、エージェントへの指示にはならない。返答の欄の上にそう出る
+- 自動のマージは、押した人の身元で行う。受信箱のサービスを再起動すると取り消され、次に画面を開いたときにトーストで出る
+- 監査ログには、Web表示からの書き込みのたびに `web.action` の行が、操作した人とともに残る
+- Androidの通知の「承認」は、アプリを開いてから、画面で承認する
+
+設置の前に、次のことを済ませる。
+
+1. エージェントの身元をbotにする。botのアカウントかProject Access Tokenを作り、`forges.gitlab.agent_identity` と `token_ref`（またはプロジェクトごとの上書き）に書く。エージェントの身元が `trusted_authors` にあると、設定の誤りになる
+2. GitLabの受信箱のトークン（`forges.gitlab.inbox_token_ref`）を、`read_api` のスコープのものにする。認証を設定すると、このトークンは読み取りにしか使わない。`api` のスコープのままだと、`switchboard doctor` が警告を出す
+3. 返答を指示として扱わせたい人を、`trusted_authors.gitlab` に書く。`owner` も入れる
+4. `switchboard doctor` で、警告が無いことを確かめる
 
 #### 中継のイベントで一覧をすぐ取り直す
 
