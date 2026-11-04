@@ -63,7 +63,8 @@ func Credentials(cfg *config.Config) []Credential {
 
 // InboxCredentials lists the inbox tokens of the forges the configuration uses: the inbox service reads and
 // replies as the user, and needs no agent token. With inbox.relay, its bearer token for the relay is added; with
-// inbox.notify.fcm, the Firebase service account key it sends push notifications with.
+// inbox.notify.fcm, the Firebase service account key it sends push notifications with; with inbox.auth, the client
+// secret of the GitLab login.
 func InboxCredentials(cfg *config.Config) []Credential {
 	var refs []string
 	for _, kind := range []string{"gh", "gl"} {
@@ -76,6 +77,9 @@ func InboxCredentials(cfg *config.Config) []Credential {
 	}
 	if f := cfg.Inbox.Notify.FCM; f != nil {
 		refs = append(refs, f.CredentialsRef)
+	}
+	if a := cfg.Inbox.Auth; a != nil {
+		refs = append(refs, a.ClientSecretRef)
 	}
 	return credentials(refs)
 }

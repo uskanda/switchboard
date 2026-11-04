@@ -52,6 +52,12 @@ inbox:
   #   fcm:
   #     project_id: YOUR_FIREBASE_PROJECT
   #     credentials_ref: switchboard/fcm # Secret Service name of the Firebase service account key (JSON)
+  # auth:                              # ask for a GitLab login on the web inbox (issue #15); off when unset
+  #   client_id: YOUR_GITLAB_APPLICATION_ID   # a confidential application: openid profile api, http://<listen>/auth/callback
+  #   client_secret_ref: switchboard/gitlab-oidc   # Secret Service name of the application's secret
+  #   member_groups: [YOUR_GROUP]       # members of these GitLab groups (or a group below one) may log in
+  #   admin_groups: []
+  #   owner: YOUR_GITLAB_USER           # may log in whatever their groups
 
 agent:
   poll_interval: 60s

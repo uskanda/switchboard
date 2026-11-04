@@ -26,6 +26,7 @@ import (
 	"github.com/uskanda/switchboard/internal/relayclient"
 	"github.com/uskanda/switchboard/internal/secret"
 	"github.com/uskanda/switchboard/internal/state"
+	"github.com/uskanda/switchboard/internal/webauth"
 )
 
 // serveInbox is the inbox the API serves: every configured forge, each read and written with its inbox token.
@@ -114,6 +115,23 @@ func inboxRelay(cfg *config.Config, r *config.AgentRelay, stderr io.Writer) (*re
 	}}, nil
 }
 
+// inboxAuth is the GitLab login of the web inbox, with the client secret read by token (inbox.auth.client_secret_ref);
+// nil without inbox.auth. Its errors name the secret, never its content.
+func inboxAuth(cfg *config.Config, token func(ref string) (string, error)) (*webauth.Auth, error) {
+	a := cfg.Inbox.Auth
+	if a == nil {
+		return nil, nil
+	}
+	secret, err := token(a.ClientSecretRef)
+	if err != nil {
+		return nil, fmt.Errorf("inbox.auth.client_secret_ref %s: %w", a.ClientSecretRef, err)
+	}
+	return &webauth.Auth{
+		Provider: &webauth.GitLab{BaseURL: cfg.Forges.GitLab.BaseURL, ClientID: a.ClientID, ClientSecret: secret},
+		Allow:    webauth.Allow{MemberGroups: a.MemberGroups, AdminGroups: a.AdminGroups, Owner: a.Owner},
+	}, nil
+}
+
 // inboxPush is the notifier of the inbox service's push notifications, with the Firebase service account key read
 // by token (inbox.notify.fcm.credentials_ref); nil without inbox.notify.fcm. Its errors name the key, never its content.
 func inboxPush(cfg *config.Config, token func(ref string) (string, error), d state.Dir) (*push.Notifier, error) {
@@ -148,6 +166,20 @@ func followRelay(ctx context.Context, rc *relayclient.Client, api *inboxserve.Se
 		}
 		api.RelayState(up)
 	})
+}
+
+// sweepSessions drops the ended sessions every minute until ctx ends.
+func sweepSessions(ctx context.Context, a *webauth.Auth) {
+	t := time.NewTicker(time.Minute)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			a.Sweep()
+		}
+	}
 }
 
 func inboxServe(args []string, stdout, stderr io.Writer) int {
@@ -195,6 +227,14 @@ func inboxServe(args []string, stdout, stderr io.Writer) int {
 	notifier, err := inboxPush(cfg, res.Token, d)
 	if err != nil {
 		return fail(stderr, err)
+	}
+	if api.Auth, err = inboxAuth(cfg, res.Token); err != nil {
+		return fail(stderr, err)
+	}
+	if api.Auth != nil {
+		api.GitLab = cfg.Forges.GitLab.BaseURL
+		go sweepSessions(ctx, api.Auth)
+		fmt.Fprintln(stderr, "switchboard: inbox: the web inbox asks for a GitLab login on", api.GitLab)
 	}
 	if notifier != nil {
 		api.Devices, api.Observer = notifier.Devices, notifier

@@ -13,7 +13,7 @@
 
 ## 3. 文書
 
-- [x] 3.1 `docs/DECISIONS.md` にADR-059を足し、ADR-007とADR-017に改めた旨を書き添える
+- [x] 3.1 `docs/DECISIONS.md` にADR-060を足し、ADR-007とADR-017に改めた旨を書き添える
 - [x] 3.2 `docs/DESIGN.md` のwebhook受信の項とADR-007の段落を書き直す
 - [x] 3.3 `docs/GUIDE.md` に、別の機械のGitLabから受ける手順と、私設のCAの証明書をOSの信頼ストアに入れる手順を書く
 - [x] 3.4 `docs/SECURITY.md` のT5に、中継の受け口をLANで待つ場合の扱いを足す

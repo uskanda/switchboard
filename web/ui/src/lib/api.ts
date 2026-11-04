@@ -1,6 +1,8 @@
 // The web inbox's back end (switchboard-web), which passes these on to the inbox service. The types follow
 // package inboxapi.
 
+import { loggedOut } from "@/lib/auth";
+
 export type Item = {
   /** The row number; only a waiting or done issue has one. */
   n?: number;
@@ -212,6 +214,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
+    if (res.status === 401 && body.code === "unauthenticated") loggedOut();
     throw new ApiError(body.code ?? "unknown", body.message ?? `${res.status} ${res.statusText}`);
   }
   return (res.status === 204 ? undefined : await res.json()) as T;

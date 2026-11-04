@@ -10,7 +10,7 @@
 - `relay.webhook_listen` を検査する。IPアドレスとポートの形でないもの、ホスト名、すべてのインターフェース（`0.0.0.0`、`::`）は、設定の誤りとして拒む。既定の `127.0.0.1:8781` は今までどおり通る
 - `relay.webhook_listen` がループバックでないときは、`gitlab_token: true` の項目を設定の誤りとして拒む。`relay hook add --gitlab-token` も、シークレットを作る前に断る
 - `relay hook add` の許可リストの案内を、LANの別の機械のGitLabにも当てはまる文にする
-- ADR-059を足し、ADR-007とADR-017をこの点に限って改める。DESIGN、GUIDE、SECURITYを書き直す。GUIDEには、別の機械のGitLabから受ける手順と、私設のCAの証明書をOSの信頼ストアに入れる手順を書く
+- ADR-060を足し、ADR-007とADR-017をこの点に限って改める。DESIGN、GUIDE、SECURITYを書き直す。GUIDEには、別の機械のGitLabから受ける手順と、私設のCAの証明書をOSの信頼ストアに入れる手順を書く
 
 ## Capabilities
 

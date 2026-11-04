@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { IssueRef } from "@/components/IssueRef";
 import { ApiError, getInbox, type Inbox } from "@/lib/api";
+import { loggedOut } from "@/lib/auth";
 import { useAutoMergeResults } from "@/lib/autoMergeResults";
 import { baseOf, loadMarks, overlay, pendingTimeout, saveMarks, settle, type Draft, type Mark, type PendingKind, type ViewItem } from "@/lib/pending";
 import { toast } from "@/lib/toast";
@@ -76,6 +77,11 @@ export function InboxProvider({ children }: { children: ReactNode }) {
         setState((s) => ({ ...s, inbox, error: null, live: "live" }));
       });
       source.addEventListener("unavailable", () => setState((s) => leave(s, "reconnecting")));
+      // The session ended: the page shows the login instead of reconnecting.
+      source.addEventListener("unauthenticated", () => {
+        close();
+        loggedOut();
+      });
       source.onerror = () => setState((s) => leave(s, "reconnecting"));
     };
     const close = () => {

@@ -242,10 +242,10 @@ $ switchboard inbox
 ### 4.7 中継（`internal/relay`、Phase 4）
 
 - リスナーを2つに分ける
-  - webhook受信：既定は `127.0.0.1:8781` で待つ。`relay.webhook_listen` にこの端末のLANのIPアドレスを書けば、LANの別の機械のGitLabからも受ける（ADR-059）。ホスト名とすべてのインターフェース（`0.0.0.0`、`::`）は設定の誤りとして拒む。インターネットには公開しない（ADR-007）。公開するときは、このポートだけを公開する。パスは `/webhook/{github|gitlab}/<hook-key>`。`hook-key` でプロジェクトごとのwebhookシークレットを引き、1つのシークレット漏えいの影響をそのプロジェクトに限定する
+  - webhook受信：既定は `127.0.0.1:8781` で待つ。`relay.webhook_listen` にこの端末のLANのIPアドレスを書けば、LANの別の機械のGitLabからも受ける（ADR-060）。ホスト名とすべてのインターフェース（`0.0.0.0`、`::`）は設定の誤りとして拒む。インターネットには公開しない（ADR-007）。公開するときは、このポートだけを公開する。パスは `/webhook/{github|gitlab}/<hook-key>`。`hook-key` でプロジェクトごとのwebhookシークレットを引き、1つのシークレット漏えいの影響をそのプロジェクトに限定する
   - SSE配信：`127.0.0.1:<port>`（既定8782）で待ち、アドレスは設定で変えられる。端末ごとのbearerトークン（中継側はハッシュのみ保持）で認証（ADR-035）
 - 処理順：ボディ上限（例5 MiB）→ 署名検証 → 配信IDで重複排除（LRU、72時間）→ 対象イベントだけ抽出 → 残りを破棄
-  - 署名検証：GitHubは `X-Hub-Signature-256`（HMAC-SHA256）を検証する。GitLabは署名トークン（`webhook-id` / `webhook-timestamp` / `webhook-signature`、GitLab 19.0以降）で検証する。鍵は `whsec_` を除いてbase64を解いた32バイトで、`<webhook-id>.<webhook-timestamp>.<ボディ>` に署名する。タイムスタンプが5分を外れたら破棄し、リプレイを防ぐ。署名トークンが使えないプロジェクトに限り、`gitlab_token: true` で `X-Gitlab-Token` の定数時間の比較を許す〔確認済C9、V16〕（ADR-017）。webhook受信がループバックでないときは、平文のシークレットがLANを流れるので `gitlab_token` を拒む（ADR-059）
+  - 署名検証：GitHubは `X-Hub-Signature-256`（HMAC-SHA256）を検証する。GitLabは署名トークン（`webhook-id` / `webhook-timestamp` / `webhook-signature`、GitLab 19.0以降）で検証する。鍵は `whsec_` を除いてbase64を解いた32バイトで、`<webhook-id>.<webhook-timestamp>.<ボディ>` に署名する。タイムスタンプが5分を外れたら破棄し、リプレイを防ぐ。署名トークンが使えないプロジェクトに限り、`gitlab_token: true` で `X-Gitlab-Token` の定数時間の比較を許す〔確認済C9、V16〕（ADR-017）。webhook受信がループバックでないときは、平文のシークレットがLANを流れるので `gitlab_token` を拒む（ADR-060）
   - 配信ID：GitHubは `X-GitHub-Delivery` を使う。手動再送でも同じ値になる〔確認済C8〕。GitLabは `Idempotency-Key`（= `webhook-id`）を使う。再試行しても同じ値になる〔確認済C10〕。`X-Gitlab-Event-UUID` は使わない
 - GitHubは失敗した配信を自動では再送しない〔確認済C8〕。中継が落ちている間のイベントは失われる前提で、reconcileのポーリングで必ず回収する
 - 対象イベントは次のとおり。
@@ -266,7 +266,7 @@ $ switchboard inbox
 - エージェントは、届いたイベントのプロジェクトを3秒まとめてから、ポーリングと同じ処理で取り直す。つながっている間は `reconcile_interval`（既定10分）ごと、切れている間は `poll_interval` ごとにポーリングし、つながったときと切れたときはすぐに1回ポーリングする
 - 中継のサービスは `switchboard service install --relay` で置き、webhookのシークレットだけをクレデンシャルにする
 
-ADR-007（公開方法）は、当面は公開しないと決めた。ADR-059で、LANのアドレスで待つことまでは認めた。インターネットに公開するときは、中継用のサーバーを別に用意して改めて決める。
+ADR-007（公開方法）は、当面は公開しないと決めた。ADR-060で、LANのアドレスで待つことまでは認めた。インターネットに公開するときは、中継用のサーバーを別に用意して改めて決める。
 
 ---
 

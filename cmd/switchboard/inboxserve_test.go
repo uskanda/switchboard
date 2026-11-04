@@ -16,6 +16,7 @@ import (
 	"github.com/uskanda/switchboard/internal/instructions"
 	"github.com/uskanda/switchboard/internal/relayclient"
 	"github.com/uskanda/switchboard/internal/state"
+	"github.com/uskanda/switchboard/internal/webauth"
 )
 
 const bothForges = `version: 1
@@ -133,5 +134,42 @@ func TestInboxPushIsOffWithoutTheSetting(t *testing.T) {
 	n, err := inboxPush(cfg, func(string) (string, error) { t.Fatal("a key was read"); return "", nil }, state.Dir{Path: t.TempDir()})
 	if err != nil || n != nil {
 		t.Fatalf("notifier = %v, err = %v", n, err)
+	}
+}
+
+const inboxAuthSetting = "inbox:\n  auth: {client_id: cid, client_secret_ref: switchboard/gitlab-oidc, member_groups: [team]}\n"
+
+func TestInboxAuthReadsTheClientSecret(t *testing.T) {
+	cfg := load(t, bothForges+inboxAuthSetting)
+	var read []string
+	a, err := inboxAuth(cfg, func(ref string) (string, error) { read = append(read, ref); return "the-secret", nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, ok := a.Provider.(*webauth.GitLab)
+	if !ok || g.ClientID != "cid" || g.ClientSecret != "the-secret" || g.BaseURL != cfg.Forges.GitLab.BaseURL {
+		t.Fatalf("provider = %+v", a.Provider)
+	}
+	if len(a.Allow.MemberGroups) != 1 || a.Allow.MemberGroups[0] != "team" {
+		t.Errorf("allow = %+v", a.Allow)
+	}
+	if len(read) != 1 || read[0] != "switchboard/gitlab-oidc" {
+		t.Errorf("read %v, want the client secret only", read)
+	}
+}
+
+func TestInboxAuthFailsWithoutTheClientSecret(t *testing.T) {
+	cfg := load(t, bothForges+inboxAuthSetting)
+	missing := func(ref string) (string, error) { return "", fmt.Errorf("no token for %s in the Secret Service", ref) }
+	if _, err := inboxAuth(cfg, missing); err == nil || !strings.Contains(err.Error(), "switchboard/gitlab-oidc") {
+		t.Fatalf("err = %v, want the client_secret_ref named", err)
+	}
+}
+
+func TestInboxAuthIsOffWithoutTheSetting(t *testing.T) {
+	cfg := load(t, bothForges)
+	a, err := inboxAuth(cfg, func(string) (string, error) { t.Fatal("a secret was read"); return "", nil })
+	if err != nil || a != nil {
+		t.Fatalf("auth = %v, err = %v", a, err)
 	}
 }
