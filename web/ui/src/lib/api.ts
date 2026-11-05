@@ -87,6 +87,22 @@ export const isDone = (it: Item) => it.state === "done";
 /** isWaiting is an issue waiting on a reply: not running, queued or done. */
 export const isWaiting = (it: Item) => !isRunning(it) && !isQueued(it) && !isDone(it);
 
+/** ListState is what the list and the issue's own read are compared on: the state alone, not the reason. */
+export type ListState = "running" | "queued" | "done" | "waiting";
+
+/** itemState is the state a row of the list shows. */
+export const itemState = (it: Item): ListState => (isRunning(it) ? "running" : isQueued(it) ? "queued" : isDone(it) ? "done" : "waiting");
+
+/** detailState is the state an issue's own read shows, in the order IssuePane shows it: a run or a queue goes first. */
+export const detailState = (d: Detail): ListState =>
+  d.state === "running" ? "running" : d.state === "queued" ? "queued" : d.done ? "done" : "waiting";
+
+/**
+ * stateDiffers is whether the issue's own read shows another state than its row on the list, read earlier: the
+ * inbox service then reads the list again, and the issue says the list has yet to catch up (issue #82).
+ */
+export const stateDiffers = (it: Item, d: Detail) => itemState(it) !== detailState(d);
+
 /**
  * progressText is what a run is doing as shown on the list: the agent's last words, after the first separator ("｜"
  * or "|") of the progress line, without the time and the tools before it. Without words yet ("?", nothing after the

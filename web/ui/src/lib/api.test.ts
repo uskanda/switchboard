@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { oldestWaiting, progressText, timeText, type Item } from "@/lib/api";
+import { detailState, itemState, oldestWaiting, progressText, stateDiffers, timeText, type Detail, type Item } from "@/lib/api";
 
 const now = new Date("2026-11-03T12:00:00Z");
 const ago = (min: number) => new Date(now.getTime() - min * 60_000).toISOString();
@@ -62,5 +62,37 @@ describe("oldestWaiting", () => {
   it("is none without a waiting issue", () => {
     expect(oldestWaiting([it0("a", { state: "running" })])).toBeUndefined();
     expect(oldestWaiting([])).toBeUndefined();
+  });
+});
+
+describe("the state of a row and of a detail", () => {
+  const row = (over: Partial<Item> = {}): Item => ({
+    ref: "a", project: "o/r", number: 1, title: "a", url: "", host: "h", waiting_since: null, reason: "question", question: "", ...over,
+  });
+  const read = (over: Partial<Detail> = {}): Detail => ({
+    ref: "a", title: "a", url: "", waiting: true, host: "h", state: "waiting", reason: "question", since: null, post: "", ...over,
+  });
+
+  it("tells running, queued, done and waiting apart on a row", () => {
+    expect(itemState(row({ state: "running" }))).toBe("running");
+    expect(itemState(row({ state: "queued" }))).toBe("queued");
+    expect(itemState(row({ state: "done" }))).toBe("done");
+    expect(itemState(row({ state: "waiting" }))).toBe("waiting");
+    // A back end older than the running list leaves the state out: its items all wait.
+    expect(itemState(row())).toBe("waiting");
+  });
+
+  it("tells them apart on a detail, a run or a queue before the labels of a wait or a done", () => {
+    expect(detailState(read({ state: "running", waiting: true }))).toBe("running");
+    expect(detailState(read({ state: "queued", waiting: true }))).toBe("queued");
+    expect(detailState(read({ state: "done", waiting: false, done: true }))).toBe("done");
+    expect(detailState(read())).toBe("waiting");
+  });
+
+  it("differs only on the state, not on the reason", () => {
+    expect(stateDiffers(row({ state: "queued" }), read({ state: "running" }))).toBe(true);
+    expect(stateDiffers(row({ state: "waiting" }), read({ state: "done", waiting: false, done: true }))).toBe(true);
+    expect(stateDiffers(row({ state: "waiting", reason: "question" }), read({ reason: "plan" }))).toBe(false);
+    expect(stateDiffers(row({ state: "running" }), read({ state: "running" }))).toBe(false);
   });
 });
