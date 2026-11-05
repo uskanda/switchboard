@@ -107,6 +107,15 @@ func TestPlanSystemPromptAsksAndChangesNothing(t *testing.T) {
 	}
 }
 
+func TestPlanSystemPromptAsksForATitle(t *testing.T) {
+	s := PlanSystem("ja", "/ok", "")
+	for _, want := range []string{`- "title" (required with both statuses)`, `Write "title", "questions", "plan" and "summary" in Japanese.`} {
+		if !strings.Contains(s, want) {
+			t.Errorf("the plan system prompt lacks %q:\n%s", want, s)
+		}
+	}
+}
+
 func TestPlanSystemPromptPutsEachOptionOnALine(t *testing.T) {
 	s := PlanSystem("ja", "/ok", "")
 	if !strings.Contains(s, `Put each option of a question on its own line, labeled like "A: ...".`) {

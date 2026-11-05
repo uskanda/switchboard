@@ -11,6 +11,7 @@ import (
 	"github.com/uskanda/switchboard/internal/config"
 	"github.com/uskanda/switchboard/internal/forge"
 	"github.com/uskanda/switchboard/internal/instructions"
+	"github.com/uskanda/switchboard/internal/postfmt"
 )
 
 func questions(qs ...[3]string) string {
@@ -18,11 +19,12 @@ func questions(qs ...[3]string) string {
 	for _, q := range qs {
 		items = append(items, map[string]any{"title": q[0], "body": q[1], "recommendation": q[2]})
 	}
-	return result(map[string]any{"status": "questions", "summary": "Read the config package.", "questions": items})
+	return result(map[string]any{"status": "questions", "title": "Split the config loading", "summary": "Read the config package.",
+		"questions": items})
 }
 
 func planDecl(text string) string {
-	return result(map[string]any{"status": "plan", "plan": text})
+	return result(map[string]any{"status": "plan", "title": "Split the config loading", "plan": text})
 }
 
 // startPlan puts agent:plan on the issue, runs the first step and returns the agent's post.
@@ -157,9 +159,63 @@ func TestPlanRunThatDeclaresDoneIsAnError(t *testing.T) {
 
 func TestPlanRunWithNoQuestionsIsAnError(t *testing.T) {
 	x := newH(t, "", nil)
-	x.step(1, result(map[string]any{"status": "questions", "questions": []any{}}))
+	x.step(1, result(map[string]any{"status": "questions", "title": "T", "questions": []any{}}))
 	if p := x.startPlan(); p.Marker.Reason != "error" {
 		t.Fatalf("marker = %+v\n%s", p.Marker, p.Body)
+	}
+}
+
+// paragraphAfterHeading is the first paragraph of a post after its ### heading.
+func paragraphAfterHeading(body string) string {
+	paras := strings.Split(strings.TrimSpace(body), "\n\n")
+	if len(paras) < 2 || !strings.HasPrefix(paras[0], "### ") {
+		return ""
+	}
+	return paras[1]
+}
+
+func TestPlanCommentsStartWithTheTitle(t *testing.T) {
+	for _, tc := range []struct{ name, lang, step, reason, want string }{
+		{"questions", "", questions([3]string{"A", "a?", "a"}), "plan-questions", "**Plan:** Split the config loading"},
+		{"plan", "", planDecl("The plan."), "plan", "**Plan:** Split the config loading"},
+		{"questions ja", "ja", result(map[string]any{"status": "questions", "title": "設定の\n読み込みを  分ける",
+			"questions": []any{map[string]any{"title": "既定", "body": "どちら？", "recommendation": "A"}}}),
+			"plan-questions", "**計画：** 設定の 読み込みを 分ける"},
+		{"plan ja", "ja", result(map[string]any{"status": "plan", "title": "設定の読み込みを分ける", "plan": "計画。"}),
+			"plan", "**計画：** 設定の読み込みを分ける"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			x := newH(t, "", func(c *config.Config) { c.Comments.Language = tc.lang })
+			x.step(1, tc.step)
+			p := x.startPlan()
+			if p.Marker.Reason != tc.reason || paragraphAfterHeading(p.Body) != tc.want {
+				t.Fatalf("marker=%+v; the paragraph after the heading is not %q:\n%s", p.Marker, tc.want, p.Body)
+			}
+			if got := postfmt.Question(p.Body); got != tc.want {
+				t.Fatalf("Question = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPlanRunWithoutATitleIsAnError(t *testing.T) {
+	for _, d := range []map[string]any{
+		{"status": "plan", "plan": "The plan."},
+		{"status": "plan", "title": " \n ", "plan": "The plan."},
+		{"status": "questions", "questions": []any{map[string]any{"title": "A", "body": "a?", "recommendation": "a"}}},
+	} {
+		x := newH(t, "", nil)
+		x.step(1, result(d))
+		if p := x.startPlan(); p.Marker.Reason != "error" {
+			t.Fatalf("%v: marker = %+v\n%s", d, p.Marker, p.Body)
+		}
+	}
+}
+
+func TestQuestionOfAnOldPlanCommentWithoutATitle(t *testing.T) {
+	old := "### The plan is ready for approval\n\n# Plan\n\n- Add greeting.txt.\n\nReply `/ok` to approve."
+	if got := postfmt.Question(old); got != "- Add greeting.txt." {
+		t.Fatalf("Question = %q", got)
 	}
 }
 
@@ -183,7 +239,7 @@ func TestPlanRunChangesAreThrownAway(t *testing.T) {
 
 func TestPlanRunKeepsItsReasonWhenRefused(t *testing.T) {
 	x := newH(t, "", nil)
-	x.step(1, result(map[string]any{"status": "plan", "plan": "The plan."},
+	x.step(1, result(map[string]any{"status": "plan", "title": "T", "plan": "The plan."},
 		map[string]any{"tool_name": "Bash", "tool_use_id": "t1", "tool_input": map[string]any{"command": "go test ./..."}}))
 	p := x.startPlan()
 	if p.Marker.Reason != "plan" || !strings.Contains(p.Body, "<details>") || !strings.Contains(p.Body, "go test ./...") {

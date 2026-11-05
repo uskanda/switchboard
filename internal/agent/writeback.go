@@ -528,9 +528,7 @@ func (a *Agent) notify(ctx context.Context, is *forge.IssueSummary, o *outcome, 
 	if o.State == "done" {
 		text = notify.Done{Ref: ref, ChangeURL: o.PR, IssueURL: is.URL}.Text(lang)
 	} else {
-		if i := strings.Index(body, "❓ "); o.Reason == marker.PlanQuestions && i >= 0 {
-			body = body[i:] // quote the first question, not the summary above it
-		}
+		// A plan-stage comment opens with the plan's title, which Question quotes.
 		text = notify.Waiting{
 			Ref: ref, Title: is.Title, Reason: o.Reason, Question: postfmt.Question(body),
 			IssueURL: is.URL, WebURL: a.Config.Notify.WebURL,

@@ -130,6 +130,14 @@ describe("the list", () => {
     expect((await screen.findAllByText("1. 設定（a.go） - Agent に…"))[0]).toBeInTheDocument();
   });
 
+  it("shows the plan title at the start of a plan wait", async () => {
+    answer({
+      "GET /api/inbox": listing(item({ reason: "plan", question: "**計画：** 設定の読み込みを分ける" })),
+    });
+    at("/");
+    expect((await screen.findAllByText("計画： 設定の読み込みを分ける"))[0]).toBeInTheDocument();
+  });
+
   it("says it is loading until the first listing arrives", async () => {
     answer({ "GET /api/inbox": "never" });
     at("/");

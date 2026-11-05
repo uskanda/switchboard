@@ -36,8 +36,9 @@ type texts struct {
 	// and the reason of a fix run's wait on it (host name, when).
 	limitTitle, limitQueued, limitFix string
 
-	// The comments of the plan stage: the titles, the hints on how to answer, and the note on discarded changes.
-	planQuestionsTitle, planTitle, planQuestionsHint, planHint, planDiscarded string
+	// The comments of the plan stage: the titles, the hints on how to answer, the note on discarded changes, and the
+	// label of the plan's title.
+	planQuestionsTitle, planTitle, planQuestionsHint, planHint, planDiscarded, planLabel string
 
 	// The progress comment of a run: its heading, the separators of a line, and a line withheld for a secret.
 	progressTitle, toolSep, purposeSep, noTools, progressWithheld string
@@ -95,6 +96,7 @@ var english = texts{
 	planQuestionsHint:  "Reply `%s` to accept the recommended answers, or `%s q2 is B` to change some of them.",
 	planHint:           "Reply `%s` to approve this plan and start the work. To change it, reply with what to change.",
 	planDiscarded:      "The run changed the worktree although the plan stage changes nothing; those changes were discarded.",
+	planLabel:          "Plan:",
 	mr:                 "Merge request: %s",
 	verified:           "`%s` passed.",
 	notVerified:        "No verify_command is configured, so this change was not verified.",
@@ -190,6 +192,7 @@ var japanese = texts{
 	planQuestionsHint:  "推奨どおりでよければ `%s`、変えたい問いがあれば `%s q2はB` のように返答してください。",
 	planHint:           "この計画で進めるなら `%s` と返答してください。直してほしいところがあれば、そのまま返答してください。",
 	planDiscarded:      "計画の段階では何も変えないはずの実行がworktreeを変えたため、その変更を捨てました。",
+	planLabel:          "計画：",
 	mr:                 "MR：%s",
 	verified:           "`%s` が通りました。",
 	notVerified:        "verify_commandが設定されていないため、この変更は検証していません。",
