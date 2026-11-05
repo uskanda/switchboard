@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
-import { ApiError, getIssue, isWaiting, issuePath, postReply, queueText, timeText, watchKey, type Detail } from "@/lib/api";
+import { ApiError, getIssue, isWaiting, issuePath, postReply, queueText, stateDiffers, timeText, watchKey, type Detail } from "@/lib/api";
 import { draftOf, keepDraft } from "@/lib/drafts";
 import { useInbox } from "@/lib/inbox";
 import { useHeightVar } from "@/lib/height";
@@ -30,6 +30,9 @@ const RETRY_TEXT = "再実行してください。";
  * nor a person reading the thread takes it for doing the first work over.
  */
 const CONFLICT_RETRY_TEXT = "baseとの衝突を解消して、もう一度pushしてください。";
+
+/** AHEAD_TEXT says the state shown was read from the forge after the list was, which has yet to catch up. */
+const AHEAD_TEXT = "フォージから今読んだ状態です。一覧は更新を待っています";
 
 /** retryTextOf is the fixed reply that "再実行する" sends on a wait with this reason. */
 function retryTextOf(reason: string): string {
@@ -135,7 +138,9 @@ const headerHeight = () => parseFloat(getComputedStyle(document.documentElement)
  * same question comment is shown, and start over with the next round's. A wait on a plan is approved, and a wait on a
  * failed run (error) is run again, in one click while the reply is empty.
  * An issue read before in this tab shows its last read at once, marked as being brought up to date until the read
- * arrives; one never read shows that it is loading.
+ * arrives; one never read shows that it is loading. While its read shows another state than its row on the list
+ * (running, queued, done or waiting; the inbox service reads the list again then), it says the state was read from
+ * the forge just now and the list has yet to catch up.
  * Once a reply is sent, it says so while the issue comes back in the wait answered; once the issue runs, queues,
  * waits anew or leaves the list, it shows that state instead, with the reply form again for a new wait. Below the
  * words saying it was sent is the button to the next wait (lib/waits.ts), which takes the focus, or the words that
@@ -324,6 +329,9 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
   // An open done issue takes a reply too: a comment resumes the work until the issue is closed.
   const replyable = !!detail && (detail.waiting || !!detail.done);
   const finished = !!detail?.done && !running && !queued;
+  // The issue's own read is newer than its row on the list: until the list catches up, it says which to believe. An
+  // issue that left the list says so elsewhere, and one being read again says that instead.
+  const ahead = !!item && !!detail && fresh && !reading && stateDiffers(item, detail);
   // A merge waiting for the fix of a conflict starts and ends without the issue changing on the forge, so the detail
   // is not read again: the listing says whether one waits, and the detail only until the first listing arrives.
   const autoMerge = !!(item ? item.auto_merge : !inbox && detail?.auto_merge);
@@ -411,6 +419,11 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
                 <span role="status" aria-label="更新を取得中" className="inline-flex items-center gap-xs">
                   <Spinner />
                   更新を取得中
+                </span>
+              )}
+              {ahead && (
+                <span role="status" aria-label={AHEAD_TEXT}>
+                  {AHEAD_TEXT}
                 </span>
               )}
             </span>

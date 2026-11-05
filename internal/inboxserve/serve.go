@@ -435,6 +435,7 @@ func (s *Server) issue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := detailOf(d)
+	s.followDetail(out)
 	if d.Done {
 		out.AutoMerge = s.autoMergeOf(out.Ref)
 	}
@@ -443,6 +444,45 @@ func (s *Server) issue(w http.ResponseWriter, r *http.Request) {
 		out.Trusted = &t
 	}
 	send(w, http.StatusOK, out)
+}
+
+// followDetail asks the loop to read the forges again when d, just read from the forge, is not in the state the
+// listing last sent shows it in (issue #82): the listing then catches up and reaches the pages as an event. Only
+// running, queued, done, waiting and not listed are told apart; the reasons are not. Without a listing sent, the
+// loop does not run and nothing is asked.
+func (s *Server) followDetail(d inboxapi.Detail) {
+	s.subMu.Lock()
+	last := s.last
+	s.subMu.Unlock()
+	if last == nil {
+		return
+	}
+	listed := ""
+	for _, it := range last.Items {
+		if it.Ref == d.Ref {
+			listed = it.State
+			break
+		}
+	}
+	if listed != listState(d) {
+		s.readAgain()
+	}
+}
+
+// listState is the state a row of the listing would show for d, or "" when d would not be listed. The order is the
+// one of the web UI's IssuePane: a running or queued issue may still be marked waiting or done.
+func listState(d inboxapi.Detail) string {
+	switch {
+	case d.State == inbox.Running:
+		return inbox.Running
+	case d.State == inbox.Queued:
+		return inbox.Queued
+	case d.Done:
+		return inbox.Done
+	case d.Waiting:
+		return inbox.Waiting
+	}
+	return ""
 }
 
 // detailOf is d as the API's type: the same fields, the comments copied one by one.
