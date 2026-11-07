@@ -1,4 +1,4 @@
-import { useEffect, useRef, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { Header } from "@/components/Header";
 import { InboxErrors } from "@/components/InboxErrors";
@@ -8,6 +8,7 @@ import { IssueRef } from "@/components/IssueRef";
 import { ReasonBadge } from "@/components/ReasonBadge";
 import { Card } from "@/components/ui/card";
 import { isWaiting, issuePath, oldestWaiting, timeText, type Item } from "@/lib/api";
+import { keepListScroll, listScroll } from "@/lib/listScroll";
 import { LIST_WIDTH_DEFAULT, LIST_WIDTH_MAX, LIST_WIDTH_MIN, LIST_WIDTH_STEP, useListWidth } from "@/lib/paneWidth";
 import { useInbox } from "@/lib/inbox";
 import { useMinute } from "@/lib/now";
@@ -99,6 +100,8 @@ function NothingChosen({ items }: { items: Item[] | null }) {
  * issue alone. With no issue chosen, the right pane leads to the one that has waited longest (NothingChosen).
  * On either, j and k open the wait below and above the open issue (lib/waits.ts), and r moves the focus to the reply;
  * from 1024px, a line under the list tells these keys.
+ * Below 1024px the page itself scrolls: the list comes back scrolled where it was left (lib/listScroll.ts), and an
+ * issue starts at its top (IssuePane).
  */
 export function InboxLayout() {
   const ref = useParams().ref;
@@ -106,6 +109,13 @@ export function InboxLayout() {
   const { inbox, view } = useInbox();
   usePageTitle(ref && (inbox?.items.find((it) => it.ref === ref)?.title ?? ref));
   const navigate = useNavigate();
+  useLayoutEffect(() => {
+    if (ref) return;
+    window.scrollTo(0, listScroll());
+    const keep = () => keepListScroll(window.scrollY);
+    window.addEventListener("scroll", keep, { passive: true });
+    return () => window.removeEventListener("scroll", keep);
+  }, [ref]);
   useEffect(() => {
     const onKeyDown = (e: globalThis.KeyboardEvent) => {
       if (!["j", "k", "r"].includes(e.key) || ignoreKey(e)) return;

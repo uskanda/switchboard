@@ -143,6 +143,49 @@ func TestLogoutFromElsewhereIsRefused(t *testing.T) {
 	}
 }
 
+// The page someone opened before logging in is where the login brings them back (issue #171).
+func TestLoginRemembersThePageToGoBackTo(t *testing.T) {
+	f := &fakeInbox{auth: &fakeAuth{}}
+	page := "/issue/gh%3Ao%2Fr%2312?action=merge"
+	w := do(newServer(f), "GET", "/auth/login?next="+url.QueryEscape(page), "", nil)
+	if w.Code != http.StatusFound {
+		t.Fatalf("login = %d", w.Code)
+	}
+	c := w.Result().Cookies()
+	if len(c) != 1 || c[0].Name != nextCookie || c[0].Value != url.QueryEscape(page) || !c[0].HttpOnly ||
+		c[0].SameSite != http.SameSiteLaxMode || c[0].Path != "/auth/" || c[0].MaxAge <= 0 {
+		t.Fatalf("cookies = %+v", c)
+	}
+	back := do(newServer(f), "GET", "/auth/callback?state=st&code=alice", "", map[string]string{"Cookie": c[0].Name + "=" + c[0].Value})
+	if back.Code != http.StatusFound || back.Header().Get("Location") != page {
+		t.Fatalf("callback = %d %s", back.Code, back.Header().Get("Location"))
+	}
+	var cleared bool
+	for _, k := range back.Result().Cookies() {
+		if k.Name == nextCookie && k.MaxAge < 0 {
+			cleared = true
+		}
+	}
+	if !cleared {
+		t.Errorf("the page to go back to was not cleared: %+v", back.Result().Cookies())
+	}
+}
+
+// Only a path of this site is gone back to: anything else would make the login an open redirect.
+func TestLoginGoesBackOnlyToThisSite(t *testing.T) {
+	for _, next := range []string{"https://evil.example/", "//evil.example/", "/\\evil.example", "issue/x", "", "/" + strings.Repeat("a", 2048)} {
+		f := &fakeInbox{auth: &fakeAuth{}}
+		w := do(newServer(f), "GET", "/auth/login?next="+url.QueryEscape(next), "", nil)
+		if c := w.Result().Cookies(); len(c) != 0 {
+			t.Errorf("next %q: cookies = %+v", next, c)
+		}
+		back := do(newServer(f), "GET", "/auth/callback?state=st&code=alice", "", map[string]string{"Cookie": nextCookie + "=" + url.QueryEscape(next)})
+		if back.Header().Get("Location") != "/" {
+			t.Errorf("next %q: callback goes to %s", next, back.Header().Get("Location"))
+		}
+	}
+}
+
 func TestUnauthenticatedIs401(t *testing.T) {
 	f := &fakeInbox{err: &inboxapi.Error{Code: inboxapi.CodeUnauthenticated, Message: "log in"}}
 	if w := do(newServer(f), "GET", "/api/inbox", "", nil); w.Code != http.StatusUnauthorized {

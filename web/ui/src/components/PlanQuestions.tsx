@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Markdown } from "@/components/Markdown";
 import { Textarea } from "@/components/ui/textarea";
 import { defaultAnswers, withoutAnswerHint, type Answer, type Group, type PlanQuestions as Parsed, type Question } from "@/lib/planQuestions";
@@ -32,17 +32,42 @@ function Choices({ q, j, group, choice, recommended, disabled, onChoose }: {
   );
 }
 
+/**
+ * OneQuestion is one question with its groups of options and its note. The note's field is folded behind a button
+ * while every group has an option chosen and nothing is written in it, so a long round of questions keeps the reply's
+ * buttons near on a phone (issue #180). It is open for a question without options, for one with a group left
+ * unchosen, and once something is written in it; pressing the button opens it with the focus in it.
+ */
 function OneQuestion({ q, answer, disabled, onChange }: { q: Question; answer: Answer; disabled: boolean; onChange: (a: Answer) => void }) {
   const id = `q${q.n}-note`;
   const lastGroup = q.parts.reduce((at, p, i) => (p.kind === "group" ? i : at), -1);
   const recommended = defaultAnswers([q])[0].choices;
-  const note = (
+  const [pressed, setPressed] = useState(false);
+  const open = pressed || lastGroup < 0 || answer.note !== "" || answer.choices.some((c) => c === null);
+  const note = open ? (
     <div key="note" className="flex flex-col gap-xs">
       <label htmlFor={id} className="text-label-md font-medium text-muted">
         Q{q.n}の補足
       </label>
-      <Textarea id={id} value={answer.note} disabled={disabled} onChange={(e) => onChange({ ...answer, note: e.target.value })} className="min-h-20" />
+      <Textarea
+        id={id}
+        value={answer.note}
+        disabled={disabled}
+        autoFocus={pressed}
+        onChange={(e) => onChange({ ...answer, note: e.target.value })}
+        className="min-h-20"
+      />
     </div>
+  ) : (
+    <button
+      key="note"
+      type="button"
+      disabled={disabled}
+      onClick={() => setPressed(true)}
+      className="inline-flex min-h-11 items-center self-start text-label-md text-muted underline focus-visible:outline-2 focus-visible:outline-primary"
+    >
+      Q{q.n}に補足を書く
+    </button>
   );
   const body: ReactNode[] = [];
   let k = 0; // the number of the group among the question's groups

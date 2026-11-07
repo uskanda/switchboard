@@ -138,7 +138,8 @@ export function NewIssue() {
       <Button type="button" variant="secondary" onClick={open}>
         新規issue
       </Button>
-      <Dialog ref={dialogRef} aria-labelledby={`${id}-heading`}>
+      {/* While the issue is being created, Escape leaves the dialog open: a failure is told in it (issue #173). */}
+      <Dialog ref={dialogRef} aria-labelledby={`${id}-heading`} onCancel={(e) => sending && e.preventDefault()}>
         <form onSubmit={submit} className="flex flex-col gap-md">
           <h2 id={`${id}-heading`} className="text-headline-md font-semibold">
             新規issue

@@ -161,7 +161,10 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
   const navigate = useNavigate();
   const item = inbox?.items.find((it) => it.ref === issueRef);
   const key = item ? watchKey(item) : inbox ? "gone" : "first";
-  const gone = inbox !== null && !item;
+  // An issue this tab just created is on the list only as its mark (lib/pending.ts) until the agent takes it up: it
+  // has not left the list (issue #174).
+  const creating = !item && !!view?.some((it) => it.ref === issueRef && it.pending === "create");
+  const gone = inbox !== null && !item && !creating;
 
   const [detail, setDetail] = useState<Detail | null>(() => cachedIssue(issueRef));
   // reading is set while a read of the issue is on its way; the first one starts as the pane opens.
@@ -239,6 +242,14 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
   const head = useRef<HTMLDivElement>(null);
   const top = useRef<HTMLDivElement>(null);
   useHeightVar(head, "--pane-head-h", document.documentElement);
+
+  // Another issue starts at its top: below 1024px the page scrolls, from 1024px the pane (issue #172). The scroll to
+  // the card a reply is about, below, comes after this one.
+  useLayoutEffect(() => {
+    window.scrollTo(0, 0);
+    const pane = article.current?.closest("main");
+    if (pane) pane.scrollTop = 0;
+  }, [issueRef]);
 
   // seen is the issue whose opening scroll is done, whether a read of it has arrived since, and the cards last drawn.
   const seen = useRef<{ ref: string; settled: boolean; cards: ThreadCard[] } | null>(null);
@@ -472,6 +483,7 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
       {detail && (
         <>
           {gone && <p className="text-muted">このissueは、待ちでも実行中でもなくなりました。</p>}
+          {creating && <p className="text-muted">作ったばかりのissueです。エージェントが取りかかると、この画面が自動で切り替わります。</p>}
           {detail.comments ? (
             <Thread
               key={detail.ref}
@@ -579,7 +591,7 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
           )}
           {running && !sent && !showForm && <p className="text-muted">実行中です。質問か完了になると、この画面が自動で切り替わります。</p>}
           {queued && !replyable && !sent && !showForm && <p className="text-muted">順番待ちのため、まだ返答は要りません</p>}
-          {!replyable && !running && !queued && !sent && !showForm && <p className="text-muted">このissueは待ちではありません。返答は送れません。</p>}
+          {!replyable && !running && !queued && !creating && !sent && !showForm && <p className="text-muted">このissueは待ちではありません。返答は送れません。</p>}
         </>
       )}
       {notice !== null && (

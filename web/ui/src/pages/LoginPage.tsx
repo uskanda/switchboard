@@ -1,4 +1,4 @@
-import { useSearchParams } from "react-router";
+import { useLocation, useSearchParams } from "react-router";
 import { Shell } from "@/components/Shell";
 import { usePageTitle } from "@/lib/title";
 
@@ -18,11 +18,15 @@ function reasonText(error: string | null, user: string | null): string | null {
 /**
  * LoginPage is all the web inbox shows to someone not logged in while inbox.auth is set: why the last login failed,
  * if it did, and the one button that goes to GitLab. The button is a plain link: /auth/login answers with a redirect.
+ * Opened on another page than the list (a link from a notification, say), the link asks the login to come back to it.
  */
 export function LoginPage() {
   usePageTitle("ログイン");
   const [q] = useSearchParams();
   const reason = reasonText(q.get("error"), q.get("user"));
+  const { pathname, search } = useLocation();
+  const page = pathname + search;
+  const href = pathname === "/" || pathname === "/login" ? "/auth/login" : `/auth/login?next=${encodeURIComponent(page)}`;
   return (
     <Shell header={false}>
       <h2 className="text-headline-md font-semibold">ログイン</h2>
@@ -34,7 +38,7 @@ export function LoginPage() {
       )}
       <p>
         <a
-          href="/auth/login"
+          href={href}
           className="inline-flex min-h-11 items-center rounded-md bg-primary px-lg text-label-md font-medium text-on-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         >
           GitLabでログイン

@@ -203,7 +203,8 @@ describe("loading", () => {
   it("says the settings are loading", async () => {
     answer({ "GET /api/inbox": listing(), "GET /api/projects": "never", "GET /api/instructions": "never" });
     at("/settings");
-    expect(await screen.findAllByRole("status", { name: "読み込んでいます" })).toHaveLength(2);
+    // The login state comes first; then the projects and the instructions load side by side.
+    await waitFor(() => expect(screen.getAllByRole("status", { name: "読み込んでいます" })).toHaveLength(2));
   });
 
   it("says the projects of a new issue are loading", async () => {

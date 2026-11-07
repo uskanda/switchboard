@@ -86,7 +86,9 @@ describe("the questions of a plan", () => {
     expect(q1.getByRole("radio", { name: "選ばない（補足で答える）" })).not.toBeChecked();
     expect(group("範囲").getByRole("radio", { name: /^A 全体/ })).toBeChecked();
     expect(group("欄").getByRole("radio", { name: /^X タイトルと内容/ })).toBeChecked();
-    expect(screen.getByRole("textbox", { name: "Q6の補足" })).toBeInTheDocument();
+    // A note is folded behind its button while every group of the question has an option chosen.
+    expect(screen.queryByRole("textbox", { name: "Q6の補足" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Q6に補足を書く" })).toBeInTheDocument();
   });
 
   it("draw a question without options with its free text only", async () => {
@@ -141,6 +143,7 @@ describe("the reply to the questions", () => {
     await open();
     expect(preview()).toMatch(/^Q1 操作の入口: C\nQ2 選んだあとの流れ: A\nQ3 ダイアログの既定値: 範囲はA、欄はX\n/);
     await userEvent.click(group("Q2の選択肢").getByRole("radio", { name: /^B / }));
+    await userEvent.click(screen.getByRole("button", { name: "Q2に補足を書く" }));
     await userEvent.type(screen.getByRole("textbox", { name: "Q2の補足" }), "件数は出さない");
     expect(preview()).toMatch(/\nQ2 選んだあとの流れ: B。補足：件数は出さない\n/);
   });
@@ -174,6 +177,7 @@ describe("the reply to the questions", () => {
     const es = FakeEventSource.last!;
     es.emit("inbox", listing(item()));
     await userEvent.click(group("Q2の選択肢").getByRole("radio", { name: /^B / }));
+    await userEvent.click(screen.getByRole("button", { name: "Q2に補足を書く" }));
     await userEvent.type(screen.getByRole("textbox", { name: "Q2の補足" }), "途中");
 
     details["gh:o/r#80"] = detail({ title: "Filters again" });
@@ -189,6 +193,7 @@ describe("the reply to the questions", () => {
     await open();
     const es = FakeEventSource.last!;
     es.emit("inbox", listing(item()));
+    await userEvent.click(screen.getByRole("button", { name: "Q1に補足を書く" }));
     await userEvent.type(screen.getByRole("textbox", { name: "Q1の補足" }), "古い");
 
     const next = "### 計画についての質問\n\n❓ **Q7** - **次**\n\nA: x\nB: y\n\n➡️ B\n";

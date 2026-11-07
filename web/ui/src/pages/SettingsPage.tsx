@@ -7,6 +7,7 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { useAuth } from "@/lib/auth";
 import { ApiError, getInstructions, saveInstructions, type Instruction, type InstructionKind, type Instructions } from "@/lib/api";
 import { instructionDraftOf, keepInstructionDraft } from "@/lib/instructionDrafts";
 import { refText } from "@/lib/ref";
@@ -22,6 +23,8 @@ function failure(err: unknown): string {
         return "秘密情報らしいものを含むため、保存していません。";
       case "unknown_project":
         return "設定に無いプロジェクトのため、保存していません。";
+      case "forbidden":
+        return "設定を変えられるのは管理者だけです。";
       case "unavailable":
         return "受信箱のサービス（switchboard inbox serve）に届きません。";
     }
@@ -142,17 +145,37 @@ function KindSection({ kind, data }: { kind: InstructionKind; data: Instructions
 /**
  * SettingsPage, headed 設定, lists and adds the projects, and edits the additional instructions, global and per project: those the
  * plan runs get, those the runs that write files get, then those only the runs that implement an issue get.
+ * Nothing is read until the login state is known. Someone logged in who is not an admin is told that only an admin
+ * may change the settings, and nothing is read (issue #175). A read that works drops the error of the last one.
  */
 export function SettingsPage() {
+  const { status, known } = useAuth();
+  const denied = status.enabled && !status.admin;
   const [data, setData] = useState<Instructions | null>(null);
   const [error, setError] = useState<string | null>(null);
   usePageTitle("設定");
 
-  const load = () => getInstructions().then(setData, (err) => setError(failure(err)));
+  const load = () =>
+    getInstructions().then(
+      (d) => {
+        setData(d);
+        setError(null);
+      },
+      (err) => setError(failure(err)),
+    );
   useEffect(() => {
-    load();
-  }, []);
+    if (known && !denied) load();
+  }, [known, denied]);
 
+  if (!known) return <Shell><Loading /></Shell>;
+  if (denied) {
+    return (
+      <Shell>
+        <h1 className="text-headline-md font-semibold">設定</h1>
+        <p className="text-muted">設定を変えられるのは管理者だけです。</p>
+      </Shell>
+    );
+  }
   return (
     <Shell>
       <h1 className="text-headline-md font-semibold">設定</h1>

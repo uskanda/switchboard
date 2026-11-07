@@ -4,6 +4,7 @@ import { afterEach } from "vitest";
 import { forgetDrafts } from "@/lib/drafts";
 import { forgetInstructionDrafts } from "@/lib/instructionDrafts";
 import { forgetIssues } from "@/lib/issueCache";
+import { forgetListScroll } from "@/lib/listScroll";
 import { forgetProjectIcons } from "@/lib/projectIcons";
 import { forgetSent } from "@/lib/sent";
 import { dismiss } from "@/lib/toast";
@@ -22,6 +23,9 @@ if (typeof HTMLDialogElement.prototype.showModal !== "function") {
 
 installObservers();
 
+// jsdom does not scroll the window; a call to scroll it does nothing, as far as the tests look.
+window.scrollTo = (() => {}) as typeof window.scrollTo;
+
 // jsdom has no pointer capture, which sonner takes when a toast is pressed (to swipe it away).
 if (typeof Element.prototype.setPointerCapture !== "function") {
   Element.prototype.setPointerCapture = () => {};
@@ -36,6 +40,7 @@ afterEach(() => {
   forgetDrafts();
   forgetInstructionDrafts();
   forgetSent();
+  forgetListScroll();
   resetObservers();
   dismiss();
   // The pending marks (lib/pending.ts) live in the tab's storage, which jsdom keeps across the tests of a file.

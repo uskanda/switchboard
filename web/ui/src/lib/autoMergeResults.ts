@@ -26,14 +26,15 @@ function saveTold(told: Set<string>) {
  * useAutoMergeResults tells, once each, the merges the inbox service waited to make and finished (the listing's
  * auto_merge_results): a merge in a success toast, a merge it stopped waiting for in an error toast with the reason.
  * A cancel the person made is not told again. What was told is remembered in localStorage, so a page opened the next
- * morning tells what happened overnight, and only that; keys the listing no longer names are forgotten.
+ * morning tells what happened overnight, and only that; keys the listing no longer names are forgotten. It is read
+ * again on each listing, so a result another tab told is not told again here.
  */
 export function useAutoMergeResults(inbox: Inbox | null) {
-  const told = useRef<Set<string> | null>(null);
+  const told = useRef<Set<string>>(new Set());
   useEffect(() => {
     const results = inbox?.auto_merge_results;
     if (!inbox) return;
-    told.current ??= loadTold();
+    told.current = new Set([...told.current, ...loadTold()]);
     const listed = new Set<string>();
     for (const r of results ?? []) {
       const key = `${r.ref}@${r.at}`;

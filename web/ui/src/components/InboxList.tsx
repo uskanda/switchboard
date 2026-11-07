@@ -121,7 +121,7 @@ function Row({ it, selected, grouped }: { it: ViewItem; selected?: string; group
   const c = cells(it);
   return (
     <tr data-flip-key={it.ref}>
-      <TableCell className="max-w-0 w-full">
+      <TableCell>
         <Link
           to={issuePath(it.ref)}
           aria-current={it.ref === selected ? "page" : undefined}
@@ -136,8 +136,10 @@ function Row({ it, selected, grouped }: { it: ViewItem; selected?: string; group
         </Link>
         <ChangeLink it={it} />
       </TableCell>
-      <TableCell className="whitespace-nowrap">{c.tag}</TableCell>
-      <TableCell className="whitespace-nowrap text-label-md text-muted">{it.host}</TableCell>
+      <TableCell>{c.tag}</TableCell>
+      <TableCell className="truncate text-label-md text-muted" title={it.host}>
+        {it.host}
+      </TableCell>
       <TableCell className="whitespace-nowrap text-label-md text-muted">{c.time}</TableCell>
     </tr>
   );
@@ -212,7 +214,14 @@ function Items({ items, timeHead, selected, grouped }: { items: ViewItem[]; time
   const groups = grouped ? groupByProject(items) : null;
   return (
     <>
-      <Table className="hidden sm:table lg:hidden">
+      {/* Each section is a table of its own: fixed widths keep the columns of every section in line (issue #179). */}
+      <Table className="hidden table-fixed sm:table lg:hidden">
+        <colgroup>
+          <col />
+          <col className="w-[10rem]" />
+          <col className="w-[7rem]" />
+          <col className="w-[6rem]" />
+        </colgroup>
         <thead>
           <tr>
             <TableHead>issue</TableHead>
