@@ -48,8 +48,8 @@ describe("the projects of the settings", () => {
   it("come before the instructions, with their state", async () => {
     answer({ "GET /api/projects": projects(true, sandbox, notes) });
     settings();
-    const section = await screen.findByRole("region", { name: "プロジェクト" });
-    const instructions = screen.getByRole("heading", { name: "計画の実行への追加の指示" });
+    const instructions = await screen.findByRole("heading", { name: "計画の実行への追加の指示" });
+    const section = screen.getByRole("region", { name: "プロジェクト" });
     expect(section.compareDocumentPosition(instructions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const rows = within(section).getAllByRole("listitem");
     expect(rows).toHaveLength(2);

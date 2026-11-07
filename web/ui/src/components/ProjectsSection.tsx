@@ -182,7 +182,14 @@ export function ProjectsSection({ onAdded }: { onAdded?: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [webhook, setWebhook] = useState<string | null>(null);
 
-  const load = () => getProjects().then(setData, (err) => setError(failure(err)));
+  const load = () =>
+    getProjects().then(
+      (d) => {
+        setData(d);
+        setError(null);
+      },
+      (err) => setError(failure(err)),
+    );
   useEffect(() => {
     load();
   }, []);
