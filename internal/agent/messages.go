@@ -39,6 +39,9 @@ type texts struct {
 	// The comments of the plan stage: the titles, the hints on how to answer, the note on discarded changes, and the
 	// label of the plan's title.
 	planQuestionsTitle, planTitle, planQuestionsHint, planHint, planDiscarded, planLabel string
+	// The comment of a plan run that skipped the questions and the approval: its title and its first line; and the
+	// error when the run that implements the plan could not be started (the cause).
+	planSkippedTitle, planSkipped, planSkipFailed string
 
 	// The progress comment of a run: its heading, the separators of a line, and a line withheld for a secret.
 	progressTitle, toolSep, purposeSep, noTools, progressWithheld string
@@ -97,6 +100,9 @@ var english = texts{
 	planHint:           "Reply `%s` to approve this plan and start the work. To change it, reply with what to change.",
 	planDiscarded:      "The run changed the worktree although the plan stage changes nothing; those changes were discarded.",
 	planLabel:          "Plan:",
+	planSkippedTitle:   "Implementing the plan without questions",
+	planSkipped:        "The requirements are clear, so the agent skips the questions and the approval and implements this plan now.",
+	planSkipFailed:     "The plan run found nothing to ask, but the run that implements the plan could not be started: %s",
 	mr:                 "Merge request: %s",
 	verified:           "`%s` passed.",
 	notVerified:        "No verify_command is configured, so this change was not verified.",
@@ -193,6 +199,9 @@ var japanese = texts{
 	planHint:           "この計画で進めるなら `%s` と返答してください。直してほしいところがあれば、そのまま返答してください。",
 	planDiscarded:      "計画の段階では何も変えないはずの実行がworktreeを変えたため、その変更を捨てました。",
 	planLabel:          "計画：",
+	planSkippedTitle:   "質問と承認を省いて実装します",
+	planSkipped:        "要件が明確なので、質問と承認を省いて実装します。",
+	planSkipFailed:     "計画の実行は質問を省けると判断しましたが、計画を実装する実行を始められませんでした：%s",
 	mr:                 "MR：%s",
 	verified:           "`%s` が通りました。",
 	notVerified:        "verify_commandが設定されていないため、この変更は検証していません。",

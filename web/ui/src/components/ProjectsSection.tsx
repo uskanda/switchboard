@@ -5,8 +5,35 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { ApiError, addProject, getProjects, type AddedProject, type Project, type Projects } from "@/lib/api";
+import {
+  ApiError,
+  addProject,
+  getProjects,
+  planStartOf,
+  type AddedProject,
+  type PlanFirstMode,
+  type PlanStart,
+  type Project,
+  type Projects,
+} from "@/lib/api";
 import { toast } from "@/lib/toast";
+
+/** How a project's ready label starts; "plan" is an older inbox service's plan_first, true. */
+const startText: Record<PlanStart, string> = {
+  always: "必ず計画から始める",
+  auto: "必要なら計画から始める",
+  never: "すぐに実装する",
+  plan: "計画から始める",
+};
+
+const startOf = (p: Project) => startText[planStartOf(p) ?? "never"];
+
+/** The starts the addition offers, the default first, each with what it does. */
+const modes: { mode: PlanFirstMode; note: string }[] = [
+  { mode: "auto", note: "要件が明確なら、質問と承認を省いて実装する" },
+  { mode: "always", note: "承認を待つ計画を先に立てる" },
+  { mode: "never", note: "計画を立てずに実装する" },
+];
 
 function failure(err: unknown): string {
   if (err instanceof ApiError) {
@@ -47,7 +74,7 @@ function Row({ project }: { project: Project }) {
     return (
       <li className="flex flex-wrap items-center gap-x-sm gap-y-xs px-lg" title={project.path}>
         <IssueRef value={project.ref} />
-        <span className="text-label-md text-muted">・{project.plan_first ? "計画から始める" : "すぐに実装する"}</span>
+        <span className="text-label-md text-muted">・{startOf(project)}</span>
       </li>
     );
   }
@@ -59,7 +86,7 @@ function Row({ project }: { project: Project }) {
         </p>
         <p className="text-label-md text-muted">
           <span className="font-mono text-mono-sm break-all">{project.path}</span>・
-          {project.plan_first ? "計画から始める" : "すぐに実装する"}
+          {startOf(project)}
         </p>
         <p className="text-label-md text-muted">
           {project.cloned
@@ -78,10 +105,10 @@ function Row({ project }: { project: Project }) {
   );
 }
 
-/** AddForm asks for the reference and plan first only; the inbox service decides the rest. */
+/** AddForm asks for the reference and how the ready label starts only; the inbox service decides the rest. */
 function AddForm({ onAdded }: { onAdded: (added: AddedProject) => void }) {
   const [ref, setRef] = useState("");
-  const [planFirst, setPlanFirst] = useState(true);
+  const [planFirst, setPlanFirst] = useState<PlanFirstMode>("auto");
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -116,16 +143,25 @@ function AddForm({ onAdded }: { onAdded: (added: AddedProject) => void }) {
           className="font-mono"
           disabled={adding}
         />
-        <label className="flex min-h-11 items-center gap-sm text-label-md">
-          <input
-            type="checkbox"
-            checked={planFirst}
-            onChange={(e) => setPlanFirst(e.target.checked)}
-            disabled={adding}
-            className="size-5 accent-primary"
-          />
-          計画から始める（agent:ready で、承認を待つ計画を先に立てる）
-        </label>
+        <fieldset className="flex flex-col" disabled={adding}>
+          <legend className="text-label-md font-medium">agent:ready で始めるとき</legend>
+          {modes.map(({ mode, note }) => (
+            <label key={mode} className="flex min-h-11 items-center gap-sm text-label-md">
+              <input
+                type="radio"
+                name="plan-first"
+                value={mode}
+                checked={planFirst === mode}
+                onChange={() => setPlanFirst(mode)}
+                className="size-5 shrink-0 accent-primary"
+              />
+              <span>
+                {startText[mode]}
+                <span className="text-muted">（{note}）</span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
         {error && <Alert>{error}</Alert>}
         <div className="flex justify-end">
           <Button type="submit" variant="secondary" disabled={adding || ref.trim() === ""}>

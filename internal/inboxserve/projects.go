@@ -80,6 +80,11 @@ func (s *Server) addProject(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, inboxapi.CodeInvalid, err.Error())
 		return
 	}
+	mode := config.PlanFirst(req.Mode())
+	if mode != config.PlanAlways && mode != config.PlanAuto && mode != config.PlanNever {
+		fail(w, http.StatusBadRequest, inboxapi.CodeInvalid, "plan_first_mode must be always, auto or never")
+		return
+	}
 	e, err := config.OpenEditor(s.projectConfig().Path)
 	if err != nil {
 		fail(w, http.StatusUnprocessableEntity, inboxapi.CodeConfigInvalid, err.Error())
@@ -120,7 +125,7 @@ func (s *Server) addProject(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadGateway, inboxapi.CodeForge, err.Error())
 		return
 	}
-	err = e.AddProject(config.NewProject{Ref: p.Ref, Path: e.ProjectPath(p.Repo), Host: cfg.Host.Name, BaseBranch: branch, PlanFirst: req.PlanFirst})
+	err = e.AddProject(config.NewProject{Ref: p.Ref, Path: e.ProjectPath(p.Repo), Host: cfg.Host.Name, BaseBranch: branch, PlanFirst: mode})
 	switch {
 	case errors.Is(err, config.ErrConfigChanged):
 		fail(w, http.StatusConflict, inboxapi.CodeConfigChanged, err.Error())
@@ -152,7 +157,7 @@ func (s *Server) addProject(w http.ResponseWriter, r *http.Request) {
 
 // state is what the API says of project p: whether it is cloned, and which state labels it lacks.
 func (pr *Projects) state(ctx context.Context, cfg *config.Config, p config.Project, now time.Time) inboxapi.Project {
-	out := inboxapi.Project{Ref: p.Ref, Path: p.Path, PlanFirst: p.PlanFirst, Cloned: pr.isClone(p.Path), MissingLabels: []string{}}
+	out := inboxapi.Project{Ref: p.Ref, Path: p.Path, PlanFirst: p.PlanFirst.Plans(), PlanFirstMode: string(p.PlanFirst.Mode()), Cloned: pr.isClone(p.Path), MissingLabels: []string{}}
 	names, err := pr.labelNames(ctx, p, now)
 	if err != nil {
 		out.LabelsError = err.Error()

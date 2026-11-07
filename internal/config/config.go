@@ -264,8 +264,9 @@ type Project struct {
 	VerifyCommand       string   `yaml:"verify_command"`
 	IncludeUntrusted    bool     `yaml:"include_untrusted"`
 	ProtectedPathsExtra []string `yaml:"protected_paths_extra"`
-	// PlanFirst makes the ready label start with a plan that waits for approval before any change is made.
-	PlanFirst bool `yaml:"plan_first"`
+	// PlanFirst is how the ready label starts: always with a plan that waits for approval before any change is made,
+	// with a plan only when the run finds the issue unclear (auto), or never.
+	PlanFirst PlanFirst `yaml:"plan_first"`
 	// AllowToolsExtra are Claude Code permission rules added, after agent.allow_tools_extra, to the allow rules of
 	// this project's runs that write files.
 	AllowToolsExtra []string `yaml:"allow_tools_extra"`
@@ -283,6 +284,52 @@ type Project struct {
 	Owner string `yaml:"-"`
 	Repo  string `yaml:"-"`
 }
+
+// PlanFirst is a project's plan_first: how its ready label starts. The booleans of earlier versions are read as
+// always (true) and never (false); a project without the key has "", which is never.
+type PlanFirst string
+
+// The values of plan_first.
+const (
+	PlanAlways PlanFirst = "always" // plan, and wait for the approval, as the plan label does
+	PlanAuto   PlanFirst = "auto"   // plan, unless the first plan run finds nothing left to ask
+	PlanNever  PlanFirst = "never"  // implement at once, as the go label does
+)
+
+// UnmarshalYAML reads always, auto, never, or the booleans of earlier versions.
+func (p *PlanFirst) UnmarshalYAML(n *yaml.Node) error {
+	if n.Kind == yaml.ScalarNode && n.Tag == "!!bool" {
+		var b bool
+		if err := n.Decode(&b); err != nil {
+			return err
+		}
+		*p = PlanNever
+		if b {
+			*p = PlanAlways
+		}
+		return nil
+	}
+	if n.Kind == yaml.ScalarNode && n.Tag == "!!str" {
+		switch v := PlanFirst(n.Value); v {
+		case PlanAlways, PlanAuto, PlanNever:
+			*p = v
+			return nil
+		}
+	}
+	return fmt.Errorf("line %d: plan_first must be always, auto or never (true and false still read as always and never), not %q", n.Line, n.Value)
+}
+
+// Mode is the value, with never for a project that does not set it.
+func (p PlanFirst) Mode() PlanFirst {
+	if p == "" {
+		return PlanNever
+	}
+	return p
+}
+
+// Plans reports whether the ready label may start with a plan (always or auto): the plan_first of the boolean the
+// inbox API still returns to older clients.
+func (p PlanFirst) Plans() bool { return p == PlanAlways || p == PlanAuto }
 
 // ParallelLimit is the project's own cap on runs at once, or 0 when it has none.
 func (p Project) ParallelLimit() int {

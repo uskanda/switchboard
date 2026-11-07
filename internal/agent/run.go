@@ -254,8 +254,12 @@ func (a *Agent) execute(ctx context.Context, pl *plan, act *active) string {
 	rec := record{Issue: ref.String(), Run: act.run, Session: newUUID(), State: "running", Started: act.started, Ack: pl.ack()}
 	a.saveRecord(ref, rec)
 	o := a.work(ctx, pl, rec)
-	for o != nil && o.next != nil {
-		o = a.fixAgain(ctx, pl, act, &rec, o)
+	for o != nil && (o.next != nil || o.skip != "") {
+		if o.skip != "" {
+			o = a.skipAgain(ctx, pl, act, &rec, o)
+		} else {
+			o = a.fixAgain(ctx, pl, act, &rec, o)
+		}
 	}
 	if o == nil {
 		rec.State, rec.Ended = "canceled", time.Now().UTC()
@@ -298,7 +302,9 @@ func (a *Agent) ended(p config.Project, ref forge.IssueRef, rec record, o *outco
 
 // implements reports whether pl implements the issue: a direct run or the run of an approved plan. Only these get the
 // implement instructions and the screenshot rules (ADR-051).
-func (pl *plan) implements() bool { return pl.kind == directRun || pl.kind == approvedRun }
+func (pl *plan) implements() bool {
+	return pl.kind == directRun || pl.kind == approvedRun || pl.kind == skippedRun
+}
 
 // work prepares the worktree, runs claude and judges the result. It returns nil when the run was canceled.
 func (a *Agent) work(ctx context.Context, pl *plan, rec record) (o *outcome) {
@@ -376,12 +382,17 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) (o *outcome) {
 		in.Task = prompt.PlanTask
 		used, added = a.loadInstructions(instructions.Plan, p), []string{}
 		req.SystemPrompt, req.Settings, req.Schema = prompt.PlanSystem(lang, word, used.Text), planSettings(), PlanSchema
+		if pl.skippable {
+			req.SystemPrompt, req.Schema = prompt.PlanSkipSystem(lang, word, used.Text), PlanSkipSchema
+		}
 		req.Tools = planTools
 		if head, err = sp.Head(ctx); err != nil {
 			return o.fail(fmt.Sprintf(a.msg.prepare, err))
 		}
 	case approvedRun:
 		req.SystemPrompt = prompt.ApprovedSystem(lang, p.BaseBranch, pl.planID, pl.okID)
+	case skippedRun:
+		req.SystemPrompt = prompt.SkippedSystem(lang, p.BaseBranch, pl.planID)
 	case fixRun:
 		in.Task, in.Failure = prompt.FixTask, pl.fix.report
 		req.SystemPrompt = prompt.FixSystem(lang, p.BaseBranch, pl.fix.cause)
@@ -626,9 +637,10 @@ func tail(s string) string {
 	return strings.ReplaceAll(s, "```", "'''")
 }
 
-// planOutcome writes back the end of a plan run: its questions or its plan, never a push.
+// planOutcome writes back the end of a plan run: its questions or its plan, never a push. A plan run that skips the
+// questions and the approval hands the issue to the run that implements its plan instead.
 func (a *Agent) planOutcome(res *claudecode.Result, pl *plan, o *outcome, discarded bool) *outcome {
-	d, problem := planDeclaration(res)
+	d, problem := planDeclaration(res, pl.skippable)
 	word := a.Config.Plan.ApproveWord
 	switch {
 	case res.MaxTurns():
@@ -639,6 +651,8 @@ func (a *Agent) planOutcome(res *claudecode.Result, pl *plan, o *outcome, discar
 		return o.fail(fmt.Sprintf(a.msg.noDeclaration, problem))
 	case d.Status == "questions":
 		return o.planQuestions(d, pl.qNext, res.Denials, discarded, word)
+	case d.Status == planImplement:
+		return o.planSkip(d, res.Denials, discarded)
 	}
 	return o.planText(d, res.Denials, discarded, word)
 }

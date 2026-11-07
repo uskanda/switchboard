@@ -7,7 +7,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { ApiError, createIssue, getIssueTargets, type IssueTargets, type StartKind } from "@/lib/api";
+import { ApiError, createIssue, getIssueTargets, planStartOf, type IssueTargets, type PlanStart, type StartKind } from "@/lib/api";
 import { useInbox } from "@/lib/inbox";
 import { refText, splitRef } from "@/lib/ref";
 import { toast } from "@/lib/toast";
@@ -18,6 +18,14 @@ const startText: Record<StartKind, string> = {
   plan: "計画から始める",
   go: "計画なしで実装する",
   none: "ラベルなし（実装開始しない）",
+};
+
+/** What the ready label does in the chosen project; "plan" is an older inbox service's plan_first, true. */
+const readyNotes: Record<PlanStart, string> = {
+  always: "（このプロジェクトは必ず計画から始めます）",
+  auto: "（このプロジェクトは必要なら計画から始めます）",
+  never: "（このプロジェクトはすぐに実装します）",
+  plan: "（このプロジェクトは計画から始めます）",
 };
 
 /** The most characters a title may have; the inbox service refuses a longer one. */
@@ -119,8 +127,9 @@ export function NewIssue() {
   }
 
   // What the ready label does in the chosen project; an older inbox service does not say, and nothing is added.
-  const planFirst = targets?.items.find((it) => it.ref === project)?.plan_first;
-  const readyNote = planFirst === undefined ? "" : planFirst ? "（このプロジェクトは計画から始めます）" : "（このプロジェクトはすぐに実装します）";
+  const target = targets?.items.find((it) => it.ref === project);
+  const planStart = target && planStartOf(target);
+  const readyNote = planStart ? readyNotes[planStart] : "";
   const ready = targets !== null && project !== "" && targets.starts.some((st) => st.kind === start);
   const canSend = ready && title.trim() !== "" && !sending;
 

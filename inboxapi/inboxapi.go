@@ -179,11 +179,14 @@ type SaveInstructionsRequest struct {
 
 // Project is one project of the inbox service's machine, with what it needs before the agent can run it: a clone at
 // Path and the state labels. MissingLabels lists the state labels the repository lacks; LabelsError says why they
-// could not be read, and MissingLabels is then empty.
+// could not be read, and MissingLabels is then empty. PlanFirstMode is the project's plan_first (PlanAlways, PlanAuto
+// or PlanNever); PlanFirst, kept for older clients, is true for always and auto. An older inbox service leaves
+// PlanFirstMode out.
 type Project struct {
 	Ref           string   `json:"ref"`
 	Path          string   `json:"path"`
 	PlanFirst     bool     `json:"plan_first"`
+	PlanFirstMode string   `json:"plan_first_mode,omitempty"`
 	Cloned        bool     `json:"cloned"`
 	MissingLabels []string `json:"missing_labels"`
 	LabelsError   string   `json:"labels_error,omitempty"`
@@ -198,10 +201,30 @@ type Projects struct {
 }
 
 // AddProjectRequest is the body of POST /v1/projects: the project, as gh:owner/repo or gl:group/project, and
-// whether its ready label starts with a plan. Everything else is decided by the inbox service.
+// how its ready label starts: PlanFirstMode (PlanAlways, PlanAuto or PlanNever), or, from an older client that leaves
+// it out, PlanFirst (true for always, false for never). Everything else is decided by the inbox service.
 type AddProjectRequest struct {
-	Ref       string `json:"ref"`
-	PlanFirst bool   `json:"plan_first"`
+	Ref           string `json:"ref"`
+	PlanFirst     bool   `json:"plan_first"`
+	PlanFirstMode string `json:"plan_first_mode,omitempty"`
+}
+
+// The values of a project's plan_first: how its ready label starts.
+const (
+	PlanAlways = "always" // with a plan that waits for approval
+	PlanAuto   = "auto"   // with a plan, unless the first plan run finds nothing left to ask
+	PlanNever  = "never"  // with the implementation at once
+)
+
+// Mode is the plan_first the request asks for: PlanFirstMode, or the one PlanFirst stands for when it is empty.
+func (r AddProjectRequest) Mode() string {
+	switch {
+	case r.PlanFirstMode != "":
+		return r.PlanFirstMode
+	case r.PlanFirst:
+		return PlanAlways
+	}
+	return PlanNever
 }
 
 // AddProjectResponse is the answer to a POST /v1/projects that added the project. Webhook, when set, is the command
@@ -220,12 +243,14 @@ const (
 	StartNone  = "none"
 )
 
-// IssueTarget is a project an issue can be opened in, with Host, the machine that runs it, and PlanFirst, whether its
-// ready label starts with a plan. An older inbox service leaves PlanFirst out.
+// IssueTarget is a project an issue can be opened in, with Host, the machine that runs it, PlanFirstMode, how its
+// ready label starts (PlanAlways, PlanAuto or PlanNever), and PlanFirst, true for always and auto. An older inbox
+// service leaves PlanFirstMode out, and one older still PlanFirst too.
 type IssueTarget struct {
-	Ref       string `json:"ref"`
-	Host      string `json:"host"`
-	PlanFirst bool   `json:"plan_first"`
+	Ref           string `json:"ref"`
+	Host          string `json:"host"`
+	PlanFirst     bool   `json:"plan_first"`
+	PlanFirstMode string `json:"plan_first_mode,omitempty"`
 }
 
 // IssueStart is a kind of start label (StartReady, StartPlan, StartGo, StartNone) and the label it stands for, which

@@ -40,7 +40,7 @@ notify:
   web_url: http://192.0.2.1:8783
 `
 
-var notes = NewProject{Ref: "gh:alice/notes", Path: "~/repos/notes", Host: "ubuntu-a", BaseBranch: "main", PlanFirst: true}
+var notes = NewProject{Ref: "gh:alice/notes", Path: "~/repos/notes", Host: "ubuntu-a", BaseBranch: "main", PlanFirst: PlanAuto}
 
 func TestAddProjectKeepsTheRestOfTheFile(t *testing.T) {
 	p := write(t, commented)
@@ -58,7 +58,7 @@ func TestAddProjectKeepsTheRestOfTheFile(t *testing.T) {
 			"    path: ~/repos/notes\n"+
 			"    host: ubuntu-a\n"+
 			"    base_branch: main\n"+
-			"    plan_first: true\n", 1)
+			"    plan_first: auto\n", 1)
 	if string(got) != want {
 		t.Errorf("file after adding:\n%s\nwant:\n%s", got, want)
 	}
@@ -66,7 +66,7 @@ func TestAddProjectKeepsTheRestOfTheFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n := len(c.Projects); n != 2 || c.Projects[1].Ref != "gh:alice/notes" || !c.Projects[1].PlanFirst {
+	if n := len(c.Projects); n != 2 || c.Projects[1].Ref != "gh:alice/notes" || c.Projects[1].PlanFirst != PlanAuto {
 		t.Errorf("projects = %+v, want sandbox then notes with plan_first", c.Projects)
 	}
 }
@@ -83,7 +83,7 @@ func TestAddProjectFollowsTheIndentOfTheList(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ := os.ReadFile(p)
-	if !strings.HasSuffix(string(got), "  host: ubuntu-a\n- ref: gh:alice/notes\n  path: ~/repos/notes\n  host: ubuntu-a\n  base_branch: main\n  plan_first: true\n") {
+	if !strings.HasSuffix(string(got), "  host: ubuntu-a\n- ref: gh:alice/notes\n  path: ~/repos/notes\n  host: ubuntu-a\n  base_branch: main\n  plan_first: auto\n") {
 		t.Errorf("file after adding:\n%s", got)
 	}
 }

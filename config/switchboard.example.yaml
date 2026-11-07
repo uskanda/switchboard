@@ -86,7 +86,7 @@ projects:
     verify_command: ""                # empty: no verification, and the pull request says so
     include_untrusted: false          # true is refused for public repositories
     protected_paths_extra: []
-    plan_first: false                 # true: agent:ready starts with a plan, as agent:plan does
+    plan_first: never                 # how agent:ready starts: always (with a plan, as agent:plan), auto (with a plan unless the issue is clear), never (true and false still read as always and never)
     # max_parallel: 1                 # runs of this project at once, within agent.max_parallel; none when unset
     # icon: "🚀"                      # the web inbox's icon: an https:// image URL, an image file (/ or ~/), or one emoji; the forge's avatar when unset
   # - ref: gl:YOUR_GROUP/switchboard-sandbox   # gl:group/project, or gl:group/sub/project

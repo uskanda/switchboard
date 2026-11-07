@@ -614,8 +614,9 @@ type plan struct {
 	mode         string   // with start: the mode its claim records
 	resumeNote   int64    // the queued comment that marks the run to resume after a usage limit, or 0
 	kind         runKind  // set by classify
-	planID, okID int64    // for approvedRun: the plan and the comment that approved it
+	planID, okID int64    // for approvedRun: the plan and the comment that approved it; for skippedRun: the plan
 	qNext        int      // for planRun: the number of its first question
+	skippable    bool     // for planRun: it may skip the questions and the approval (the first plan run of an auto cycle)
 	fix          *fixInfo // for fixRun: what it fixes
 }
 

@@ -33,8 +33,15 @@ function settings() {
   );
 }
 
-const sandbox = { ref: "gh:o/r", path: "/home/me/repos/r", plan_first: false, cloned: true, missing_labels: [] };
-const notes = { ref: "gh:o/notes", path: "/home/me/repos/notes", plan_first: true, cloned: false, missing_labels: ["agent:ready", "agent:plan"] };
+const sandbox = { ref: "gh:o/r", path: "/home/me/repos/r", plan_first: false, plan_first_mode: "never", cloned: true, missing_labels: [] };
+const notes = {
+  ref: "gh:o/notes",
+  path: "/home/me/repos/notes",
+  plan_first: true,
+  plan_first_mode: "auto",
+  cloned: false,
+  missing_labels: ["agent:ready", "agent:plan"],
+};
 const projects = (enabled: boolean, ...items: unknown[]) => ({ status: 200, body: { host: "ubuntu-a", enabled, items } });
 
 describe("the projects of the settings", () => {
@@ -47,11 +54,33 @@ describe("the projects of the settings", () => {
     const rows = within(section).getAllByRole("listitem");
     expect(rows).toHaveLength(2);
     // The one with a problem comes first, as a card; the one with none is a line.
-    expect(rows[0]).toHaveTextContent("計画から始める");
+    expect(rows[0]).toHaveTextContent("必要なら計画から始める");
     expect(rows[0]).toHaveTextContent("agent:ready、agent:plan");
     expect(rows[1]).not.toHaveTextContent("gh:o/r");
     expect(within(rows[1]).getByText("o/r").nextElementSibling).toHaveTextContent("GitHub");
     expect(rows[1]).toHaveTextContent("すぐに実装する");
+  });
+
+  it("name each of the three starts", async () => {
+    const always = { ...sandbox, plan_first: true, plan_first_mode: "always" };
+    const auto = { ...sandbox, ref: "gh:o/a", plan_first: true, plan_first_mode: "auto" };
+    answer({ "GET /api/projects": projects(true, always, auto) });
+    settings();
+    const section = await screen.findByRole("region", { name: "プロジェクト" });
+    await waitFor(() => expect(within(section).getAllByRole("listitem")).toHaveLength(2));
+    const rows = within(section).getAllByRole("listitem");
+    expect(rows[0]).toHaveTextContent("必ず計画から始める");
+    expect(rows[1]).toHaveTextContent("必要なら計画から始める");
+  });
+
+  it("fall back on the boolean of an older inbox service", async () => {
+    const old = { ref: "gh:o/r", path: "/home/me/repos/r", plan_first: true, cloned: true, missing_labels: [] };
+    answer({ "GET /api/projects": projects(true, old) });
+    settings();
+    const row = await screen.findByRole("listitem");
+    expect(row).toHaveTextContent("計画から始める");
+    expect(row).not.toHaveTextContent("必要なら");
+    expect(row).not.toHaveTextContent("必ず");
   });
 
   it("say to check the agent's token when a project has no clone", async () => {
@@ -77,11 +106,17 @@ describe("the projects of the settings", () => {
     expect(within(section).queryByRole("button", { name: "追加する" })).toBeNull();
   });
 
-  it("start with plan first on, and ask for the reference only", async () => {
+  it("offer the three starts with auto chosen, and ask for the reference only", async () => {
     answer({ "GET /api/projects": projects(true, sandbox) });
     settings();
     const section = await screen.findByRole("region", { name: "プロジェクト" });
-    expect(await within(section).findByRole("checkbox", { name: /計画から始める/ })).toBeChecked();
+    const group = await within(section).findByRole("group", { name: /agent:ready/ });
+    const radios = within(group).getAllByRole("radio");
+    expect(radios).toHaveLength(3);
+    expect(within(group).getByRole("radio", { name: /^必要なら計画から始める/ })).toBeChecked();
+    expect(within(group).getByRole("radio", { name: /^必ず計画から始める/ })).not.toBeChecked();
+    expect(within(group).getByRole("radio", { name: /^すぐに実装する/ })).not.toBeChecked();
+    expect(within(section).queryByRole("checkbox")).toBeNull();
     expect(within(section).getAllByRole("textbox")).toHaveLength(1);
     expect(within(section).getByRole("textbox", { name: "追加するプロジェクト" })).toBeInTheDocument();
   });
@@ -106,7 +141,7 @@ describe("the projects of the settings", () => {
     expect(within(section).getByText("switchboard relay hook add gh:o/notes")).toBeInTheDocument();
     expect(within(section).getByText(/登録するまでは、ポーリングで扱います/)).toBeInTheDocument();
     const post = calls.find((c) => c.key === "POST /api/projects");
-    expect(JSON.parse(String(post?.init?.body))).toEqual({ ref: "gh:o/notes", plan_first: true });
+    expect(JSON.parse(String(post?.init?.body))).toEqual({ ref: "gh:o/notes", plan_first: true, plan_first_mode: "auto" });
     expect(new Headers(post?.init?.headers).get("Content-Type")).toBe("application/json");
     expect(field).toHaveValue("");
   });
@@ -125,21 +160,35 @@ describe("the projects of the settings", () => {
     expect(field).toHaveValue("gh:o/r");
   });
 
-  it("send plan first off when it is turned off", async () => {
+  it("send the start chosen: never", async () => {
     const calls = answer({
       "GET /api/projects": projects(true, sandbox),
-      "POST /api/projects": { status: 201, body: { project: { ...notes, plan_first: false } } },
+      "POST /api/projects": { status: 201, body: { project: { ...notes, plan_first: false, plan_first_mode: "never" } } },
     });
     settings();
-    await userEvent.click(await screen.findByRole("checkbox", { name: /計画から始める/ }));
+    await userEvent.click(await screen.findByRole("radio", { name: /^すぐに実装する/ }));
     await userEvent.type(screen.getByRole("textbox", { name: "追加するプロジェクト" }), "gh:o/notes");
     await userEvent.click(screen.getByRole("button", { name: "追加する" }));
     await waitFor(() => expect(calls.some((c) => c.key === "POST /api/projects")).toBe(true));
     const post = calls.find((c) => c.key === "POST /api/projects");
-    expect(JSON.parse(String(post?.init?.body))).toEqual({ ref: "gh:o/notes", plan_first: false });
+    expect(JSON.parse(String(post?.init?.body))).toEqual({ ref: "gh:o/notes", plan_first: false, plan_first_mode: "never" });
     // Without a relay there is no webhook command to leave under the list.
     await screen.findByText(/を追加しました/);
     expect(screen.queryByText(/webhook/)).toBeNull();
+  });
+
+  it("send the start chosen: always", async () => {
+    const calls = answer({
+      "GET /api/projects": projects(true, sandbox),
+      "POST /api/projects": { status: 201, body: { project: { ...notes, plan_first_mode: "always" } } },
+    });
+    settings();
+    await userEvent.click(await screen.findByRole("radio", { name: /^必ず計画から始める/ }));
+    await userEvent.type(screen.getByRole("textbox", { name: "追加するプロジェクト" }), "gh:o/notes");
+    await userEvent.click(screen.getByRole("button", { name: "追加する" }));
+    await waitFor(() => expect(calls.some((c) => c.key === "POST /api/projects")).toBe(true));
+    const post = calls.find((c) => c.key === "POST /api/projects");
+    expect(JSON.parse(String(post?.init?.body))).toEqual({ ref: "gh:o/notes", plan_first: true, plan_first_mode: "always" });
   });
 
   it("read the instructions again, so that the new project has its field", async () => {

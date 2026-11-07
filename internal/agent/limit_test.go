@@ -250,7 +250,7 @@ func TestResumedPlanRunGetsNoLimitSentence(t *testing.T) {
 }
 
 func TestApprovedRunResumesAsApproved(t *testing.T) {
-	w := newLimit(t, "", func(c *config.Config) { c.Projects[0].PlanFirst = true })
+	w := newLimit(t, "", func(c *config.Config) { c.Projects[0].PlanFirst = config.PlanAlways })
 	w.step(1, planDecl("1. Add greeting.txt."))
 	w.step(2, limited(w.now().Add(time.Hour)))
 	w.step(3, commit("greeting.txt", "hi")+done("Added greeting.txt."))

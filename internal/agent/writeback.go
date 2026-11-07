@@ -45,6 +45,9 @@ type outcome struct {
 	msg texts
 	// next, set instead of a state, hands the issue to a fix run of a refused push; such an outcome is not written.
 	next *fixInfo
+	// skip, set instead of a state, is the comment (without its marker) of a plan run that skipped the questions and
+	// the approval: it is posted, and the issue handed to the run that implements the plan; the outcome is not written.
+	skip string
 }
 
 func (o *outcome) result() string {

@@ -44,6 +44,17 @@ func TestProjectIsAdded(t *testing.T) {
 	}
 }
 
+func TestProjectIsAddedWithThePlanFirstMode(t *testing.T) {
+	f := &fakeInbox{}
+	w := do(newServer(f), "POST", "/api/projects", `{"ref":"gh:o/notes","plan_first":true,"plan_first_mode":"auto"}`, good)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body)
+	}
+	if len(f.added) != 1 || f.added[0].PlanFirstMode != "auto" {
+		t.Fatalf("added = %+v, want plan_first_mode auto passed on", f.added)
+	}
+}
+
 func TestAddingAProjectFromElsewhereIsRefused(t *testing.T) {
 	for name, h := range map[string]map[string]string{
 		"other origin":  {"Content-Type": "application/json", "Origin": "https://evil.example"},

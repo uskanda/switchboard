@@ -46,7 +46,7 @@ func TestRealClaudePlanSettingsRefuseWrites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d, problem := planDeclaration(res)
+	d, problem := planDeclaration(res, false)
 	t.Logf("declaration: %+v (%s); denials: %+v", d, problem, res.Denials)
 	if problem != "" {
 		t.Fatalf("no plan declaration: %s", problem)
