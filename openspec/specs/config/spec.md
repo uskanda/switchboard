@@ -324,3 +324,39 @@ webhookの一覧の各項目は、プロジェクトの `ref`、`hook-key`、シ
 #### Scenario: 動作中に計画の優先をオンにした
 - **WHEN** `switchboard agent run` が動いている間に、`<agent.prefer_plan>` をfalseからtrueに変えて保存する
 - **THEN** 10秒ほどのうちに新しい値が反映され、再起動を求めるログは残らない
+
+### Requirement: 受信箱の認証の設定
+`config.yaml` の `<inbox.auth>` に、GitLabのOpenID Connectのアプリケーションと、ログインできる人を書けなければならない（MUST）。
+アプリケーションは、client id（`<client_id>`）と、client secretのSecret Serviceでの名前（`<client_secret_ref>`）で書く。
+ログインできる人は、GitLabのグループのフルパスの列（`<member_groups>`、`<admin_groups>`）と、GitLabのユーザー名1つ（`<owner>`）で書く。
+`<inbox.auth>` を書いたとき、次のどれかなら設定の誤りとしなければならない（MUST）。
+
+- `forges.gitlab` が無い
+- `<client_id>` か `<client_secret_ref>` が空である
+- `<member_groups>`、`<admin_groups>`、`<owner>` がどれも空である
+
+#### Scenario: GitLabの無い構成で認証を書く
+- **WHEN** `forges.gitlab` の無い設定に `<inbox.auth>` を書く
+- **THEN** コマンドは0以外の終了コードで終わり、認証にはGitLabの設定が要ると報告する
+
+#### Scenario: ログインできる人を書いていない
+- **WHEN** `<inbox.auth>` に `<client_id>` と `<client_secret_ref>` だけを書く
+- **THEN** コマンドは0以外の終了コードで終わり、ログインできる人を書くよう報告する
+
+### Requirement: 認証を設定したときのエージェントの身元
+`<inbox.auth>` を書いたとき、エージェントの身元は、同じフォージの `trusted_authors` にあってはならない（MUST NOT）。エージェントの身元は、フォージの `agent_identity` と、プロジェクトごとの `agent_identity` である。あれば、設定の誤りとしなければならない（MUST）。
+
+#### Scenario: エージェントが人のアカウントで投稿する構成
+- **WHEN** `<inbox.auth>` があり、`forges.gitlab.agent_identity` と `trusted_authors.gitlab` に同じ `alice` がある
+- **THEN** コマンドは0以外の終了コードで終わり、認証を使うときはエージェントにbotの身元が要ると報告する
+
+### Requirement: 認証の設定の検査
+`switchboard doctor` は、`<inbox.auth>` を書いたとき、次の場合に警告を出さなければならない（MUST）。
+
+- GitLabの共有の受信箱のトークンが、書き込みのスコープ（`api`）を持つ
+- `<owner>` が `trusted_authors.gitlab` に無い
+- GitHubのプロジェクトがあり、GitHubの受信箱のトークンの持ち主が `trusted_authors.github` に無い
+
+#### Scenario: 共有のトークンがapiのスコープを持つ
+- **WHEN** `<inbox.auth>` を書き、GitLabの `inbox_token_ref` のトークンが `api` のスコープを持つ
+- **THEN** `switchboard doctor` は、共有のトークンを `read_api` にするよう警告する。終了コードは警告で変わらない
