@@ -52,19 +52,59 @@ func threadFrom(start, mode string, posts ...entry) *plan {
 
 func TestModeOfTheStartLabels(t *testing.T) {
 	a := &Agent{Config: &config.Config{Labels: config.Labels{Ready: "agent:ready", Plan: "agent:plan", Go: "agent:go"}}}
-	planFirst := config.Project{PlanFirst: true}
+	always, auto, never := config.Project{PlanFirst: config.PlanAlways}, config.Project{PlanFirst: config.PlanAuto}, config.Project{PlanFirst: config.PlanNever}
 	for _, c := range []struct {
 		p     config.Project
 		label string
 		want  string
 	}{
-		{planFirst, "agent:ready", marker.ModePlan},
+		{always, "agent:ready", marker.ModePlan},
+		{auto, "agent:ready", marker.ModeAuto},
+		{never, "agent:ready", marker.ModeDirect},
 		{config.Project{}, "agent:ready", marker.ModeDirect},
 		{config.Project{}, "agent:plan", marker.ModePlan},
-		{planFirst, "agent:go", marker.ModeDirect},
+		{auto, "agent:plan", marker.ModePlan},
+		{never, "agent:plan", marker.ModePlan},
+		{always, "agent:go", marker.ModeDirect},
+		{auto, "agent:go", marker.ModeDirect},
 	} {
 		if got := a.modeFor(c.p, c.label); got != c.want {
-			t.Errorf("modeFor(plan_first=%v, %s) = %q, want %q", c.p.PlanFirst, c.label, got, c.want)
+			t.Errorf("modeFor(plan_first=%q, %s) = %q, want %q", c.p.PlanFirst, c.label, got, c.want)
+		}
+	}
+}
+
+// skipped is the comment a plan run posts when it skips the questions and the approval: a claim in direct mode.
+func skipped() entry {
+	return agentPost(marker.Marker{V: 1, State: marker.Running, Mode: marker.ModeDirect, Reason: marker.PlanSkipped})
+}
+
+func failed() entry {
+	return agentPost(marker.Marker{V: 1, State: marker.Waiting, Reason: "error"})
+}
+
+func TestOnlyTheFirstPlanRunOfAnAutoCycleMaySkip(t *testing.T) {
+	for _, c := range []struct {
+		name      string
+		pl        *plan
+		kind      runKind
+		skippable bool
+	}{
+		{"a start in auto mode", started(marker.ModeAuto), planRun, true},
+		{"a start in plan mode", started(marker.ModePlan), planRun, false},
+		{"a start in direct mode", started(marker.ModeDirect), directRun, false},
+		{"a reply after a failed first run", thread(claimOf("auto"), failed(), reply("try again")), planRun, true},
+		{"a reply to the questions", thread(claimOf("auto"), asked(2), reply("/ok")), planRun, false},
+		{"a reply to the plan", thread(claimOf("auto"), planned(), reply("rename it")), planRun, false},
+		{"the plan approved", thread(claimOf("auto"), planned(), reply("/ok")), approvedRun, false},
+		{"a reply in a plan cycle", thread(claimOf("plan"), failed(), reply("try again")), planRun, false},
+		{"questions of an earlier cycle", thread(claimOf("plan"), asked(2), doneAt(), claimOf("auto"), failed(), reply("again")), planRun, true},
+		{"a reply after the skip", thread(claimOf("auto"), skipped(), question(), reply("yes")), directRun, false},
+		{"a reply after the skip ended done", thread(claimOf("auto"), skipped(), doneAt(), reply("more")), directRun, false},
+	} {
+		c.pl.classify("/ok")
+		if c.pl.kind != c.kind || c.pl.skippable != c.skippable {
+			t.Errorf("%s: kind=%v skippable=%v, want %v %v", c.name, c.pl.kind, c.pl.skippable, c.kind, c.skippable)
 		}
 	}
 }

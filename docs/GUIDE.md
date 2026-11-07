@@ -133,9 +133,11 @@ switchboard reply 1 "Bで進めてください"
 
 実装の前に、エージェントにissueのコメントで質問させ、計画を承認してから実装させられる。始めるときに付けるラベルは、いつも1つである。
 
-- `agent:ready`：プロジェクトの `plan_first` に従う。`plan_first: true` なら計画から始め、無いか `false` ならすぐ実装する
+- `agent:ready`：プロジェクトの `plan_first` に従う。`always` なら必ず計画から始め、`auto` なら必要なときだけ計画から始める。無いか `never` なら、すぐ実装する。前の版の `true` は `always`、`false` は `never` として読む
 - `agent:plan`：計画から始める
 - `agent:go`：すぐ実装する
+
+`plan_first: auto` の `agent:ready` では、最初の計画の実行が、計画の段階を省くかを決める。省くのは、issueと信頼済みのコメントで設計上の判断がすべて決まっていて、聞くことが1つも無いときだけである。迷えば質問する。省くときは、「要件が明確なので、質問と承認を省いて実装します」と書いた計画をコメントし、待たずに同じ着手のまま実装の実行に移る。実装の実行は、そのコメントの計画を実装する。何を作るつもりで進めたかは、このコメントでissueに残る。省いたあとの返答は、`agent:go` で始めた周期と同じく実装の実行で扱う。省けるのは周期の最初の計画の実行だけで、一度質問をしたissueは、今までどおり計画の承認を待つ。
 
 計画の段階の実行は、ファイルを1つも変えない。使えるのは、読み取りのツールと `git status`、`git diff`、`git log` だけである。終わったあとにworktreeの変更があれば捨てる。pushもPRの作成もしない。実行は、決まっていない判断を推奨の答えとともに1回のコメントでまとめて聞く。決めることが無くなったら、計画をコメントする。どちらも `agent:waiting` になり、待ちの理由は `plan-questions` と `plan` である。
 
@@ -152,7 +154,7 @@ plan:
   approve_word: /ok
 projects:
   - ref: gh:YOUR_GITHUB_USER/switchboard
-    plan_first: true
+    plan_first: auto                  # always、auto、never のどれか
 ```
 
 計画の段階の実行には、利用者の追加の指示を渡せる。全プロジェクトに1つと、プロジェクトごとに1つで、両方あれば全体、プロジェクトの順につなげる。実装の実行には渡らない（実装の実行には、別の `run.md` を渡せる）。指示は、設定ファイルと同じディレクトリの `instructions/` の下にある、ただのファイルである。全体は `instructions/plan.md` である。GitHubのプロジェクトの指示は `instructions/gh/<owner>/<repo>/plan.md` に置く。GitLabなら `instructions/gl/<group>/<project>/plan.md` である。

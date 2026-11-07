@@ -2,7 +2,8 @@
 //
 //	<!-- switchboard v=1 host=<host> session=<id> run=<id> state=<state> reason=<reason> ack=<comment-id> at=<RFC3339> -->
 //
-// A claim made from a start label also carries mode=<plan|direct>, and a post of plan questions q=<last number>.
+// A claim made from a start label also carries mode=<plan|auto|direct>, and a post of plan questions q=<last number>.
+// A plan run that skips the questions and the approval posts its plan as a claim with mode=direct reason=plan-skipped.
 // A done post that names a change request carries sha=<the commit pushed> and cr=<its number>; the done post of a fix
 // run also carries fix=<ci|push|conflict>, what it fixed. A queued comment on a paused host, and the wait of a fix run
 // that hit a usage limit, carry until=<RFC3339>, when the host starts runs again; the queued comment of a run that hit
@@ -29,10 +30,10 @@ type Marker struct {
 	Session string
 	Run     string
 	State   string // running (the claim of a run), progress (its progress comment), queued, waiting, done, attachment
-	Reason  string // for waiting: question, permission, error, verify, limit, plan-questions, plan, push, ci, conflict; for queued: the limit or the pause; for running: fix on a fix run's claim
+	Reason  string // for waiting: question, permission, error, verify, limit, plan-questions, plan, push, ci, conflict; for queued: the limit or the pause; for running: fix on a fix run's claim, plan-skipped on the claim of a plan run's skip
 	Ack     int64  // the last comment ID the run took in
 	At      time.Time
-	Mode    string // on a claim made from a start label: plan or direct
+	Mode    string // on a claim made from a start label: plan, auto or direct; direct on the claim of a plan run's skip
 	Q       int    // on a post of plan questions: the number of its last question
 	SHA     string // on a done post: the commit pushed, whose CI the agent watches
 	CR      int    // on a done post: the number of the change request
@@ -43,10 +44,15 @@ type Marker struct {
 
 // The modes a claim names, and the reasons of the waits in the plan stage.
 const (
-	ModePlan      = "plan"
-	ModeDirect    = "direct"
+	ModePlan   = "plan"
+	ModeDirect = "direct"
+	// ModeAuto is a cycle that plans, unless its first plan run finds nothing left to ask (plan_first: auto).
+	ModeAuto      = "auto"
 	PlanQuestions = "plan-questions"
 	PlanReady     = "plan"
+	// PlanSkipped marks the claim, in direct mode, that a plan run of an auto cycle posts with its plan when it skips
+	// the questions and the approval; the implementing run it hands over to carries its run.
+	PlanSkipped = "plan-skipped"
 	// The limits a queued issue waits on: agent.max_parallel, or its project's max_parallel.
 	QueuedHost    = "max-parallel"
 	QueuedProject = "project-max-parallel"

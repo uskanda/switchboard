@@ -237,6 +237,22 @@ func TestAddProjectPostsJSON(t *testing.T) {
 	}
 }
 
+func TestAddProjectRequestMode(t *testing.T) {
+	for _, c := range []struct {
+		req  AddProjectRequest
+		want string
+	}{
+		{AddProjectRequest{PlanFirstMode: PlanAuto}, PlanAuto},
+		{AddProjectRequest{PlanFirst: true, PlanFirstMode: PlanNever}, PlanNever},
+		{AddProjectRequest{PlanFirst: true}, PlanAlways},
+		{AddProjectRequest{}, PlanNever},
+	} {
+		if got := c.req.Mode(); got != c.want {
+			t.Errorf("%+v.Mode() = %q, want %q", c.req, got, c.want)
+		}
+	}
+}
+
 func TestAddProjectRefusalsAreTyped(t *testing.T) {
 	for code, want := range map[string]error{
 		CodeAddingDisabled: ErrAddingDisabled, CodeInvalid: ErrInvalid, CodeProjectExists: ErrProjectExists,

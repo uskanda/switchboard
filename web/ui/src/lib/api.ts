@@ -209,11 +209,32 @@ export type Instructions = { host: string; items: Instruction[] };
 export type Project = {
   ref: string;
   path: string;
+  /** plan_first is true when plan_first_mode is always or auto; an older inbox service gives only this. */
   plan_first: boolean;
+  plan_first_mode?: PlanFirstMode;
   cloned: boolean;
   missing_labels: string[];
   labels_error?: string;
 };
+
+/**
+ * PlanFirstMode is how a project's ready label starts: always with a plan that waits for approval, with a plan only
+ * when the agent finds something to ask (auto), or never.
+ */
+export type PlanFirstMode = "always" | "auto" | "never";
+
+/**
+ * PlanStart is how a project's ready label starts, as far as the inbox service says: its plan_first_mode, or, from an
+ * older service that gives only the boolean, "plan" for true and "never" for false. It is undefined when the service
+ * says neither.
+ */
+export type PlanStart = PlanFirstMode | "plan";
+
+export function planStartOf(p: { plan_first?: boolean; plan_first_mode?: PlanFirstMode }): PlanStart | undefined {
+  if (p.plan_first_mode) return p.plan_first_mode;
+  if (p.plan_first === undefined) return undefined;
+  return p.plan_first ? "plan" : "never";
+}
 
 /** Projects are host's; enabled says whether one may be added (inbox.project_root is set). */
 export type Projects = { host: string; enabled: boolean; items: Project[] };
@@ -262,11 +283,12 @@ export const saveInstructions = (target: string, kind: InstructionKind, content:
 
 export const getProjects = () => call<Projects>("/api/projects");
 
-export const addProject = (ref: string, planFirst: boolean) =>
+/** addProject sends the mode, and the boolean an older inbox service reads instead (true for always and auto). */
+export const addProject = (ref: string, mode: PlanFirstMode) =>
   call<AddedProject>("/api/projects", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ref, plan_first: planFirst }),
+    body: JSON.stringify({ ref, plan_first: mode !== "never", plan_first_mode: mode }),
   });
 
 /**
@@ -280,8 +302,11 @@ export type StartKind = "ready" | "plan" | "go" | "none";
  * configuration names, then none.
  */
 export type IssueTargets = {
-  /** plan_first is whether the project's ready label starts with a plan; an older inbox service leaves it out. */
-  items: { ref: string; host: string; plan_first?: boolean }[];
+  /**
+   * plan_first_mode is how the project's ready label starts, and plan_first whether it may start with a plan. An older
+   * inbox service leaves plan_first_mode out, and one older still both.
+   */
+  items: { ref: string; host: string; plan_first?: boolean; plan_first_mode?: PlanFirstMode }[];
   starts: { kind: StartKind; label: string }[];
 };
 

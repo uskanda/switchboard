@@ -65,7 +65,7 @@ func TestTheStartLabelSetsTheModeOfTheClaim(t *testing.T) {
 }
 
 func TestPlanFirstMakesTheReadyLabelPlan(t *testing.T) {
-	x := newH(t, "", func(c *config.Config) { c.Projects[0].PlanFirst = true })
+	x := newH(t, "", func(c *config.Config) { c.Projects[0].PlanFirst = config.PlanAlways })
 	x.f.AddLabel(x.ref, "agent:ready", x.master)
 	x.poll()
 	x.settle()

@@ -107,6 +107,41 @@ func TestPlanSystemPromptAsksAndChangesNothing(t *testing.T) {
 	}
 }
 
+func TestPlanSkipSystemPromptSaysWhenToSkip(t *testing.T) {
+	plain := PlanSystem("ja", "/ok", "")
+	if strings.Contains(plain, `"implement"`) || strings.Contains(plain, "## Skipping") {
+		t.Fatalf("a plan run that may not skip is told how to:\n%s", plain)
+	}
+	s := PlanSkipSystem("ja", "/ok", "Mind the API names.")
+	for _, want := range []string{"## Skipping the questions and the approval", `status "implement"`, `"plan"`, `"title"`,
+		"settle every design decision", "not a single question", "When in doubt", `status "questions"`,
+		`Write "title", "questions", "plan" and "summary" in Japanese.`} {
+		if !strings.Contains(s, want) {
+			t.Errorf("the plan system prompt that may skip lacks %q:\n%s", want, s)
+		}
+	}
+	skip, extra, lang := strings.Index(s, "## Skipping"), strings.Index(s, "Mind the API names."), strings.Index(s, "## Language")
+	if skip < 0 || skip > lang || extra < lang {
+		t.Fatalf("the skip section is not before the language, or the user's instructions are not last:\n%s", s)
+	}
+	if !strings.HasPrefix(s, plain[:strings.Index(plain, "## Language")]) {
+		t.Fatalf("the skip changes the rules before it:\n%s", s)
+	}
+}
+
+func TestSkippedSystemNamesThePlan(t *testing.T) {
+	s := SkippedSystem("ja", "main", 4242)
+	sys := System("ja", "main")
+	if !strings.HasPrefix(s, sys) {
+		t.Fatalf("SkippedSystem changed the rules of System:\n%s", s)
+	}
+	for _, want := range []string{"comment 4242", "Implement that plan", "skipped", "Do not reopen decisions", `status "waiting" only for a decision the plan does not cover`} {
+		if !strings.Contains(s[len(sys):], want) {
+			t.Errorf("the section lacks %q:\n%s", want, s[len(sys):])
+		}
+	}
+}
+
 func TestPlanSystemPromptAsksForATitle(t *testing.T) {
 	s := PlanSystem("ja", "/ok", "")
 	for _, want := range []string{`- "title" (required with both statuses)`, `Write "title", "questions", "plan" and "summary" in Japanese.`} {

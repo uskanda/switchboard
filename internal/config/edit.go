@@ -25,7 +25,7 @@ type NewProject struct {
 	Path       string
 	Host       string
 	BaseBranch string
-	PlanFirst  bool
+	PlanFirst  PlanFirst // written as never when empty
 }
 
 // Editor adds projects to a configuration file. It writes the new item as text after the last project, so that
@@ -139,7 +139,7 @@ func (e *Editor) insert(np NewProject) ([]byte, error) {
 		}
 		b.WriteString(kv.k + ": " + scalar(kv.v) + "\n")
 	}
-	fmt.Fprintf(&b, "%splan_first: %t\n", strings.Repeat(" ", key), np.PlanFirst)
+	fmt.Fprintf(&b, "%splan_first: %s\n", strings.Repeat(" ", key), np.PlanFirst.Mode())
 
 	end := lastLine(seq.Content[len(seq.Content)-1])
 	if end > len(lines) {
@@ -162,7 +162,7 @@ func (e *Editor) sameExceptAdded(next *Config, np NewProject) error {
 		return errors.New("adding the project would change the projects already configured")
 	}
 	added := got.Projects[n]
-	if added.Ref != np.Ref || added.Host != np.Host || added.BaseBranch != np.BaseBranch || added.PlanFirst != np.PlanFirst ||
+	if added.Ref != np.Ref || added.Host != np.Host || added.BaseBranch != np.BaseBranch || added.PlanFirst != np.PlanFirst.Mode() ||
 		added.Path != expandHome(np.Path) {
 		return errors.New("the added project does not read back as written")
 	}

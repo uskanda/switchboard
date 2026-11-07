@@ -26,6 +26,8 @@ This repository plans every change as an OpenSpec change under openspec/changes/
 - When the issue has an approved plan, record the questions asked in the issue and the answers to them in the
   change's grilling record, then write the proposal, specs, design and tasks from the approved plan. Do not reopen
   decisions the issue already settled.
+- When the issue has a comment that skipped the questions and the approval, record in the grilling record why the
+  questions were skipped and the plan of that comment, then write the other artifacts from that plan.
 - When the issue has no plan, record in the grilling record that the interview was skipped because the run started
   without a plan stage, and write the other artifacts from the issue.
 - Use `openspec instructions <artifact> --change <name> --json` for each artifact's template and rules.
@@ -35,4 +37,4 @@ This repository plans every change as an OpenSpec change under openspec/changes/
 
 ## 確かめ方
 
-計画から始めたissueを1つ承認まで進める。承認のあとの実装の最初のコミットで、`openspec/changes/` に変更ができていればよい。実行の `stream.jsonl` の結果の `permission_denials` に、`Skill` と `openspec` の呼び出しが残っていないことも確かめる。
+計画から始めたissueを1つ承認まで進める。承認のあとの実装の最初のコミットで、`openspec/changes/` に変更ができていればよい。`plan_first: auto` のプロジェクトで質問と承認を省いたissueでは、grillingの記録に、質問を省いた理由と省いたコメントの計画が書かれていればよい。実行の `stream.jsonl` の結果の `permission_denials` に、`Skill` と `openspec` の呼び出しが残っていないことも確かめる。

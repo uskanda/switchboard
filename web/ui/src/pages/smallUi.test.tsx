@@ -232,6 +232,25 @@ describe("the ready start of a new issue", () => {
     expect(within(dialog).getByRole("radio", { name: /agent:ready/ }).closest("label")).toHaveTextContent("このプロジェクトはすぐに実装します");
   });
 
+  it("names each of the three starts of plan_first", async () => {
+    answer({
+      "GET /api/issue-targets": targets([
+        { ref: "gh:o/r", host: "a", plan_first: true, plan_first_mode: "auto" },
+        { ref: "gh:o/x", host: "a", plan_first: true, plan_first_mode: "always" },
+        { ref: "gh:o/y", host: "a", plan_first: false, plan_first_mode: "never" },
+      ]),
+    });
+    const dialog = await openNewIssue();
+    const ready = () => within(dialog).getByRole("radio", { name: /agent:ready/ }).closest("label");
+    expect(ready()).toHaveTextContent("このプロジェクトは必要なら計画から始めます");
+    await userEvent.click(within(dialog).getByRole("combobox", { name: "プロジェクト" }));
+    await userEvent.click(await within(dialog).findByRole("option", { name: "o/x GitHub（担当：a）" }));
+    expect(ready()).toHaveTextContent("このプロジェクトは必ず計画から始めます");
+    await userEvent.click(within(dialog).getByRole("combobox", { name: "プロジェクト" }));
+    await userEvent.click(await within(dialog).findByRole("option", { name: "o/y GitHub（担当：a）" }));
+    expect(ready()).toHaveTextContent("このプロジェクトはすぐに実装します");
+  });
+
   it("adds nothing when the inbox service does not say", async () => {
     answer({ "GET /api/issue-targets": targets([{ ref: "gh:o/r", host: "a" }]) });
     const dialog = await openNewIssue();

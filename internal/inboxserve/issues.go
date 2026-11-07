@@ -52,7 +52,7 @@ func (s *Server) issueTargets(w http.ResponseWriter, r *http.Request) {
 		if !s.sees(r.Context(), p.Ref) {
 			continue
 		}
-		out.Items = append(out.Items, inboxapi.IssueTarget{Ref: p.Ref, Host: p.Host, PlanFirst: p.PlanFirst})
+		out.Items = append(out.Items, inboxapi.IssueTarget{Ref: p.Ref, Host: p.Host, PlanFirst: p.PlanFirst.Plans(), PlanFirstMode: string(p.PlanFirst.Mode())})
 	}
 	send(w, http.StatusOK, out)
 }

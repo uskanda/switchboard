@@ -147,9 +147,49 @@ func TestAddProjectWritesTheProject(t *testing.T) {
 	if got.Project.Ref != "gh:o/notes" || got.Project.Path != "/home/me/repos/notes" || got.Project.Cloned || got.Webhook != "" {
 		t.Errorf("response = %+v, want notes at /home/me/repos/notes, not cloned, no webhook", got)
 	}
-	want := "  - ref: gh:o/notes\n    path: ~/repos/notes\n    host: here\n    base_branch: trunk\n    plan_first: true\n"
+	want := "  - ref: gh:o/notes\n    path: ~/repos/notes\n    host: here\n    base_branch: trunk\n    plan_first: always\n"
 	if !strings.HasSuffix(w.file(), want) {
 		t.Errorf("file:\n%s\nwant it to end in:\n%s", w.file(), want)
+	}
+	if !got.Project.PlanFirst || got.Project.PlanFirstMode != "always" {
+		t.Errorf("project = %+v, want plan_first true and plan_first_mode always", got.Project)
+	}
+}
+
+func TestAddProjectTakesThePlanFirstMode(t *testing.T) {
+	w := withProjects(t, projectsYAML)
+	// plan_first_mode wins over the boolean an older client would send.
+	got, err := w.c.AddProject(ctx, inboxapi.AddProjectRequest{Ref: "gh:o/notes", PlanFirst: false, PlanFirstMode: "auto"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(w.file(), "    plan_first: auto\n") {
+		t.Errorf("file:\n%s\nwant plan_first: auto last", w.file())
+	}
+	if !got.Project.PlanFirst || got.Project.PlanFirstMode != "auto" {
+		t.Errorf("project = %+v, want plan_first true and plan_first_mode auto", got.Project)
+	}
+}
+
+func TestAddProjectWithoutAModeTakesTheBoolean(t *testing.T) {
+	w := withProjects(t, projectsYAML)
+	if _, err := w.c.AddProject(ctx, inboxapi.AddProjectRequest{Ref: "gh:o/notes"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(w.file(), "    plan_first: never\n") {
+		t.Errorf("file:\n%s\nwant plan_first: never last", w.file())
+	}
+}
+
+func TestAddProjectRefusesAnUnknownMode(t *testing.T) {
+	w := withProjects(t, projectsYAML)
+	before := w.file()
+	_, err := w.c.AddProject(ctx, inboxapi.AddProjectRequest{Ref: "gh:o/notes", PlanFirstMode: "sometimes"})
+	if err == nil || !strings.Contains(err.Error(), "plan_first_mode") {
+		t.Errorf("err = %v, want it to name plan_first_mode", err)
+	}
+	if w.file() != before {
+		t.Errorf("the file changed:\n%s", w.file())
 	}
 }
 
