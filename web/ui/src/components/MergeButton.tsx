@@ -165,6 +165,11 @@ export function MergeButton({
   const merging = view?.some((it) => it.ref === issueRef && it.pending === "merge") ?? false;
   const name = changeName(issueRef, number);
   const waiting = autoMerge || later === sha;
+  // later only bridges the time until the list says the merge waits; from then on the list alone says so, so a
+  // cancelled or ended merge gives the button back.
+  useEffect(() => {
+    if (autoMerge) setLater(null);
+  }, [autoMerge]);
 
   useEffect(() => {
     if (ask && !dialog.current?.open) open();

@@ -5,6 +5,7 @@ import { useHeightVar } from "@/lib/height";
 import { asOf, clockText, fullText } from "@/lib/freshness";
 import { useAuth } from "@/lib/auth";
 import { useInbox, type Live } from "@/lib/inbox";
+import { useMinute } from "@/lib/now";
 
 const liveText: Record<Live, string> = {
   connecting: "自動更新に接続しています",
@@ -30,6 +31,8 @@ function statusText(live: Live, inbox: Inbox | null): string {
  */
 function AsOf({ inbox, liveUntil }: { inbox: Inbox; liveUntil: string | null }) {
   const t = asOf(inbox.fetched_at, liveUntil);
+  // The clock text moves on each minute while the list stays as old as it is.
+  useMinute();
   if (!t) return null;
   return (
     <span>

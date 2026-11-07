@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/card";
 import { isWaiting, issuePath, oldestWaiting, timeText, type Item } from "@/lib/api";
 import { LIST_WIDTH_DEFAULT, LIST_WIDTH_MAX, LIST_WIDTH_MIN, LIST_WIDTH_STEP, useListWidth } from "@/lib/paneWidth";
 import { useInbox } from "@/lib/inbox";
+import { useMinute } from "@/lib/now";
 import { usePageTitle } from "@/lib/title";
 import { cn } from "@/lib/utils";
 import { ignoreKey, stepWait } from "@/lib/waits";
@@ -67,6 +68,7 @@ function PaneBorder({ width, setWidth }: { width: number; setWidth: (w: number) 
  * or, while nothing waits, a line that asks to choose one from the list.
  */
 function NothingChosen({ items }: { items: Item[] | null }) {
+  useMinute();
   // The waits as the list shows them: an issue being processed (lib/pending.ts) is not offered.
   const it = oldestWaiting(items ?? []);
   if (!it) return <p className="pt-xl text-muted">左の一覧からissueを選んでください</p>;

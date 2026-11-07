@@ -328,7 +328,7 @@ describe("after a reply", () => {
     const { details, es } = await replied();
     details["gh:o/r#12"] = detail({ waiting: false, state: "running", comments: [question] });
     es.emit("inbox", listing(item({ n: undefined, state: "running", progress: "p", updated_at: later })));
-    expect(await screen.findByText("実行中のため返答できません")).toBeInTheDocument();
+    expect(await screen.findByText("実行中です。質問か完了になると、この画面が自動で切り替わります。")).toBeInTheDocument();
     expect(screen.queryByText(sentText)).toBeNull();
   });
 

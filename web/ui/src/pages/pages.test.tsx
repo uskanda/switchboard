@@ -175,7 +175,7 @@ describe("running issues", () => {
     at("/issue/gh%3Ao%2Fr%2312");
     expect(await screen.findByText(/13:35 1分 Read 2 ｜ 読む/)).toBeInTheDocument();
     expect(screen.getByText(/13:41 7分 Bash 12/)).toBeInTheDocument();
-    expect(screen.getByText("実行中のため返答できません")).toBeInTheDocument();
+    expect(screen.getByText("実行中です。質問か完了になると、この画面が自動で切り替わります。")).toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "返答" })).toBeNull();
     expect(screen.queryByText("?")).toBeNull(); // no reason badge
     expect(screen.getByText("7分経過")).toBeInTheDocument();

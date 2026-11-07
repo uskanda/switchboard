@@ -188,7 +188,7 @@ describe("the keys", () => {
     answer(routes(item(20, { state: "running", running_since: t0 })));
     const user = userEvent.setup();
     at(url(20));
-    expect(await screen.findByText("実行中のため返答できません")).toBeInTheDocument();
+    expect(await screen.findByText("実行中です。質問か完了になると、この画面が自動で切り替わります。")).toBeInTheDocument();
     await user.keyboard("r");
     expect(document.body).toHaveFocus();
   });

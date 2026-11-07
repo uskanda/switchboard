@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { toast } from "@/lib/toast";
 
 /** AuthStatus is GET /api/auth: whether people must log in, who is logged in, and the GitLab they log in on. */
 export type AuthStatus = { enabled: boolean; user?: string; gitlab?: string; admin?: boolean };
@@ -51,11 +52,12 @@ export function AuthGate({ login, children }: { login: (status: AuthStatus) => R
   useEffect(() => {
     let live = true;
     let gone = false;
-    // A session that ended while the status was being read outlives the status: no one is logged in.
-    readStatus().then((s) => live && setStatus(gone ? { ...s, user: undefined } : s));
+    // A session that ended while the status was being read outlives the status: no one is logged in. The inbox
+    // service answers unauthenticated only with the login on, so the login is on even if its status could not be read.
+    readStatus().then((s) => live && setStatus(gone ? { ...s, enabled: true, user: undefined } : s));
     const ended = () => {
       gone = true;
-      setStatus((s) => ({ ...(s ?? { enabled: true }), user: undefined }));
+      setStatus((s) => ({ ...s, enabled: true, user: undefined }));
     };
     window.addEventListener(unauthenticatedEvent, ended);
     return () => {
@@ -63,8 +65,13 @@ export function AuthGate({ login, children }: { login: (status: AuthStatus) => R
       window.removeEventListener(unauthenticatedEvent, ended);
     };
   }, []);
+  // A logout the inbox service did not take leaves the session as it was: the page stays logged in and says so.
   const logout = useCallback(async () => {
-    await fetch("/api/logout", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => {});
+    const res = await fetch("/api/logout", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => null);
+    if (!res?.ok) {
+      toast.error("ログアウトできませんでした", { description: "受信箱のサービス（switchboard inbox serve）に届いているか確かめて、もう一度押してください。" });
+      return;
+    }
     setStatus((s) => (s ? { ...s, user: undefined } : s));
   }, []);
   if (status?.enabled && !status.user) return <>{login(status)}</>;
