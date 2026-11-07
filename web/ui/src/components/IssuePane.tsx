@@ -15,6 +15,7 @@ import { ApiError, getIssue, isWaiting, issuePath, postReply, queueText, stateDi
 import { draftOf, keepDraft } from "@/lib/drafts";
 import { useInbox } from "@/lib/inbox";
 import { useHeightVar } from "@/lib/height";
+import { useMinute } from "@/lib/now";
 import { cachedIssue, rememberIssue } from "@/lib/issueCache";
 import { composeReply, defaultAnswers, parsePlanQuestions, type Answer } from "@/lib/planQuestions";
 import { addedCards, cardsOf, revealAndScroll, targetOf, type Card as ThreadCard } from "@/lib/scrollTarget";
@@ -86,7 +87,7 @@ function PlanHint({ reason, word, answerable }: { reason: string; word: string; 
   if (reason === "ci") {
     return (
       <p className="text-label-md text-muted">
-        返信するとエージェントが実行を再開し、CIの失敗を自動で直す回数を数え直します。
+        返答するとエージェントが実行を再開し、CIの失敗を自動で直す回数を数え直します。
       </p>
     );
   }
@@ -100,7 +101,7 @@ function PlanHint({ reason, word, answerable }: { reason: string; word: string; 
   if (reason === "push") {
     return (
       <p className="text-label-md text-muted">
-        pushが拒否されました。返信する前に、エージェントのトークンかリモートの設定（ブランチの保護など）を確かめてください。
+        pushが拒否されました。返答する前に、エージェントのトークンかリモートの設定（ブランチの保護など）を確かめてください。
       </p>
     );
   }
@@ -155,6 +156,8 @@ const headerHeight = () => parseFloat(getComputedStyle(document.documentElement)
  */
 export function IssuePane({ issueRef }: { issueRef: string }) {
   const { inbox, view, markPending } = useInbox();
+  // The time in the pinned head moves on each minute.
+  useMinute();
   const navigate = useNavigate();
   const item = inbox?.items.find((it) => it.ref === issueRef);
   const key = item ? watchKey(item) : inbox ? "gone" : "first";
@@ -165,7 +168,14 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
   const [reading, setReading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [text, setText] = useState(() => draftOf(issueRef).text);
-  const [sending, setSending] = useState(false);
+  // sendingFor is the issue a reply is on its way to. The pane stays the same as another issue opens, so a reply
+  // sent before that touches only its own issue (send), and the form is held only while that issue is shown.
+  const [sendingFor, setSendingFor] = useState<string | null>(null);
+  const sending = sendingFor === issueRef;
+  const shown = useRef(issueRef);
+  useLayoutEffect(() => {
+    shown.current = issueRef;
+  }, [issueRef]);
   // sentAt is the wait a reply was sent to, or null when none was.
   const [sentAt, setSentAt] = useState<SentMark | null>(null);
   const [choices, setChoices] = useState<{ key: string; answers: Answer[] } | null>(() => draftOf(issueRef).choices);
@@ -294,21 +304,28 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
   const nextButton = useRef<HTMLButtonElement>(null);
 
   async function send(reply: string) {
-    setSending(true);
+    const to = issueRef;
+    setSendingFor(to);
     setError(null);
     try {
-      await postReply(issueRef, reply);
+      await postReply(to, reply);
       if (item && isWaiting(item)) markSent(item);
       // The list shows the issue as being processed until the agent takes the reply up (lib/pending.ts).
-      markPending(issueRef, "reply");
-      justSent.current = true;
-      if (detail) setSentAt(markOf(detail));
-      setText("");
-      setChoices(null);
+      markPending(to, "reply");
+      if (shown.current === to) {
+        justSent.current = true;
+        if (detail) setSentAt(markOf(detail));
+        setText("");
+        setChoices(null);
+      } else {
+        // Another issue opened meanwhile: the reply's own issue loses its draft, and the shown one is left alone.
+        keepDraft(to, { text: "", choices: null });
+      }
     } catch (err) {
-      setError(failure(err));
+      if (shown.current === to) setError(failure(err));
+      else toast.error(failure(err), { description: "返答の書きかけは、そのissueに残っています。" });
     } finally {
-      setSending(false);
+      setSendingFor((s) => (s === to ? null : s));
     }
   }
 
@@ -412,8 +429,8 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
               {queued && <span>{queueText(detail.reason)}</span>}
               <span>{detail.host}</span>
               <span>{timeText(running ? "running" : queued ? "queued" : finished ? "done" : "waiting", detail.since)}</span>
-              <a href={detail.url} className="inline-flex min-h-11 items-center underline" target="_blank" rel="noreferrer">
-                フォージで開く（新しいタブ）
+              <a href={detail.url} className="inline-flex min-h-11 items-center underline" target="_blank" rel="noreferrer" aria-label="フォージで開く（新しいタブ）">
+                フォージで開く ↗
               </a>
               {reading && (
                 <span role="status" aria-label="更新を取得中" className="inline-flex items-center gap-xs">
@@ -560,7 +577,7 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
               )}
             </form>
           )}
-          {running && !sent && !showForm && <p className="text-muted">実行中のため返答できません</p>}
+          {running && !sent && !showForm && <p className="text-muted">実行中です。質問か完了になると、この画面が自動で切り替わります。</p>}
           {queued && !replyable && !sent && !showForm && <p className="text-muted">順番待ちのため、まだ返答は要りません</p>}
           {!replyable && !running && !queued && !sent && !showForm && <p className="text-muted">このissueは待ちではありません。返答は送れません。</p>}
         </>

@@ -44,7 +44,7 @@ describe("waits on a failure after the work", () => {
     at("/issue/gh%3Ao%2Fr%2312");
     expect(await screen.findByText(/The CI of #48 failed\./)).toBeInTheDocument();
     expect(screen.getByText("ci")).toBeInTheDocument();
-    expect(screen.getByText(/自動で直す回数/)).toHaveTextContent("返信すると");
+    expect(screen.getByText(/自動で直す回数/)).toHaveTextContent("返答すると");
     expect(screen.queryByRole("button", { name: /承認する/ })).toBeNull();
   });
 

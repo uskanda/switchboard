@@ -14,6 +14,7 @@ import { useFlip } from "@/lib/flip";
 import { groupByProject, type ProjectGroup } from "@/lib/group";
 import { useGroupByProject } from "@/lib/groupPref";
 import { useInbox } from "@/lib/inbox";
+import { useMinute } from "@/lib/now";
 import type { ViewItem } from "@/lib/pending";
 import { cn } from "@/lib/utils";
 
@@ -70,7 +71,8 @@ function cells(it: ViewItem) {
       ) : (
         <span className="text-label-md font-medium">完了</span>
       ),
-      line: "closeすると一覧から消えます。コメントすると作業を再開します",
+      // What closing and commenting do is said once, under the heading of the section.
+      line: "",
       time: age(it.done_since ?? null),
       timeWords: timeText("done", it.done_since),
     };
@@ -130,7 +132,7 @@ function Row({ it, selected, grouped }: { it: ViewItem; selected?: string; group
             {grouped && <IssueNumber it={it} />}
             {it.title}
           </span>
-          <span className="block truncate text-label-md text-muted">{c.line}</span>
+          {c.line && <span className="block truncate text-label-md text-muted">{c.line}</span>}
         </Link>
         <ChangeLink it={it} />
       </TableCell>
@@ -177,7 +179,7 @@ function CardList({ items, selected, grouped }: { items: ViewItem[]; selected?: 
                   <span>{it.host}</span>
                   <span>{c.timeWords}</span>
                 </span>
-                <span className="text-label-md text-muted break-words">{c.line}</span>
+                {c.line && <span className="text-label-md text-muted break-words">{c.line}</span>}
               </Link>
               <ChangeLink it={it} className="border-t border-outline px-lg pt-sm pb-lg" />
             </Card>
@@ -292,6 +294,8 @@ function GroupToggle({ on, onChange }: { on: boolean; onChange: (on: boolean) =>
  */
 export function InboxList({ selected }: { selected?: string }) {
   const { inbox, view, error } = useInbox();
+  // The times of the rows move on each minute, with or without a new listing.
+  useMinute();
   const [grouped, setGrouped] = useGroupByProject();
   const root = useRef<HTMLDivElement>(null);
   useFlip(root, view !== null);
@@ -332,6 +336,7 @@ export function InboxList({ selected }: { selected?: string }) {
       {done.length > 0 && (
         <section className="flex flex-col gap-sm">
           <h2 className="text-label-md font-semibold text-muted">完了（close待ち）</h2>
+          <p className="text-label-md text-muted">closeすると一覧から消えます。コメントすると作業を再開します</p>
           <Items items={done} timeHead="完了" selected={selected} grouped={grouped} />
         </section>
       )}
