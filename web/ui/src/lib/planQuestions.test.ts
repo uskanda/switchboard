@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { smarternews80 } from "@/lib/planQuestions.fixture";
-import { composeReply, defaultAnswers, groupsOf, parsePlanQuestions, withoutAnswerHint, type Question } from "@/lib/planQuestions";
+import { composeReply, decidedBefore, defaultAnswers, groupsOf, parsePlanQuestions, questionState, setNoteOnly, splitHead, withoutAnswerHint, type Question } from "@/lib/planQuestions";
 
 const labels = (q: Question) => groupsOf(q).map((g) => g.options.map((o) => o.label).join(""));
 
@@ -180,5 +180,148 @@ describe("withoutAnswerHint", () => {
     const tail = "変更を捨てました。\n\n推奨どおりでよければ `/ok`、変えたい問いがあれば `/ok q2はB` のように返答してください。";
     expect(withoutAnswerHint(tail)).toBe("変更を捨てました。");
     expect(withoutAnswerHint("Reply `/ok` to accept the recommended answers, or `/ok q2 is B` to change some of them.")).toBe("");
+  });
+});
+
+describe("splitHead", () => {
+  it("shows the heading and the plan's title line, and folds what the agent looked at", () => {
+    const head = "### 計画についての質問\n\n**計画：** 題の行\n\n`a.go` と `b.go` を読みました。\n\n今は真偽値です。";
+    expect(splitHead(head)).toEqual({ shown: "### 計画についての質問\n\n**計画：** 題の行", folded: "`a.go` と `b.go` を読みました。\n\n今は真偽値です。" });
+  });
+
+  it("finds the title line in English", () => {
+    const head = "### The agent has questions for the plan\n\n**Plan:** A title\n\nI read a.go.";
+    expect(splitHead(head)).toEqual({ shown: "### The agent has questions for the plan\n\n**Plan:** A title", folded: "I read a.go." });
+  });
+
+  it("folds nothing without a title line", () => {
+    const head = "### 計画についての質問\n\n`a.go` を読みました。";
+    expect(splitHead(head)).toEqual({ shown: head, folded: "" });
+  });
+
+  it("folds nothing when nothing follows the title line", () => {
+    expect(splitHead("### 計画についての質問\n\n**計画：** 題")).toEqual({ shown: "### 計画についての質問\n\n**計画：** 題", folded: "" });
+  });
+});
+
+describe("setNoteOnly", () => {
+  it("clears every choice when it is set, and gives the choices back when it is cleared", () => {
+    const on = setNoteOnly({ choices: ["B", "X"], note: "" }, true);
+    expect(on.noteOnly).toBe(true);
+    expect(on.choices).toEqual([null, null]);
+    const off = setNoteOnly(on, false);
+    expect(off.noteOnly).toBe(false);
+    expect(off.choices).toEqual(["B", "X"]);
+  });
+
+  it("keeps the note either way", () => {
+    expect(setNoteOnly({ choices: ["A"], note: "メモ" }, true).note).toBe("メモ");
+  });
+
+  it("writes the note alone, or 回答なし, for a question answered in the note alone", () => {
+    const q = parsedOne("A: x\nB: y");
+    expect(composeReply("ja", [q], [setNoteOnly({ choices: ["A"], note: "どちらも要らない" }, true)], "")).toBe("Q1 題: どちらも要らない");
+    expect(composeReply("ja", [q], [setNoteOnly({ choices: ["A"], note: "" }, true)], "")).toBe("Q1 題: 回答なし");
+  });
+});
+
+describe("questionState", () => {
+  const q = parsedOne("A: x\nB: y");
+  const two = parsedOne("範囲: A 全体 / B 購読\n欄: X 両方 / Y 題だけ", "範囲はA、欄はX。");
+  const unlabeled = parsedOne("A: x\nB: y", "名前は今のままにします。");
+  const plain = parsedOne("どう呼びますか。", "今の名前のまま。");
+
+  it("is recommended while every recommended group keeps its recommended option", () => {
+    expect(questionState(q, { choices: ["A"], note: "" })).toEqual({ state: "recommended", noted: false });
+    expect(questionState(two, { choices: ["A", "X"], note: "" })).toEqual({ state: "recommended", noted: false });
+  });
+
+  it("is changed when a recommended group has another option", () => {
+    expect(questionState(q, { choices: ["B"], note: "" })).toEqual({ state: "changed", noted: false });
+    expect(questionState(two, { choices: ["A", "Y"], note: "" })).toEqual({ state: "changed", noted: false });
+  });
+
+  it("marks a note on top of the state", () => {
+    expect(questionState(q, { choices: ["A"], note: "急がない" })).toEqual({ state: "recommended", noted: true });
+  });
+
+  it("is note only with the box ticked, and for a question without groups that has a note", () => {
+    expect(questionState(q, setNoteOnly({ choices: ["A"], note: "x" }, true))).toEqual({ state: "noteOnly", noted: false });
+    expect(questionState(plain, { choices: [], note: "x" })).toEqual({ state: "noteOnly", noted: false });
+  });
+
+  it("is unanswered with a group left without a choice and no note, or no groups and no note", () => {
+    expect(questionState(unlabeled, { choices: [null], note: "" })).toEqual({ state: "unanswered", noted: false });
+    expect(questionState(plain, { choices: [], note: " " })).toEqual({ state: "unanswered", noted: false });
+    expect(questionState(q, setNoteOnly({ choices: ["A"], note: "" }, true))).toEqual({ state: "unanswered", noted: false });
+  });
+
+  it("is chosen when no group has a recommended option", () => {
+    expect(questionState(unlabeled, { choices: ["B"], note: "" })).toEqual({ state: "chosen", noted: false });
+  });
+});
+
+describe("decidedBefore", () => {
+  type C = { author: string; created_at: string; body: string; agent: boolean; kind?: string };
+  /** round builds a question comment of the agent's from questions given as [n, title, options, recommendation]. */
+  const round = (...qs: [number, string, string, string][]): C => ({
+    author: "bot",
+    created_at: "",
+    agent: true,
+    kind: "waiting",
+    body: `### 計画についての質問\n\n**計画：** 題\n\n${qs.map(([n, t, b, r]) => `❓ **Q${n}** - **${t}**\n\n${b}\n\n➡️ ${r}`).join("\n\n---\n\n")}\n`,
+  });
+  const person = (body: string): C => ({ author: "me", created_at: "", body, agent: false });
+  const claim: C = { author: "bot", created_at: "", body: "着手", agent: true, kind: "running" };
+  const q1: [number, string, string, string] = [1, "範囲", "A: 全体\nB: 一部", "Aを勧めます。"];
+  const q2: [number, string, string, string] = [2, "名前: 呼び方", "A: 今のまま\nB: 変える", "Bを勧めます。"];
+  const q3: [number, string, string, string] = [3, "順番", "A: 古い順\nB: 新しい順", "Aを勧めます。"];
+
+  it("lists the answers of the earlier rounds of the cycle, with the text of a single chosen option", () => {
+    const cs = [person("issue"), claim, round(q1, q2), person("Q1 範囲: B\nQ2 名前: 呼び方: A。補足：急がない"), claim, round(q3)];
+    expect(decidedBefore("ja", cs, 5, "/ok")).toEqual([
+      { kind: "question", n: 1, title: "範囲", answer: "B 一部" },
+      { kind: "question", n: 2, title: "名前: 呼び方", answer: "A 今のまま。補足：急がない" },
+    ]);
+  });
+
+  it("takes the last line of a question when there are several", () => {
+    const cs = [round(q1), person("Q1 範囲: A"), person("Q1 範囲: B"), claim, round(q3)];
+    expect(decidedBefore("ja", cs, 4, "/ok")).toEqual([{ kind: "question", n: 1, title: "範囲", answer: "B 一部" }]);
+  });
+
+  it("takes the recommended options for a round answered with the approval word alone", () => {
+    const cs = [round(q1, q2), person(" /ok \n"), claim, round(q3)];
+    expect(decidedBefore("ja", cs, 3, "/ok")).toEqual([
+      { kind: "question", n: 1, title: "範囲", answer: "A 全体" },
+      { kind: "question", n: 2, title: "名前: 呼び方", answer: "B 変える" },
+    ]);
+  });
+
+  it("says a question without a recommended option was answered as recommended", () => {
+    const cs = [round([1, "名前", "A: x\nB: y", "今のままにします。"]), person("/ok"), claim, round(q3)];
+    expect(decidedBefore("ja", cs, 3, "/ok")).toEqual([{ kind: "question", n: 1, title: "名前", answer: "推奨どおり" }]);
+    expect(decidedBefore("en", cs, 3, "/ok")[0]).toMatchObject({ answer: "As recommended" });
+  });
+
+  it("gives the first line of the reply for a round answered in words", () => {
+    const cs = [round(q1, q2), person("/ok q2はB\nあとは任せます"), claim, round(q3)];
+    expect(decidedBefore("ja", cs, 3, "/ok")).toEqual([{ kind: "reply", from: 1, to: 2, text: "/ok q2はB" }]);
+  });
+
+  it("starts over at the latest round that begins with Q1", () => {
+    const cs = [round(q1), person("Q1 範囲: A"), claim, round(q1, q2), person("Q1 範囲: B\nQ2 名前: 呼び方: B"), claim, round(q3)];
+    expect(decidedBefore("ja", cs, 6, "/ok").map((d) => d.kind === "question" && d.answer)).toEqual(["B 一部", "B 変える"]);
+  });
+
+  it("lists nothing for the first round", () => {
+    const cs = [round(q1), person("Q1 範囲: A"), claim, round(q1, q2)];
+    expect(decidedBefore("ja", cs, 3, "/ok")).toEqual([]);
+  });
+
+  it("keeps an answer of two groups as written", () => {
+    const two: [number, string, string, string] = [1, "既定", "範囲: A 全体 / B 一部\n欄: X 両方 / Y 題", "範囲はA、欄はX。"];
+    const cs = [round(two), person("Q1 既定: 範囲はB、欄はX"), claim, round(q3)];
+    expect(decidedBefore("ja", cs, 3, "/ok")).toEqual([{ kind: "question", n: 1, title: "既定", answer: "範囲はB、欄はX" }]);
   });
 });

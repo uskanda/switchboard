@@ -287,13 +287,15 @@ describe("the notes of a plan's questions (#180)", () => {
   it("are folded while an option is chosen, and open on a press", async () => {
     await open();
     expect(screen.queryByRole("textbox", { name: "Q2の補足" })).toBeNull();
-    await userEvent.click(screen.getByRole("button", { name: "Q2に補足を書く" }));
+    await userEvent.click(screen.getByRole("button", { name: "Q2に別の答えや補足を書く" }));
     expect(screen.getByRole("textbox", { name: "Q2の補足" })).toHaveFocus();
   });
 
-  it("open when no option is chosen", async () => {
+  it("stay open while the question is answered in the note alone", async () => {
     await open();
-    await userEvent.click(within(screen.getByRole("group", { name: "Q2の選択肢" })).getByRole("radio", { name: "選ばない（補足で答える）" }));
+    await userEvent.click(screen.getByRole("button", { name: "Q2に別の答えや補足を書く" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Q2は選択肢を選ばず、補足だけで答える" }));
+    expect(within(screen.getByRole("group", { name: "Q2の選択肢" })).getByRole("radio", { name: /^A / })).not.toBeChecked();
     expect(screen.getByRole("textbox", { name: "Q2の補足" })).toBeInTheDocument();
   });
 });

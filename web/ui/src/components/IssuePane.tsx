@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router";
 import { IssueRef } from "@/components/IssueRef";
 import { Loading } from "@/components/Loading";
 import { AutoMergeBadge, CancelAutoMergeButton, MergeButton, changeName } from "@/components/MergeButton";
-import { PlanQuestions } from "@/components/PlanQuestions";
+import { PlanQuestions, QuestionChips } from "@/components/PlanQuestions";
 import { ReasonBadge } from "@/components/ReasonBadge";
 import { Thread } from "@/components/Thread";
 import { Alert } from "@/components/ui/alert";
@@ -19,7 +19,7 @@ import { useInbox } from "@/lib/inbox";
 import { useHeightVar } from "@/lib/height";
 import { useMinute } from "@/lib/now";
 import { cachedIssue, rememberIssue } from "@/lib/issueCache";
-import { composeReply, defaultAnswers, parsePlanQuestions, type Answer } from "@/lib/planQuestions";
+import { composeReply, decidedBefore, defaultAnswers, parsePlanQuestions, type Answer } from "@/lib/planQuestions";
 import { addedCards, cardsOf, revealAndScroll, targetOf, type Card as ThreadCard } from "@/lib/scrollTarget";
 import { markSent } from "@/lib/sent";
 import { toast } from "@/lib/toast";
@@ -349,7 +349,12 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
     seen.current = { ref: issueRef, settled: fresh, cards };
     if (was?.ref !== issueRef) {
       const target = targetOf(detail);
-      if (target !== null) revealAndScroll(article.current, target);
+      if (target !== null) {
+        // The pinned head grows once the issue is drawn, and its ResizeObserver reports it only after this effect.
+        // Measure it now, so the card stops below the head and its first lines (what is settled) stay in view.
+        if (head.current) document.documentElement.style.setProperty("--pane-head-h", `${head.current.getBoundingClientRect().height}px`);
+        revealAndScroll(article.current, target);
+      }
       return;
     }
     // The first read after the cache was shown brings the issue up to date: it is part of the opening.
@@ -392,6 +397,8 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
   // The reply is written in the language shown, as its preview shows it.
   const composed = plan ? composeReply(lang, plan.parsed.questions, answers, text) : "";
   const word = detail?.approve_word || "/ok";
+  // What the earlier rounds of the plan settled, listed above the latest questions.
+  const decided = useMemo(() => (plan && detail?.comments ? decidedBefore(lang, detail.comments, plan.index, word) : []), [plan, detail, lang, word]);
   // A wait on a plan is approved by its approval word alone, sent in one click while the reply is empty.
   const approving = detail?.reason === "plan" && !plan;
   // A wait on a failed run, or on a conflict past the fix limit, is run again by a fixed reply alone, in the same way.
@@ -622,7 +629,15 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
                 plan && !sent
                   ? {
                       index: plan.index,
-                      node: <PlanQuestions parsed={plan.parsed} answers={answers} disabled={sending} onChange={(a) => setChoices({ key: plan.key, answers: a })} />,
+                      node: (
+                        <PlanQuestions
+                          parsed={plan.parsed}
+                          answers={answers}
+                          decided={decided}
+                          disabled={sending}
+                          onChange={(a) => setChoices({ key: plan.key, answers: a })}
+                        />
+                      ),
                     }
                   : undefined
               }
@@ -679,6 +694,7 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
               {!replyable && <p className="text-muted">{t.noLongerWaiting}</p>}
               {plan ? (
                 <>
+                  <QuestionChips questions={plan.parsed.questions} answers={answers} />
                   <span id="reply-preview" className="text-label-md font-medium text-muted">
                     {t.preview}
                   </span>
