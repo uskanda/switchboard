@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "@/App";
 import { smarternews80 } from "@/lib/planQuestions.fixture";
+import { scrolled } from "@/test-observers";
 
 /** FakeEventSource stands in for the browser's EventSource; the test sends the stream's events through it. */
 class FakeEventSource {
@@ -81,14 +82,14 @@ describe("the questions of a plan", () => {
     serve({ "gh:o/r#80": detail() });
     await open();
     const q1 = group("Q1の選択肢");
-    expect(q1.getAllByRole("radio").map((r) => (r as HTMLInputElement).value)).toEqual(["A", "B", "C", ""]);
+    expect(q1.getAllByRole("radio").map((r) => (r as HTMLInputElement).value)).toEqual(["A", "B", "C"]);
     expect(q1.getByRole("radio", { name: /^C AとBの両方/ })).toBeChecked();
-    expect(q1.getByRole("radio", { name: "選ばない（補足で答える）" })).not.toBeChecked();
+    expect(q1.queryByRole("radio", { name: "選ばない（補足で答える）" })).toBeNull();
     expect(group("範囲").getByRole("radio", { name: /^A 全体/ })).toBeChecked();
     expect(group("欄").getByRole("radio", { name: /^X タイトルと内容/ })).toBeChecked();
     // A note is folded behind its button while every group of the question has an option chosen.
     expect(screen.queryByRole("textbox", { name: "Q6の補足" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Q6に補足を書く" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Q6に別の答えや補足を書く" })).toBeInTheDocument();
   });
 
   it("draw a question without options with its free text only", async () => {
@@ -143,7 +144,7 @@ describe("the reply to the questions", () => {
     await open();
     expect(preview()).toMatch(/^Q1 操作の入口: C\nQ2 選んだあとの流れ: A\nQ3 ダイアログの既定値: 範囲はA、欄はX\n/);
     await userEvent.click(group("Q2の選択肢").getByRole("radio", { name: /^B / }));
-    await userEvent.click(screen.getByRole("button", { name: "Q2に補足を書く" }));
+    await userEvent.click(screen.getByRole("button", { name: "Q2に別の答えや補足を書く" }));
     await userEvent.type(screen.getByRole("textbox", { name: "Q2の補足" }), "件数は出さない");
     expect(preview()).toMatch(/\nQ2 選んだあとの流れ: B。補足：件数は出さない\n/);
   });
@@ -151,7 +152,8 @@ describe("the reply to the questions", () => {
   it("is posted as shown, with the reply field as a note on the whole", async () => {
     const posts = serve({ "gh:o/r#80": detail() });
     const send = await open();
-    await userEvent.click(group("Q5の選択肢").getByRole("radio", { name: "選ばない（補足で答える）" }));
+    await userEvent.click(screen.getByRole("button", { name: "Q5に別の答えや補足を書く" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Q5は選択肢を選ばず、補足だけで答える" }));
     await userEvent.type(screen.getByRole("textbox", { name: "返答" }), "急がない");
     const shown = preview();
     await userEvent.click(send);
@@ -177,7 +179,7 @@ describe("the reply to the questions", () => {
     const es = FakeEventSource.last!;
     es.emit("inbox", listing(item()));
     await userEvent.click(group("Q2の選択肢").getByRole("radio", { name: /^B / }));
-    await userEvent.click(screen.getByRole("button", { name: "Q2に補足を書く" }));
+    await userEvent.click(screen.getByRole("button", { name: "Q2に別の答えや補足を書く" }));
     await userEvent.type(screen.getByRole("textbox", { name: "Q2の補足" }), "途中");
 
     details["gh:o/r#80"] = detail({ title: "Filters again" });
@@ -193,7 +195,7 @@ describe("the reply to the questions", () => {
     await open();
     const es = FakeEventSource.last!;
     es.emit("inbox", listing(item()));
-    await userEvent.click(screen.getByRole("button", { name: "Q1に補足を書く" }));
+    await userEvent.click(screen.getByRole("button", { name: "Q1に別の答えや補足を書く" }));
     await userEvent.type(screen.getByRole("textbox", { name: "Q1の補足" }), "古い");
 
     const next = "### 計画についての質問\n\n❓ **Q7** - **次**\n\nA: x\nB: y\n\n➡️ B\n";
@@ -239,4 +241,135 @@ describe("the approval of a plan", () => {
     expect(await screen.findByText("このissueは待ちではなくなりました。返答は送れません。")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "承認する（/ok を送る）" })).toBeDisabled();
   });
+});
+
+describe("the cards of the questions", () => {
+  /** follows reports whether b comes after a in the document. */
+  const follows = (a: Node, b: Node) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+  const card = (name: string) => within(screen.getByRole("region", { name }));
+
+  it("put each question in a card, with its number and its place in the round", async () => {
+    serve({ "gh:o/r#80": detail() });
+    await open();
+    expect(card("Q1 操作の入口").getByText("1/6")).toBeInTheDocument();
+    expect(card("Q6 開いている記事が隠れるとき").getByText("6/6")).toBeInTheDocument();
+  });
+
+  it("show the reason right under the recommended option of a single group, where it stays", async () => {
+    serve({ "gh:o/r#80": detail() });
+    await open();
+    const q2 = card("Q2 選んだあとの流れ");
+    const reason = q2.getByText(/^A。部分一致は/);
+    const a = q2.getByRole("radio", { name: /^A / }).closest("label")!;
+    const b = q2.getByRole("radio", { name: /^B / }).closest("label")!;
+    expect(follows(a, reason) && follows(reason, b)).toBe(true);
+    await userEvent.click(q2.getByRole("radio", { name: /^B / }));
+    expect(follows(a, q2.getByText(/^A。部分一致は/))).toBe(true);
+    expect(follows(q2.getByText(/^A。部分一致は/), b)).toBe(true);
+  });
+
+  it("show the reason under the last group of two", async () => {
+    serve({ "gh:o/r#80": detail() });
+    await open();
+    const q3 = card("Q3 ダイアログの既定値");
+    expect(follows(screen.getByRole("group", { name: "欄" }), q3.getByText(/^範囲はA（全体）/))).toBe(true);
+  });
+
+  it("answer a question in the note alone, and give the choice back once the box is cleared", async () => {
+    serve({ "gh:o/r#80": detail() });
+    await open();
+    await userEvent.click(screen.getByRole("button", { name: "Q2に別の答えや補足を書く" }));
+    const box = screen.getByRole("checkbox", { name: "Q2は選択肢を選ばず、補足だけで答える" });
+    await userEvent.click(box);
+    const radios = group("Q2の選択肢").getAllByRole("radio");
+    for (const r of radios) {
+      expect(r).not.toBeChecked();
+      expect(r).toBeDisabled();
+    }
+    await userEvent.type(screen.getByRole("textbox", { name: "Q2の補足" }), "どちらも要らない");
+    expect(preview()).toMatch(/\nQ2 選んだあとの流れ: どちらも要らない\n/);
+    await userEvent.click(box);
+    expect(group("Q2の選択肢").getByRole("radio", { name: /^A / })).toBeChecked();
+    expect(group("Q2の選択肢").getByRole("radio", { name: /^A / })).toBeEnabled();
+  });
+
+  it("start a group the recommendation does not name with no choice and the note open", async () => {
+    const body = "### 計画についての質問\n\n❓ **Q1** - **名前**\n\nA: x\nB: y\n\n➡️ 今のままにします。\n";
+    serve({ "gh:o/r#80": detail({ post: body, comments: [asked(body)] }) });
+    await open();
+    for (const r of group("Q1の選択肢").getAllByRole("radio")) expect(r).not.toBeChecked();
+    expect(screen.getByRole("textbox", { name: "Q1の補足" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Q1に別の答えや補足を書く" })).toBeNull();
+  });
+
+  it("fold what the agent looked at, below the plan's title", async () => {
+    const body = "### 計画についての質問\n\n**計画：** 選択からフィルターを作る\n\n`a.go` を読みました。\n\n❓ **Q1** - **名前**\n\nA: x\nB: y\n\n➡️ A\n";
+    serve({ "gh:o/r#80": detail({ post: body, comments: [asked(body)] }) });
+    await open();
+    expect(screen.getByText("選択からフィルターを作る")).toBeVisible();
+    const looked = screen.getByText(/を読みました。/).closest("details")!;
+    expect(looked).not.toHaveAttribute("open");
+    expect(within(looked).getByText("エージェントが調べたこと")).toBeInTheDocument();
+  });
+
+  it("list what the earlier rounds of the plan settled, above the latest questions", async () => {
+    const first = "### 計画についての質問\n\n❓ **Q1** - **前**\n\nA: x\nB: y\n\n➡️ A\n";
+    const next = "### 計画についての質問\n\n❓ **Q2** - **次**\n\nA: p\nB: q\n\n➡️ B\n";
+    const claim = { author: "agent", created_at: t0, body: "着手", agent: true, kind: "running" };
+    const comments = [asked(first, "2026-11-01T09:00:00Z"), { author: "me", created_at: t0, body: "Q1 前: B", agent: false }, claim, asked(next)];
+    serve({ "gh:o/r#80": detail({ post: next, comments }) });
+    await open();
+    const settled = within(screen.getByRole("region", { name: "これまでに決まったこと" }));
+    expect(settled.getByText("Q1 前")).toBeInTheDocument();
+    expect(settled.getByText("B y")).toBeInTheDocument();
+    // The second round's question keeps its number and counts its place within the round.
+    expect(card("Q2 次").getByText("1/1")).toBeInTheDocument();
+  });
+
+  it("list nothing settled in the first round", async () => {
+    serve({ "gh:o/r#80": detail() });
+    await open();
+    expect(screen.queryByRole("region", { name: "これまでに決まったこと" })).toBeNull();
+  });
+});
+
+describe("the chips of the questions", () => {
+  const chips = () => within(screen.getByRole("list", { name: "問いの状態" })).getAllByRole("button").map((b) => b.textContent);
+
+  it("say where the answer to every question stands, above the reply", async () => {
+    serve({ "gh:o/r#80": detail() });
+    await open();
+    expect(chips()).toEqual(["Q1 推奨どおり", "Q2 推奨どおり", "Q3 推奨どおり", "Q4 推奨どおり", "Q5 推奨どおり", "Q6 推奨どおり"]);
+    await userEvent.click(group("Q2の選択肢").getByRole("radio", { name: /^B / }));
+    await userEvent.click(screen.getByRole("button", { name: "Q3に別の答えや補足を書く" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Q3の補足" }), "急がない");
+    await userEvent.click(screen.getByRole("button", { name: "Q5に別の答えや補足を書く" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Q5は選択肢を選ばず、補足だけで答える" }));
+    expect(chips()).toEqual(["Q1 推奨どおり", "Q2 推奨と違う", "Q3 推奨どおり＋補足", "Q4 推奨どおり", "Q5 未回答", "Q6 推奨どおり"]);
+    await userEvent.type(screen.getByRole("textbox", { name: "Q5の補足" }), "後で決める");
+    expect(chips()[4]).toBe("Q5 補足だけ");
+    const list = screen.getByRole("list", { name: "問いの状態" });
+    expect(follows(list, screen.getByRole("region", { name: "「この内容で返答」で送る文" }))).toBe(true);
+  });
+
+  it("say a question is unanswered until a group the recommendation does not name has a choice", async () => {
+    const body = "### 計画についての質問\n\n❓ **Q1** - **名前**\n\nA: x\nB: y\n\n➡️ 今のままにします。\n";
+    serve({ "gh:o/r#80": detail({ post: body, comments: [asked(body)] }) });
+    await open();
+    expect(chips()).toEqual(["Q1 未回答"]);
+    await userEvent.click(group("Q1の選択肢").getByRole("radio", { name: /^B / }));
+    expect(chips()).toEqual(["Q1 選択済み"]);
+  });
+
+  it("move to the question on a press, with the focus on its title", async () => {
+    serve({ "gh:o/r#80": detail() });
+    await open();
+    await userEvent.click(within(screen.getByRole("list", { name: "問いの状態" })).getByRole("button", { name: "Q4 推奨どおり" }));
+    const title = screen.getByRole("heading", { name: "Q4 操作を出す記事と箇所" });
+    expect(title).toHaveFocus();
+    expect(scrolled.at(-1)).toBe(screen.getByRole("region", { name: "Q4 操作を出す記事と箇所" }));
+  });
+
+  /** follows reports whether b comes after a in the document. */
+  const follows = (a: Node, b: Node) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
 });
