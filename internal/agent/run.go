@@ -650,6 +650,7 @@ func (a *Agent) planOutcome(res *claudecode.Result, pl *plan, o *outcome, discar
 	case problem != "":
 		return o.fail(fmt.Sprintf(a.msg.noDeclaration, problem))
 	case d.Status == "questions":
+		a.dropDiagrams(pl.issue.Ref, o.Run, d, pl.qNext)
 		return o.planQuestions(d, pl.qNext, res.Denials, discarded, word)
 	case d.Status == planImplement:
 		return o.planSkip(d, res.Denials, discarded)

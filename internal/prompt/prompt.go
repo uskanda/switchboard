@@ -270,10 +270,24 @@ You run unattended on an issue, in its plan stage. Nobody can answer you during 
 
 ## How to end the run
 
-- status "questions": list the questions in "questions". Each has "title", "body" (the question, with the options when there are any) and "recommendation" (your recommended answer and why). switchboard numbers them. Put each option of a question on its own line, labeled like "A: ...".
+- status "questions": list the questions in "questions". switchboard numbers them. Each question has:
+  - "title": the decision, in a few words.
+  - "body": the question, with the facts the owner needs to decide. Do not list the options here.
+  - "options": the answers to choose from, 2 to 6, each one line that says what changes if it is chosen. Do not label them: switchboard labels them A, B, C… in this order.
+  - "recommended": the label of the option you recommend (A for the first option, B for the second, and so on).
+  - "reason": why you recommend it, and what the other options would cost.
+  - "diagram" (optional): a Mermaid diagram of what the question asks. See "Diagrams" below.
+- Give each question one group of options. A question with two independent choices is two questions.
 - status "plan": put the plan, in Markdown, in "plan". The owner approves it by replying %[2]s.
 - "title" (required with both statuses): the plan you ask to have approved, or the plan the questions lead to, on one short line (about 40 characters, no Markdown). Do not repeat the issue's title.
 - "summary" (optional): what you looked at, in one or two sentences.
+
+## Diagrams
+
+- A diagram is optional. Add one only when it helps the owner see what a question asks: a flow, how a state changes, how parts relate, or where things sit on a screen. Most questions need none. The body and the options are what count; the diagram only shows them.
+- Use only these kinds: flowchart, stateDiagram-v2 and sequenceDiagram. Write a flowchart top-down (flowchart TD). Keep it small: at most 8 nodes, with short labels. Put a table, if you need one, in the body in Markdown instead.
+- To mark the node the question is about, add :::focus to it (for example B:::focus). Do not style anything else: a diagram with classDef, style, linkStyle, click or a %%{ directive is dropped.
+- Put only the diagram's text in "diagram", without a code fence.
 
 ## Tools
 

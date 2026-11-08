@@ -14,13 +14,20 @@ import (
 	"github.com/uskanda/switchboard/internal/postfmt"
 )
 
+// questions declares questions given as title, body and reason, each with the options Keep it and Change it and the
+// first of them recommended.
 func questions(qs ...[3]string) string {
 	var items []map[string]any
 	for _, q := range qs {
-		items = append(items, map[string]any{"title": q[0], "body": q[1], "recommendation": q[2]})
+		items = append(items, declared(q[0], q[1], q[2]))
 	}
 	return result(map[string]any{"status": "questions", "title": "Split the config loading", "summary": "Read the config package.",
 		"questions": items})
+}
+
+// declared is one declared question with the options Keep it and Change it, the first recommended.
+func declared(title, body, reason string) map[string]any {
+	return map[string]any{"title": title, "body": body, "options": []string{"Keep it", "Change it"}, "recommended": "A", "reason": reason}
 }
 
 func planDecl(text string) string {
@@ -179,7 +186,7 @@ func TestPlanCommentsStartWithTheTitle(t *testing.T) {
 		{"questions", "", questions([3]string{"A", "a?", "a"}), "plan-questions", "**Plan:** Split the config loading"},
 		{"plan", "", planDecl("The plan."), "plan", "**Plan:** Split the config loading"},
 		{"questions ja", "ja", result(map[string]any{"status": "questions", "title": "設定の\n読み込みを  分ける",
-			"questions": []any{map[string]any{"title": "既定", "body": "どちら？", "recommendation": "A"}}}),
+			"questions": []any{declared("既定", "どちら？", "A")}}),
 			"plan-questions", "**計画：** 設定の 読み込みを 分ける"},
 		{"plan ja", "ja", result(map[string]any{"status": "plan", "title": "設定の読み込みを分ける", "plan": "計画。"}),
 			"plan", "**計画：** 設定の読み込みを分ける"},
@@ -202,7 +209,7 @@ func TestPlanRunWithoutATitleIsAnError(t *testing.T) {
 	for _, d := range []map[string]any{
 		{"status": "plan", "plan": "The plan."},
 		{"status": "plan", "title": " \n ", "plan": "The plan."},
-		{"status": "questions", "questions": []any{map[string]any{"title": "A", "body": "a?", "recommendation": "a"}}},
+		{"status": "questions", "questions": []any{declared("A", "a?", "a")}},
 	} {
 		x := newH(t, "", nil)
 		x.step(1, result(d))
@@ -342,5 +349,106 @@ func TestPlanRunWithoutInstructionsHasNoSection(t *testing.T) {
 	p := x.startPlan()
 	if strings.Contains(x.runFile(p, "system.md"), "Additional instructions") {
 		t.Fatal("a plan run without instructions got the section")
+	}
+}
+
+func TestPlanQuestionsWriteTheOptionsAndTheRecommendation(t *testing.T) {
+	for _, tc := range []struct{ name, lang, rec string }{
+		{"English", "", "➡️ **Recommended: B** It loads faster."},
+		{"Japanese", "ja", "➡️ **推奨：B** It loads faster."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			x := newH(t, "", func(c *config.Config) { c.Comments.Language = tc.lang })
+			x.step(1, result(map[string]any{"status": "questions", "title": "T", "questions": []any{
+				map[string]any{"title": "Loading", "body": "How should the config load?", "options": []string{"Keep it", "Split it"},
+					"recommended": "B", "reason": "It loads faster."},
+			}}))
+			p := x.startPlan()
+			want := "How should the config load?\n\nA: Keep it\nB: Split it\n\n" + tc.rec
+			if p.Marker.Reason != "plan-questions" || !strings.Contains(p.Body, want) {
+				t.Fatalf("marker=%+v; the question is not written as\n%s\n---\n%s", p.Marker, want, p.Body)
+			}
+		})
+	}
+}
+
+func TestPlanRunWithABadOptionOrRecommendationIsAnError(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		q    map[string]any
+	}{
+		{"recommended outside the options", map[string]any{"title": "T", "body": "b?", "options": []string{"x", "y", "z"}, "recommended": "D", "reason": "r"}},
+		{"one option", map[string]any{"title": "T", "body": "b?", "options": []string{"x"}, "recommended": "A", "reason": "r"}},
+		{"seven options", map[string]any{"title": "T", "body": "b?", "options": []string{"1", "2", "3", "4", "5", "6", "7"}, "recommended": "A", "reason": "r"}},
+		{"a blank option", map[string]any{"title": "T", "body": "b?", "options": []string{"x", " "}, "recommended": "A", "reason": "r"}},
+		{"no reason", map[string]any{"title": "T", "body": "b?", "options": []string{"x", "y"}, "recommended": "A", "reason": " "}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			x := newH(t, "", nil)
+			x.step(1, result(map[string]any{"status": "questions", "title": "T", "questions": []any{tc.q}}))
+			if p := x.startPlan(); p.Marker.Reason != "error" {
+				t.Fatalf("marker = %+v\n%s", p.Marker, p.Body)
+			}
+		})
+	}
+}
+
+func TestPlanQuestionWithADiagram(t *testing.T) {
+	x := newH(t, "", nil)
+	q := declared("Flow", "Where does it branch?", "It is simpler.")
+	q["diagram"] = "flowchart TD\n  A[Open] --> B:::focus\n"
+	x.step(1, result(map[string]any{"status": "questions", "title": "T", "questions": []any{q}}))
+	p := x.startPlan()
+	want := "Where does it branch?\n\n```mermaid\nflowchart TD\n  A[Open] --> B:::focus\n```\n\nA: Keep it"
+	if !strings.Contains(p.Body, want) {
+		t.Fatalf("the diagram is not between the body and the options:\n%s", p.Body)
+	}
+	if x.audit.has("plan.diagram_dropped", nil) {
+		t.Fatal("a diagram that passes the check was logged as dropped")
+	}
+}
+
+func TestPlanQuestionDropsADiagramItDoesNotAllow(t *testing.T) {
+	x := newH(t, "", nil)
+	q := declared("Share", "How much is each?", "It is even.")
+	q["diagram"] = "pie title Share\n  \"a\" : 1\n"
+	x.step(1, result(map[string]any{"status": "questions", "title": "T", "questions": []any{q}}))
+	p := x.startPlan()
+	if p.Marker.Reason != "plan-questions" || strings.Contains(p.Body, "```mermaid") || strings.Contains(p.Body, "pie title") {
+		t.Fatalf("marker=%+v; the diagram was written:\n%s", p.Marker, p.Body)
+	}
+	if !x.audit.has("plan.diagram_dropped", func(f map[string]any) bool {
+		return f["issue"] == x.ref.String() && f["q"] == 1 && f["run"] == p.Marker.Run && strings.Contains(f["reason"].(string), "pie")
+	}) {
+		t.Fatal("the dropped diagram is not in the audit log with its issue, run, number and reason")
+	}
+}
+
+func TestDiagramProblem(t *testing.T) {
+	for _, tc := range []struct {
+		name, src, want string // want is the diagram as written, or "" when it is dropped
+	}{
+		{"flowchart", "flowchart TD\n  A --> B", "flowchart TD\n  A --> B"},
+		{"state", "\n\nstateDiagram-v2\n  [*] --> Idle\n", "stateDiagram-v2\n  [*] --> Idle"},
+		{"sequence", "sequenceDiagram\n  A->>B: hi", "sequenceDiagram\n  A->>B: hi"},
+		{"focus mark", "flowchart TD\n  A --> B:::focus", "flowchart TD\n  A --> B:::focus"},
+		{"wrapped in a fence", "```mermaid\nflowchart TD\n  A --> B\n```", "flowchart TD\n  A --> B"},
+		{"a fence inside", "flowchart TD\n  A --> B\n```\nnot a diagram", ""},
+		{"another kind", "pie title x\n  \"a\" : 1", ""},
+		{"graph", "graph TD\n  A --> B", ""},
+		{"classDef", "flowchart TD\n  A --> B\n  classDef warn fill:#f00", ""},
+		{"style", "flowchart TD\n  A --> B\n  style A fill:#f00", ""},
+		{"linkStyle", "flowchart TD\n  A --> B\n  linkStyle 0 stroke:#f00", ""},
+		{"click", "flowchart TD\n  A --> B\n  click A callback", ""},
+		{"directive", "%%{init: {'theme': 'dark'}}%%\nflowchart TD\n  A --> B", ""},
+		{"a label that says style", "flowchart TD\n  A[style of the page] --> B", "flowchart TD\n  A[style of the page] --> B"},
+		{"empty", "  \n ", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, problem := diagramOf(tc.src)
+			if got != tc.want || (tc.want == "") != (problem != "") {
+				t.Fatalf("diagramOf(%q) = %q, %q; want %q", tc.src, got, problem, tc.want)
+			}
+		})
 	}
 }

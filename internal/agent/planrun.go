@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/uskanda/switchboard/internal/claudecode"
+	"github.com/uskanda/switchboard/internal/forge"
 	"github.com/uskanda/switchboard/internal/labels"
 	"github.com/uskanda/switchboard/internal/marker"
 	"github.com/uskanda/switchboard/internal/workspace"
@@ -26,19 +28,34 @@ const (
 		`"properties":{"status":{"type":"string",`
 	planSchemaTail = `},"title":{"type":"string"},"summary":{"type":"string"},` +
 		`"plan":{"type":"string"},"questions":{"type":"array","minItems":1,"items":{"type":"object",` +
-		`"additionalProperties":false,"required":["title","body","recommendation"],"properties":{` +
-		`"title":{"type":"string"},"body":{"type":"string"},"recommendation":{"type":"string"}}}}}}`
+		`"additionalProperties":false,"required":["title","body","options","recommended","reason"],"properties":{` +
+		`"title":{"type":"string"},"body":{"type":"string"},` +
+		`"options":{"type":"array","minItems":2,"maxItems":6,"items":{"type":"string"}},` +
+		`"recommended":{"type":"string","pattern":"^[A-F]$"},"reason":{"type":"string"},"diagram":{"type":"string"}}}}}}`
 )
 
 // planImplement is the status of a plan run that skips the questions and the approval.
 const planImplement = "implement"
 
-// PlanQuestion is one question of a plan round, with the run's recommended answer.
+// PlanQuestion is one question of a plan round: its options, which switchboard labels A, B, C… in order, the label of
+// the option the run recommends and why, and a Mermaid diagram of what it asks, if any.
 type PlanQuestion struct {
-	Title          string `json:"title"`
-	Body           string `json:"body"`
-	Recommendation string `json:"recommendation"`
+	Title       string   `json:"title"`
+	Body        string   `json:"body"`
+	Options     []string `json:"options"`
+	Recommended string   `json:"recommended"`
+	Reason      string   `json:"reason"`
+	Diagram     string   `json:"diagram,omitempty"`
 }
+
+// Options of a question: at least two, at most six, labeled A to F.
+const (
+	minOptions = 2
+	maxOptions = 6
+)
+
+// optionLabel is the label of the i-th option (from 0): A, B, C…
+func optionLabel(i int) string { return string(rune('A' + i)) }
 
 // PlanDeclaration is how a run in the plan stage ends: with questions, with the plan, or, when it may skip, with the
 // plan to implement at once.
@@ -76,8 +93,8 @@ func planDeclaration(res *claudecode.Result, skippable bool) (*PlanDeclaration, 
 			return nil, "the structured output has no questions"
 		}
 		for i, q := range d.Questions {
-			if strings.TrimSpace(q.Title) == "" || strings.TrimSpace(q.Body) == "" || strings.TrimSpace(q.Recommendation) == "" {
-				return nil, fmt.Sprintf("question %d lacks a title, a body or a recommendation", i+1)
+			if problem := questionProblem(q); problem != "" {
+				return nil, fmt.Sprintf("question %d %s", i+1, problem)
 			}
 		}
 	default: // plan, implement
@@ -86,6 +103,67 @@ func planDeclaration(res *claudecode.Result, skippable bool) (*PlanDeclaration, 
 		}
 	}
 	return &d, ""
+}
+
+// questionProblem says what is wrong with a declared question, or "" when nothing is: a blank title, body or reason,
+// too few or too many options, a blank option, or a recommended label that is not one of the options'.
+func questionProblem(q PlanQuestion) string {
+	if strings.TrimSpace(q.Title) == "" || strings.TrimSpace(q.Body) == "" || strings.TrimSpace(q.Reason) == "" {
+		return "lacks a title, a body or a reason"
+	}
+	if len(q.Options) < minOptions || len(q.Options) > maxOptions {
+		return fmt.Sprintf("has %d options, not %d to %d", len(q.Options), minOptions, maxOptions)
+	}
+	for _, o := range q.Options {
+		if strings.TrimSpace(o) == "" {
+			return "has a blank option"
+		}
+	}
+	for i := range q.Options {
+		if q.Recommended == optionLabel(i) {
+			return ""
+		}
+	}
+	return fmt.Sprintf("recommends %q, which is not one of its %d options", q.Recommended, len(q.Options))
+}
+
+// The kinds of diagram a question may have, and the words that would restyle the page at the start of a line
+// (ADR-066): a diagram is drawn with inline styles allowed, so it may say what to draw, never how.
+var (
+	diagramKinds  = []string{"flowchart", "stateDiagram-v2", "sequenceDiagram"}
+	diagramStyles = []string{"classDef", "style", "linkStyle", "click"}
+)
+
+const fence = "```"
+
+// diagramOf checks the Mermaid diagram of a question and returns it as it is to be written: without the fence it may
+// come wrapped in and the blank lines around it. It returns "" and why when the diagram is not to be written: it is
+// blank, still holds a fence (it would end the comment's code block early), holds a directive (%%{), is of another
+// kind, or has a line that restyles (classDef, style, linkStyle, click).
+func diagramOf(src string) (string, string) {
+	lines := strings.Split(strings.TrimSpace(strings.ReplaceAll(src, "\r\n", "\n")), "\n")
+	if len(lines) >= 2 && strings.HasPrefix(strings.TrimSpace(lines[0]), fence) && strings.TrimSpace(lines[len(lines)-1]) == fence {
+		lines = lines[1 : len(lines)-1]
+	}
+	text := strings.TrimSpace(strings.Join(lines, "\n"))
+	switch {
+	case text == "":
+		return "", "the diagram is blank"
+	case strings.Contains(text, fence):
+		return "", "the diagram holds a code fence"
+	case strings.Contains(text, "%%{"):
+		return "", "the diagram holds a directive (%%{)"
+	}
+	kind := strings.Fields(text)[0]
+	if !slices.Contains(diagramKinds, kind) {
+		return "", fmt.Sprintf("the diagram is %q, not one of %s", kind, strings.Join(diagramKinds, ", "))
+	}
+	for _, l := range strings.Split(text, "\n") {
+		if w := strings.Fields(l); len(w) > 0 && slices.Contains(diagramStyles, w[0]) {
+			return "", "the diagram restyles with " + w[0]
+		}
+	}
+	return text, ""
 }
 
 // planSettings are what a plan run may do: read, search and look at the history. Nothing that writes. The rules are
@@ -105,14 +183,48 @@ func (o *outcome) planQuestions(d *PlanDeclaration, first int, denials []claudec
 	}
 	var qs []string
 	for i, q := range d.Questions {
-		qs = append(qs, fmt.Sprintf("❓ **Q%d** - **%s**\n\n%s\n\n➡️ %s", first+i, strings.TrimSpace(q.Title),
-			strings.TrimSpace(q.Body), strings.TrimSpace(q.Recommendation)))
+		qs = append(qs, o.questionText(first+i, q))
 	}
 	parts = append(parts, strings.Join(qs, "\n\n---\n\n"))
 	parts = append(parts, o.planTail(denials, discarded, fmt.Sprintf(o.msg.planQuestionsHint, word, word))...)
 	o.set("waiting", marker.PlanQuestions, o.msg.planQuestionsTitle, parts...)
 	o.Q = first + len(d.Questions) - 1
 	return o
+}
+
+// dropDiagrams checks the diagram of every question of d, numbered from first: one that passes is kept as it is to be
+// written, one that does not is dropped, and the drop is logged with the issue, the run and why (the question is
+// posted without it).
+func (a *Agent) dropDiagrams(ref forge.IssueRef, run string, d *PlanDeclaration, first int) {
+	for i := range d.Questions {
+		q := &d.Questions[i]
+		if strings.TrimSpace(q.Diagram) == "" {
+			q.Diagram = ""
+			continue
+		}
+		text, problem := diagramOf(q.Diagram)
+		q.Diagram = text
+		if problem != "" {
+			a.Audit.Log("plan.diagram_dropped", map[string]any{"issue": ref.String(), "run": run, "q": first + i, "reason": problem})
+		}
+	}
+}
+
+// questionText is one question of a question comment: its title line, its body, its diagram (checked already, see
+// dropDiagrams) in a mermaid code block, its options a line each, and the paragraph with the recommended label and
+// the reason.
+func (o *outcome) questionText(n int, q PlanQuestion) string {
+	parts := []string{fmt.Sprintf("❓ **Q%d** - **%s**", n, strings.TrimSpace(q.Title)), strings.TrimSpace(q.Body)}
+	if q.Diagram != "" {
+		parts = append(parts, fence+"mermaid\n"+q.Diagram+"\n"+fence)
+	}
+	var options []string
+	for i, opt := range q.Options {
+		options = append(options, optionLabel(i)+": "+strings.Join(strings.Fields(opt), " "))
+	}
+	parts = append(parts, strings.Join(options, "\n"))
+	parts = append(parts, "➡️ **"+fmt.Sprintf(o.msg.planRecommended, q.Recommended)+"** "+strings.TrimSpace(q.Reason))
+	return strings.Join(parts, "\n\n")
 }
 
 // planText writes back the plan of a plan run.
