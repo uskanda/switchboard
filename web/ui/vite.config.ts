@@ -24,5 +24,5 @@ export default defineConfig({
     },
   },
   server: { proxy: { "/api": "http://127.0.0.1:8783" } },
-  test: { environment: "jsdom", globals: true, setupFiles: ["./src/test-setup.ts"], css: false },
+  test: { environment: "jsdom", globals: true, setupFiles: ["./src/test-language.ts", "./src/test-setup.ts"], css: false },
 });

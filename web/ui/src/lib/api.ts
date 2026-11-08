@@ -2,6 +2,8 @@
 // package inboxapi.
 
 import { loggedOut } from "@/lib/auth";
+import { hourMinute, monthDay } from "@/lib/freshness";
+import { defineMessages, type Lang } from "@/lib/i18n";
 
 export type Item = {
   /** The row number; only a waiting or done issue has one. */
@@ -54,32 +56,38 @@ export function changeName(ref: string, number: number) {
   return ref.startsWith("gl:") ? `MR !${number}` : `PR #${number}`;
 }
 
-/** autoMergeReason says why the inbox service stopped waiting to merge. */
-export function autoMergeReason(reason: string | undefined): string {
-  switch (reason) {
-    case "closed":
-      return "issueがcloseされました。";
-    case "waiting":
-      return "issueが返答待ちになりました。衝突の直しが上限を超えたときもこうなります。";
-    case "instruction":
-      return "人の指示で実行が始まりました。変更を見てからマージしてください。";
-    case "not_fix":
-      return "直す実行でない投稿で、コミットが変わりました。変更を見てからマージしてください。";
-    case "changed":
-      return "完了の投稿が、別のPR/MRを指しています。";
-    case "change_closed":
-      return "PR/MRが閉じられたか、マージ済みです。";
-    case "pushed":
-      return "エージェントのものでないコミットが、PR/MRに足されました。";
-    case "forbidden":
-      return "受信箱のトークンに、マージする権限がありません。";
-    case "user":
-      return "取り消しました。";
-    case "restarted":
-      return "受信箱のサービスが再起動し、マージを頼んだ人が分からなくなりました。もう一度マージを押してください。";
-  }
-  return reason ?? "";
+/** autoMergeReason says why the inbox service stopped waiting to merge; a reason it does not know shows as it came. */
+export function autoMergeReason(lang: Lang, reason: string | undefined): string {
+  const known = autoMergeReasons[lang] as Record<string, string>;
+  return (reason !== undefined && known[reason]) || (reason ?? "");
 }
+
+const autoMergeReasons = defineMessages({
+  ja: {
+    closed: "issueがcloseされました。",
+    waiting: "issueが返答待ちになりました。衝突の直しが上限を超えたときもこうなります。",
+    instruction: "人の指示で実行が始まりました。変更を見てからマージしてください。",
+    not_fix: "直す実行でない投稿で、コミットが変わりました。変更を見てからマージしてください。",
+    changed: "完了の投稿が、別のPR/MRを指しています。",
+    change_closed: "PR/MRが閉じられたか、マージ済みです。",
+    pushed: "エージェントのものでないコミットが、PR/MRに足されました。",
+    forbidden: "受信箱のトークンに、マージする権限がありません。",
+    user: "取り消しました。",
+    restarted: "受信箱のサービスが再起動し、マージを頼んだ人が分からなくなりました。もう一度マージを押してください。",
+  },
+  en: {
+    closed: "The issue was closed.",
+    waiting: "The issue is waiting for a reply. This also happens when the conflict fixes exceed their limit.",
+    instruction: "A person's instruction started a run. Review the changes, then merge.",
+    not_fix: "The commits changed outside a fix run. Review the changes, then merge.",
+    changed: "The done post points to another pull or merge request.",
+    change_closed: "The pull or merge request was closed or is already merged.",
+    pushed: "A commit that is not the agent's was added to the pull or merge request.",
+    forbidden: "The inbox token has no permission to merge.",
+    user: "Cancelled.",
+    restarted: 'The inbox service restarted and no longer knows who asked for the merge. Press "Merge" again.',
+  },
+});
 
 export const isRunning = (it: Item) => it.state === "running";
 export const isQueued = (it: Item) => it.state === "queued";
@@ -108,12 +116,17 @@ export const stateDiffers = (it: Item, d: Detail) => itemState(it) !== detailSta
  * or "|") of the progress line, without the time and the tools before it. Without words yet ("?", nothing after the
  * separator, no separator or no progress comment at all), it says the run is working.
  */
-export function progressText(progress: string | undefined): string {
+export function progressText(lang: Lang, progress: string | undefined): string {
   const line = progress ?? "";
   const at = line.search(/[｜|]/);
   const words = at < 0 ? "" : line.slice(at + 1).trim();
-  return words && words !== "?" ? words : "作業しています";
+  return words && words !== "?" ? words : progressWords[lang].working;
 }
+
+const progressWords = defineMessages({
+  ja: { working: "作業しています" },
+  en: { working: "Working" },
+});
 
 /** ProgressLine is one line of a run's progress comment: the time, elapsed time and tools, then the agent's words. */
 export type ProgressLine = { head: string; words: string };
@@ -141,16 +154,33 @@ export const plainText = (s: string) => s.replace(/\*\*|__|`/g, "").replace(/^#+
  * queueText says which limit a queued issue waits on: a full slot of the host or the project, or a pause of the host
  * on a usage limit or the API quota, with the time the pause ends (local time) when there is one.
  */
-export function queueText(reason: string, until?: string | null): string {
-  const pause: Record<string, string> = { limit: "利用上限に達しています", quota: "APIのクオータに達しています" };
+export function queueText(lang: Lang, reason: string, until?: string | null): string {
+  const t = queueTexts[lang];
+  const pause: Record<string, string> = { limit: t.limit, quota: t.quota };
   if (reason in pause) {
     if (!until) return pause[reason];
     const d = new Date(until);
-    const hm = `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
-    return `${pause[reason]}（${d.getMonth() + 1}/${d.getDate()} ${hm}まで）`;
+    return t.until(pause[reason], monthDay(lang, d), hourMinute(lang, d));
   }
-  return reason === "project-max-parallel" ? "プロジェクトの上限に達しています" : "端末の上限に達しています";
+  return reason === "project-max-parallel" ? t.project : t.host;
 }
+
+const queueTexts = defineMessages({
+  ja: {
+    limit: "利用上限に達しています",
+    quota: "APIのクオータに達しています",
+    project: "プロジェクトの上限に達しています",
+    host: "端末の上限に達しています",
+    until: (pause: string, day: string, hm: string) => `${pause}（${day} ${hm}まで）`,
+  },
+  en: {
+    limit: "Usage limit reached",
+    quota: "API quota reached",
+    project: "Project limit reached",
+    host: "Host limit reached",
+    until: (pause, day, hm) => `${pause} (until ${day}, ${hm})`,
+  },
+});
 
 /**
  * Inbox is a listing. relay is whether the inbox service follows the relay's events ("" when it is not set up), and
@@ -395,48 +425,110 @@ export const mergeStatus = (ref: string, sha: string) =>
 /** issuePath is the page of one issue; the ref is one path segment. */
 export const issuePath = (ref: string) => `/issue/${encodeURIComponent(ref)}`;
 
-/** age is how long ago since was, in Japanese, or "?" without a time. */
-export function age(since: string | null, now: Date = new Date()): string {
-  if (!since) return "?";
-  const min = Math.max(0, Math.floor((now.getTime() - new Date(since).getTime()) / 60000));
-  if (min < 1) return "1分未満";
-  if (min < 60) return `${min}分前`;
+const minutesSince = (since: string, now: Date) =>
+  Math.max(0, Math.floor((now.getTime() - new Date(since).getTime()) / 60000));
+
+/** span is a length of time in the CLI's short units, the largest that fits: "5m", "3h", "2d". */
+function span(min: number): string {
+  if (min < 60) return `${min}m`;
   const h = Math.floor(min / 60);
-  if (h < 24) return `${h}時間前`;
-  return `${Math.floor(h / 24)}日前`;
+  return h < 24 ? `${h}h` : `${Math.floor(h / 24)}d`;
 }
 
-/** elapsed is how long a run has gone on since it started, in Japanese, or "?" without a time. */
-export function elapsed(since: string | null | undefined, now: Date = new Date()): string {
+/** age is how long ago since was ("5分前", "5m ago"), or "?" without a time. */
+export function age(lang: Lang, since: string | null, now: Date = new Date()): string {
   if (!since) return "?";
-  const min = Math.max(0, Math.floor((now.getTime() - new Date(since).getTime()) / 60000));
-  if (min < 1) return "1分未満";
-  if (min < 60) return `${min}分`;
-  return `${Math.floor(min / 60)}時間${min % 60}分`;
+  const min = minutesSince(since, now);
+  const t = spanWords[lang];
+  if (min < 1) return t.ageUnder;
+  if (min < 60) return t.minutesAgo(min);
+  const h = Math.floor(min / 60);
+  return h < 24 ? t.hoursAgo(h) : t.daysAgo(Math.floor(h / 24));
 }
+
+/** elapsed is how long a run has gone on since it started ("1時間3分", "1h 3m"), or "?" without a time. */
+export function elapsed(lang: Lang, since: string | null | undefined, now: Date = new Date()): string {
+  if (!since) return "?";
+  const min = minutesSince(since, now);
+  const t = spanWords[lang];
+  if (min < 1) return t.elapsedUnder;
+  if (min < 60) return t.minutes(min);
+  return t.hoursMinutes(Math.floor(min / 60), min % 60);
+}
+
+// The words of age and elapsed; in English, the CLI's short units.
+const spanWords = defineMessages({
+  ja: {
+    ageUnder: "1分未満",
+    minutesAgo: (n: number) => `${n}分前`,
+    hoursAgo: (n: number) => `${n}時間前`,
+    daysAgo: (n: number) => `${n}日前`,
+    elapsedUnder: "1分未満",
+    minutes: (m: number) => `${m}分`,
+    hoursMinutes: (h: number, m: number) => `${h}時間${m}分`,
+  },
+  en: {
+    ageUnder: "just now",
+    minutesAgo: (n) => `${n}m ago`,
+    hoursAgo: (n) => `${n}h ago`,
+    daysAgo: (n) => `${n}d ago`,
+    elapsedUnder: "under 1m",
+    minutes: (m) => `${m}m`,
+    hoursMinutes: (h, m) => `${h}h ${m}m`,
+  },
+});
 
 /** TimeState is a state whose time is shown: since when it runs, waits, queues or is done. */
 export type TimeState = "running" | "waiting" | "queued" | "done";
 
 /**
  * timeText is the time of a state in words that say what it is: "2分経過", "5分前から待ち", "3分前から順番待ち",
- * "1時間前に完了". A time under a minute says how long the state has lasted ("待ちになって1分未満"); without a time it
- * is "?".
+ * "1時間前に完了"; in English "2m elapsed", "waiting 5m", "queued 3m", "done 1h ago". A time under a minute says how
+ * long the state has lasted ("待ちになって1分未満", "waiting under 1m"); without a time it is "?".
  */
-export function timeText(state: TimeState, since: string | null | undefined, now: Date = new Date()): string {
+export function timeText(lang: Lang, state: TimeState, since: string | null | undefined, now: Date = new Date()): string {
   if (!since) return "?";
   const under = Math.floor((now.getTime() - new Date(since).getTime()) / 60000) < 1;
+  const t = timeTexts[lang];
   switch (state) {
     case "running":
-      return under ? "始めて1分未満" : `${elapsed(since, now)}経過`;
+      return under ? t.runningUnder : t.running(elapsed(lang, since, now));
     case "waiting":
-      return under ? "待ちになって1分未満" : `${age(since, now)}から待ち`;
+      return under ? t.waitingUnder : t.waiting(ago(lang, since, now));
     case "queued":
-      return under ? "順番待ちになって1分未満" : `${age(since, now)}から順番待ち`;
+      return under ? t.queuedUnder : t.queued(ago(lang, since, now));
     case "done":
-      return under ? "完了して1分未満" : `${age(since, now)}に完了`;
+      return under ? t.doneUnder : t.done(age(lang, since, now));
   }
 }
+
+/** Ago is how long ago a state began, as an age ("5分前") and as a span ("5m"), so each language says it its own way. */
+type Ago = { age: string; span: string };
+const ago = (lang: Lang, since: string, now: Date): Ago => ({ age: age(lang, since, now), span: span(minutesSince(since, now)) });
+
+// The words of timeText.
+const timeTexts = defineMessages({
+  ja: {
+    running: (elapsed: string) => `${elapsed}経過`,
+    waiting: ({ age }: Ago) => `${age}から待ち`,
+    queued: ({ age }: Ago) => `${age}から順番待ち`,
+    done: (age: string) => `${age}に完了`,
+    runningUnder: "始めて1分未満",
+    waitingUnder: "待ちになって1分未満",
+    queuedUnder: "順番待ちになって1分未満",
+    doneUnder: "完了して1分未満",
+  },
+  en: {
+    running: (elapsed) => `${elapsed} elapsed`,
+    waiting: ({ span }) => `waiting ${span}`,
+    queued: ({ span }) => `queued ${span}`,
+    done: (age) => `done ${age}`,
+    runningUnder: "started just now",
+    waitingUnder: "waiting under 1m",
+    queuedUnder: "queued under 1m",
+    doneUnder: "done just now",
+  },
+});
 
 /** oldestWaiting is the waiting item that started waiting first; one without a time comes last. */
 export function oldestWaiting(items: Item[]): Item | undefined {

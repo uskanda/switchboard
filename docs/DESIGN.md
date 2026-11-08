@@ -420,7 +420,7 @@ projects:
     include_untrusted: false           # 公開リポジトリでは true にできない
     protected_paths_extra: []
 comments:
-  language: en                       # 既定は英語（ADR-025）
+  language: en                       # エージェントのコメントとTelegramの通知の言語。既定は英語（ADR-025）
   check_command: ""                  # 投稿前の検査。既定では何もしない
 claude:
   auth: subscription                 # subscription | api_key（ADR-027）
@@ -435,6 +435,8 @@ agent:
   run_user: ""                         # Phase 3：専用 OS ユーザー名
   retention: 720h
 ```
+
+`comments.language` は、エージェントがissueに書くコメントとTelegramの通知の言語である。受信箱のWeb表示とAndroidのアプリの画面の言語は、この設定とは別に決まる（ADR-065）。Web表示は、設定の画面で選んだ言語に従い、選んでいなければブラウザの言語に従う。選んだ言語はブラウザに保存し、サーバーには送らない。アプリは端末の言語に従う。Web表示が計画の質問への返答と再実行の依頼をissueに投稿するときは、投稿したときの表示の言語で書き、`comments.language` には従わない。
 
 トークンの保管：macOSはKeychain、LinuxデスクトップはSecret Service。ヘッドレスのLinuxサーバーでは、Secret Serviceを使えない場合が多い。その場合はsystemdの暗号化クレデンシャル（`LoadCredentialEncrypted=`）を第二候補にする。環境変数からの読み込みは開発時のみ許可（`doctor` で警告）。
 

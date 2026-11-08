@@ -3,6 +3,7 @@ import { BackHandler, Linking, Pressable, StyleSheet, Text, View } from "react-n
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
 import { loginGitLab } from "./lib/api";
+import { deviceLang, messages } from "./lib/i18n";
 import { staysInside } from "./lib/url";
 import { useColors } from "./theme";
 
@@ -17,6 +18,7 @@ export type Target = { path: string; n: number };
 export function WebScreen({ origin, target, onSettings }: { origin: string; target: Target; onSettings: () => void }) {
   const c = useColors();
   const insets = useSafeAreaInsets();
+  const t = messages[deviceLang()].web;
   // react-native-webview types its props as WebViewProps & P with P = undefined, which TypeScript 6 reduces to
   // never; naming P as an empty object type keeps the props.
   const view = useRef<WebView<object>>(null);
@@ -50,26 +52,26 @@ export function WebScreen({ origin, target, onSettings }: { origin: string; targ
       <View style={[styles.bar, { borderBottomColor: c.outline }]}>
         <Text style={[styles.title, { color: c.text }]}>switchboard</Text>
         <Pressable accessibilityRole="button" onPress={onSettings} style={styles.barButton}>
-          <Text style={[styles.label, { color: c.text }]}>接続先</Text>
+          <Text style={[styles.label, { color: c.text }]}>{t.address}</Text>
         </Pressable>
       </View>
       {failed !== null ? (
         <View style={styles.failed}>
           <Text accessibilityRole="alert" style={[styles.heading, { color: c.text }]}>
-            受信箱のWeb表示に届きません
+            {t.unreachable}
           </Text>
-          <Text style={[styles.body, { color: c.muted }]}>{origin} に届きませんでした。家のWi-Fiにつながっているか、接続先が合っているかを確かめてください。</Text>
+          <Text style={[styles.body, { color: c.muted }]}>{t.unreachableHelp(origin)}</Text>
           {failed !== "" && <Text style={[styles.body, styles.mono, { color: c.muted }]}>{failed}</Text>}
           <View style={styles.buttons}>
             <Pressable accessibilityRole="button" onPress={onSettings} style={[styles.button, { borderColor: c.outline }]}>
-              <Text style={[styles.label, { color: c.text }]}>接続先を変える</Text>
+              <Text style={[styles.label, { color: c.text }]}>{t.changeAddress}</Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
               onPress={() => setAttempt((a) => a + 1)}
               style={[styles.button, { backgroundColor: c.primary, borderColor: c.primary }]}
             >
-              <Text style={[styles.label, { color: c.onPrimary }]}>もう一度読む</Text>
+              <Text style={[styles.label, { color: c.onPrimary }]}>{t.reload}</Text>
             </Pressable>
           </View>
         </View>

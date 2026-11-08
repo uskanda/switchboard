@@ -115,10 +115,11 @@
 ```
 switchboard/
 ├── AGENTS.md
-├── README.md
+├── README.md                   # 英語。日本語の版は README.ja.md（ADR-065）
+├── README.ja.md
 ├── config/
 │   └── switchboard.example.yaml
-├── docs/
+├── docs/                       # GUIDE と SECURITY は英語の版と .ja.md の日本語の版を持つ
 ├── cmd/switchboard/            # CLI エントリ（agent / inbox / reply / labels / relay / service / doctor）
 ├── inboxapi/                   # 受信箱のサービスと Web 表示の間の API（Unix ソケット）
 ├── internal/
@@ -132,5 +133,6 @@ switchboard/
 │   ├── marker/                 # 隠しマーカーの生成・解析
 │   └── …                       # config、state、secret、service、doctor など
 ├── web/                        # 受信箱の Web 表示（switchboard-web、別モジュール）
-└── app/                        # Android のアプリ（Web 表示を WebView で開く）
+├── app/                        # Android のアプリ（Web 表示を WebView で開く）
+└── site/                       # 紹介ページ（GitHub Pages）。英語は index.html、日本語は ja/index.html
 ```

@@ -186,10 +186,12 @@ describe("the settings (#175)", () => {
     expect(screen.queryByText("受信箱のサービス（switchboard inbox serve）に届きません。")).toBeNull();
   });
 
-  it("tells someone not an admin that only an admin may change them, and reads nothing", async () => {
+  it("shows someone not an admin the display section and that only an admin may change the rest, and reads nothing", async () => {
     const asked = routes({ "GET /api/auth": () => json(200, { enabled: true, user: "bob", admin: false }) });
     at("/settings");
-    expect(await screen.findByText("設定を変えられるのは管理者だけです。")).toBeInTheDocument();
+    expect(await screen.findByText("プロジェクトと追加の指示を変えられるのは管理者だけです。")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "表示" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "言語" })).toBeInTheDocument();
     expect(asked).not.toContain("GET /api/instructions");
     expect(asked).not.toContain("GET /api/projects");
   });

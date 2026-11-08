@@ -1,5 +1,11 @@
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { defineMessages, useMessages } from "@/lib/i18n";
+
+const messages = defineMessages({
+  ja: { image: (name: string) => `画像：${name}` },
+  en: { image: (name) => `Image: ${name}` },
+});
 
 type Node = { type: string; value?: string; children?: Node[] };
 
@@ -37,6 +43,16 @@ function lineBreaks() {
   return walk;
 }
 
+/** ImageLink is an image of issue text as a link to it, named by its alt text or else its address. */
+function ImageLink({ src, alt }: { src?: unknown; alt?: string }) {
+  const t = useMessages(messages);
+  return (
+    <a href={typeof src === "string" ? src : undefined} target="_blank" rel="noreferrer" className="underline">
+      {t.image(alt || String(src ?? ""))}
+    </a>
+  );
+}
+
 // Links from an issue open in a new tab and send no referrer. Images are not loaded: each becomes a link to it.
 // Headings go two levels down, h1 to h3 and the rest to h6 at most: the page's header is h1 and the issue's title h2.
 const components: Components = {
@@ -51,11 +67,7 @@ const components: Components = {
       {children}
     </a>
   ),
-  img: ({ src, alt }) => (
-    <a href={typeof src === "string" ? src : undefined} target="_blank" rel="noreferrer" className="underline">
-      画像：{alt || String(src ?? "")}
-    </a>
-  ),
+  img: ({ src, alt }) => <ImageLink src={src} alt={alt} />,
 };
 
 // Inline text, such as an option inside its label, keeps its phrasing without the paragraph around it.

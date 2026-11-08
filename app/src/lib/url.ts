@@ -1,15 +1,17 @@
 // The web inbox's address as the app keeps it: only the origin (scheme, host and port), since the WUI's pages all
 // hang off its root and switchboard-web checks the Origin of every POST against its listen address.
 
+import { deviceLang, messages, type Lang } from "./i18n";
+
 export type Parsed = { ok: true; origin: string } | { ok: false; error: string };
 
 const absolute = /^(https?):\/\/([^/?#\s@]+)(?:[/?#]\S*)?$/i;
 
-/** parseWebURL reads what the user typed as the WUI's URL and keeps its origin. */
-export function parseWebURL(input: string): Parsed {
+/** parseWebURL reads what the user typed as the WUI's URL and keeps its origin; its error is in lang. */
+export function parseWebURL(input: string, lang: Lang = deviceLang()): Parsed {
   const m = absolute.exec(input.trim());
   if (!m || m[2].endsWith(":")) {
-    return { ok: false, error: "http か https で始まる絶対URLを入力してください（例：http://192.168.0.10:8783）。" };
+    return { ok: false, error: messages[lang].badURL };
   }
   return { ok: true, origin: `${m[1].toLowerCase()}://${m[2].toLowerCase()}` };
 }

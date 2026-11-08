@@ -137,7 +137,7 @@ describe("composeReply", () => {
   it("writes one line per question with its number, title and answer", () => {
     const answers = defaultAnswers(qs);
     answers[1] = { choices: ["B"], note: "件数は出さない" };
-    const lines = composeReply(qs, answers, "").split("\n");
+    const lines = composeReply("ja", qs, answers, "").split("\n");
     expect(lines[0]).toBe("Q1 操作の入口: C");
     expect(lines[1]).toBe("Q2 選んだあとの流れ: B。補足：件数は出さない");
     expect(lines[2]).toBe("Q3 ダイアログの既定値: 範囲はA、欄はX");
@@ -146,32 +146,32 @@ describe("composeReply", () => {
 
   it("joins the groups without headings with commas", () => {
     const q = parsedOne("A: x\nB: y\n\n中の文\n\n1. p\n2. q");
-    expect(composeReply([q], [{ choices: ["B", "1"], note: "" }], "")).toBe("Q1 題: B、1");
+    expect(composeReply("ja", [q], [{ choices: ["B", "1"], note: "" }], "")).toBe("Q1 題: B、1");
   });
 
   it("leaves out a group with no choice", () => {
-    expect(composeReply([qs[2]], [{ choices: [null, "Y"], note: "" }], "")).toBe("Q3 ダイアログの既定値: 欄はY");
+    expect(composeReply("ja", [qs[2]], [{ choices: [null, "Y"], note: "" }], "")).toBe("Q3 ダイアログの既定値: 欄はY");
   });
 
   it("answers with the note alone when nothing is chosen", () => {
-    expect(composeReply([qs[0]], [{ choices: [null], note: "  どれでもなく、長押しにする \n" }], "")).toBe("Q1 操作の入口: どれでもなく、長押しにする");
+    expect(composeReply("ja", [qs[0]], [{ choices: [null], note: "  どれでもなく、長押しにする \n" }], "")).toBe("Q1 操作の入口: どれでもなく、長押しにする");
   });
 
   it("writes 回答なし for a question with neither a choice nor a note", () => {
-    expect(composeReply([qs[4]], [{ choices: [null], note: " " }], "")).toBe("Q5 Androidアプリの扱い: 回答なし");
+    expect(composeReply("ja", [qs[4]], [{ choices: [null], note: " " }], "")).toBe("Q5 Androidアプリの扱い: 回答なし");
   });
 
   it("keeps a note on one line", () => {
-    expect(composeReply([qs[0]], [{ choices: ["A"], note: "一行目\n二行目" }], "")).toBe("Q1 操作の入口: A。補足：一行目 二行目");
+    expect(composeReply("ja", [qs[0]], [{ choices: ["A"], note: "一行目\n二行目" }], "")).toBe("Q1 操作の入口: A。補足：一行目 二行目");
   });
 
   it("adds the text of the reply field as a note on the whole", () => {
-    const text = composeReply([qs[0]], [{ choices: ["C"], note: "" }], "  全体として急がない\n二行目 ");
+    const text = composeReply("ja", [qs[0]], [{ choices: ["C"], note: "" }], "  全体として急がない\n二行目 ");
     expect(text).toBe("Q1 操作の入口: C\n\n全体への補足：\n全体として急がない\n二行目");
   });
 
   it("never starts with the approval word", () => {
-    expect(composeReply(qs, defaultAnswers(qs), "/ok")).toMatch(/^Q1 /);
+    expect(composeReply("ja", qs, defaultAnswers(qs), "/ok")).toMatch(/^Q1 /);
   });
 });
 

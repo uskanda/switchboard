@@ -1,29 +1,32 @@
 import * as Notifications from "expo-notifications";
 import { approve, registerDevice, type Result } from "./lib/api";
 import { claim } from "./lib/claims";
+import { deviceLang, messages, type Messages } from "./lib/i18n";
 import { APPROVE, MERGE, payloadOf, routeOf } from "./lib/payload";
 
 // The channel and the categories the inbox service's notifications name (internal/push): a plan waiting for
-// approval gets 承認, which approves without opening the app; a done issue with its change request gets マージ, which
-// opens the app on the merge dialog (Q12 of add-android-app).
+// approval gets Approve, which approves without opening the app; a done issue with its change request gets Merge,
+// which opens the app on the merge dialog (Q12 of add-android-app). Their names are in the phone's language, set
+// again on each start of the app.
 export const CHANNEL = "switchboard";
 export const CATEGORY_PLAN = "plan";
 export const CATEGORY_MERGE = "done-merge";
 
 /**
  * setUpNotifications creates the channel and the categories, and shows notifications that arrive in the foreground.
- * With the WUI's login on, 承認 opens the app on the plan instead of approving in the background (issue #146).
+ * With the WUI's login on, Approve opens the app on the plan instead of approving in the background (issue #146).
  */
 export async function setUpNotifications(loginOn = false): Promise<void> {
+  const t = messages[deviceLang()].notification;
   Notifications.setNotificationHandler({
     handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }),
   });
-  await Notifications.setNotificationChannelAsync(CHANNEL, { name: "待ちと完了", importance: Notifications.AndroidImportance.HIGH });
+  await Notifications.setNotificationChannelAsync(CHANNEL, { name: t.channel, importance: Notifications.AndroidImportance.HIGH });
   await Notifications.setNotificationCategoryAsync(CATEGORY_PLAN, [
-    { identifier: APPROVE, buttonTitle: "承認", options: { opensAppToForeground: loginOn } },
+    { identifier: APPROVE, buttonTitle: t.approve, options: { opensAppToForeground: loginOn } },
   ]);
   await Notifications.setNotificationCategoryAsync(CATEGORY_MERGE, [
-    { identifier: MERGE, buttonTitle: "マージ", options: { opensAppToForeground: true } },
+    { identifier: MERGE, buttonTitle: t.merge, options: { opensAppToForeground: true } },
   ]);
 }
 
@@ -44,14 +47,15 @@ export async function registerForPush(origin: string): Promise<Result | null> {
   }
 }
 
-function refusal(r: Exclude<Result, { ok: true }>): string {
+/** refusal tells why an approval was refused: in t for the codes the app knows, else in the server's own words. */
+function refusal(r: Exclude<Result, { ok: true }>, t: Messages["notification"]): string {
   switch (r.code) {
     case "stale":
-      return "計画が出し直されたか、もう承認を待っていません。アプリで開いて確かめてください。";
+      return t.stale;
     case "unauthenticated":
-      return "受信箱にログインが要ります。アプリで開いて承認してください。";
+      return t.unauthenticated;
     case "unreachable":
-      return "受信箱のWeb表示に届きませんでした。家のWi-Fiにつながっているか確かめてください。";
+      return t.unreachable;
   }
   return r.message;
 }
@@ -59,7 +63,7 @@ function refusal(r: Exclude<Result, { ok: true }>): string {
 /**
  * handleResponse does what a press on a notification asks: open opens the issue (open is not given in the background
  * task, which has no screen), approve sends the approval and removes the notification, and a refused approval is
- * told in a local notification. Each press is acted on once.
+ * told in a local notification, in the phone's language. Each press is acted on once.
  */
 export async function handleResponse(response: Notifications.NotificationResponse, origin: string, open?: (path: string) => void, loginOn = false) {
   const request = response.notification.request;
@@ -77,8 +81,9 @@ export async function handleResponse(response: Notifications.NotificationRespons
     await Notifications.dismissNotificationAsync(request.identifier);
     return;
   }
+  const t = messages[deviceLang()].notification;
   await Notifications.scheduleNotificationAsync({
-    content: { title: `${route.ref.replace(/^g[hl]:/, "")} を承認しませんでした`, body: refusal(r) },
+    content: { title: t.notApproved(route.ref.replace(/^g[hl]:/, "")), body: refusal(r, t) },
     trigger: { channelId: CHANNEL },
   });
 }

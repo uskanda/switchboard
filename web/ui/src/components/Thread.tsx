@@ -2,18 +2,49 @@ import type { ReactNode } from "react";
 import { Markdown } from "@/components/Markdown";
 import { Card } from "@/components/ui/card";
 import { parseProgress, type Detail, type ProgressLine } from "@/lib/api";
+import { dateTimeText } from "@/lib/freshness";
+import { defineMessages, plural, useLang, useMessages, type Lang } from "@/lib/i18n";
 import { threadOf, type Round, type Shown } from "@/lib/scrollTarget";
 import { cn } from "@/lib/utils";
 
-function when(at: string | null | undefined): string {
+const messages = defineMessages({
+  ja: {
+    agent: "エージェント",
+    /** working stands for the words of a progress line that has none yet. */
+    working: "作業しています",
+    log: (lines: number) => `進捗の記録（${lines}行）`,
+    queued: "順番待ちになりました",
+    started: "着手しました",
+    round: (replies: number) => `答えた質問・${replies > 0 ? `返答${replies}件` : "返答なし"}`,
+    thread: "スレッド",
+    noBody: "本文はありません",
+    you: "あなた",
+    pending: "送信済み・フォージへの反映待ち",
+  },
+  en: {
+    agent: "agent",
+    working: "Working",
+    log: (lines) => `Progress log (${lines} ${plural(lines, "line", "lines")})`,
+    queued: "Queued",
+    started: "Started",
+    round: (replies) => `Answered question, ${replies > 0 ? `${replies} ${plural(replies, "reply", "replies")}` : "no replies"}`,
+    thread: "Thread",
+    noBody: "No description",
+    you: "You",
+    pending: "Sent, not yet on the forge",
+  },
+});
+
+function when(lang: Lang, at: string | null | undefined): string {
   if (!at) return "";
   const d = new Date(at);
-  return Number.isNaN(d.getTime()) ? "" : d.toLocaleString("ja-JP", { dateStyle: "short", timeStyle: "short" });
+  return Number.isNaN(d.getTime()) ? "" : dateTimeText(lang, d);
 }
 
 /** AgentMark tells the agent's posts from people's in words; DESIGN.md keeps color for the reasons and errors. */
 function AgentMark() {
-  return <span className="rounded-sm border border-outline px-xs text-label-md font-medium">エージェント</span>;
+  const t = useMessages(messages);
+  return <span className="rounded-sm border border-outline px-xs text-label-md font-medium">{t.agent}</span>;
 }
 
 /**
@@ -21,10 +52,11 @@ function AgentMark() {
  * the person's own, and naming it beside the mark reads as if that person wrote it.
  */
 function Byline({ author, at, agent }: { author: string; at: string | null | undefined; agent?: boolean }) {
+  const lang = useLang();
   return (
     <p className="flex flex-wrap items-center gap-sm text-label-md text-muted">
       {agent ? <AgentMark /> : <span className="font-medium">{author || "?"}</span>}
-      <time dateTime={at ?? undefined}>{when(at)}</time>
+      <time dateTime={at ?? undefined}>{when(lang, at)}</time>
     </p>
   );
 }
@@ -37,15 +69,16 @@ type Answering = { index: number; node: ReactNode };
  * oldest first. Words not yet said read as working, as on the list.
  */
 function Progress({ lines }: { lines: ProgressLine[] }) {
+  const t = useMessages(messages);
   const last = lines[lines.length - 1];
-  const words = (w: string) => (w && w !== "?" ? w : "作業しています");
+  const words = (w: string) => (w && w !== "?" ? w : t.working);
   return (
     <>
       <p className="break-words">{words(last.words)}</p>
       <p className="text-label-md text-muted break-words">{last.head}</p>
       <details className="group">
         <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-xs rounded-sm text-label-md text-muted focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
-          {`進捗の記録（${lines.length}行）`}
+          {t.log(lines.length)}
           <span aria-hidden className="transition-transform group-open:rotate-90">
             ▸
           </span>
@@ -71,11 +104,13 @@ function Body({ c }: { c: Shown["c"] }) {
 
 /** Item draws one comment shown picks: a claim of a run or a queued comment as a line, any other as a card. */
 function Item({ item: { c, i, folded, latest }, answering }: { item: Shown; answering?: Answering }) {
+  const lang = useLang();
+  const t = messages[lang];
   return folded ? (
     <li data-index={i} className="flex flex-wrap items-center gap-sm px-lg text-label-md text-muted">
       <AgentMark />
-      <span>{folded === "queued" ? "順番待ちになりました" : "着手しました"}</span>
-      <time dateTime={c.created_at}>{when(c.created_at)}</time>
+      <span>{folded === "queued" ? t.queued : t.started}</span>
+      <time dateTime={c.created_at}>{when(lang, c.created_at)}</time>
     </li>
   ) : (
     <li data-index={i}>
@@ -92,13 +127,14 @@ function Item({ item: { c, i, folded, latest }, answering }: { item: Shown; answ
  * details is left to keep its own open state: React passes no open, so a read of the same issue leaves it as it is.
  */
 function RoundLine({ round: { question, replies }, answering }: { round: Round; answering?: Answering }) {
+  const lang = useLang();
   return (
     <li>
       <details className="group">
         <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center gap-sm rounded-sm px-lg text-label-md text-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
           <AgentMark />
-          <span>{`答えた質問・${replies.length > 0 ? `返答${replies.length}件` : "返答なし"}`}</span>
-          <time dateTime={question.c.created_at}>{when(question.c.created_at)}</time>
+          <span>{messages[lang].round(replies.length)}</span>
+          <time dateTime={question.c.created_at}>{when(lang, question.c.created_at)}</time>
           <span aria-hidden className="transition-transform group-open:rotate-90">
             ▸
           </span>
@@ -125,15 +161,16 @@ function RoundLine({ round: { question, replies }, answering }: { round: Round; 
  * last card, said to be sent and waiting to show on the forge (issue #182).
  */
 export function Thread({ detail, answering, pendingReply }: { detail: Detail; answering?: Answering; pendingReply?: string }) {
+  const t = useMessages(messages);
   return (
     <ol
       className="flex flex-col gap-sm [&_[data-index]]:scroll-mt-[calc(var(--header-h,0px)+var(--pane-head-h,0px))] lg:[&_[data-index]]:scroll-mt-[var(--pane-head-h,0px)]"
-      aria-label="スレッド"
+      aria-label={t.thread}
     >
       <li>
         <Card className="flex flex-col gap-sm">
           <Byline author={detail.author ?? ""} at={detail.created_at} />
-          {detail.body ? <Markdown text={detail.body} /> : <p className="text-muted">本文はありません</p>}
+          {detail.body ? <Markdown text={detail.body} /> : <p className="text-muted">{t.noBody}</p>}
         </Card>
       </li>
       {threadOf(detail.comments ?? []).map((it) =>
@@ -147,8 +184,8 @@ export function Thread({ detail, answering, pendingReply }: { detail: Detail; an
         <li>
           <Card className="flex flex-col gap-sm border-dashed">
             <p className="flex flex-wrap items-center gap-sm text-label-md text-muted">
-              <span className="font-medium">あなた</span>
-              <span>送信済み・フォージへの反映待ち</span>
+              <span className="font-medium">{t.you}</span>
+              <span>{t.pending}</span>
             </p>
             <Markdown text={pendingReply} />
           </Card>

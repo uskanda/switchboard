@@ -8,6 +8,8 @@ import { IssueRef } from "@/components/IssueRef";
 import { ReasonBadge } from "@/components/ReasonBadge";
 import { Card } from "@/components/ui/card";
 import { isDone, isQueued, isRunning, isWaiting, issuePath, oldestWaiting, timeText, type Item } from "@/lib/api";
+import { defineMessages, plural, useLang, useMessages } from "@/lib/i18n";
+import { common } from "@/lib/i18n/common";
 import { keepListScroll, listScroll } from "@/lib/listScroll";
 import { LIST_WIDTH_DEFAULT, LIST_WIDTH_MAX, LIST_WIDTH_MIN, LIST_WIDTH_STEP, useListWidth } from "@/lib/paneWidth";
 import { useInbox } from "@/lib/inbox";
@@ -16,11 +18,38 @@ import { usePageTitle } from "@/lib/title";
 import { cn } from "@/lib/utils";
 import { ignoreKey, stepWait } from "@/lib/waits";
 
+const messages = defineMessages({
+  ja: {
+    /** list names the pane of the list; width, the border that resizes it. */
+    list: "一覧",
+    width: "一覧の幅",
+    /** keys tells the keys that move between the waits and to the reply. */
+    keys: "j/k：待ちの間を移る　r：返答の欄へ",
+    summary: "受信箱の概要",
+    /** count is how many issues a section or a reason has. */
+    count: (n: number) => `${n}件`,
+    reasons: "待ちの理由",
+    oldest: "最も古い待ち",
+    choose: "左の一覧からissueを選んでください",
+  },
+  en: {
+    list: "Inbox",
+    width: "List width",
+    keys: "j/k: move between waiting issues, r: jump to reply",
+    summary: "Inbox summary",
+    count: (n) => `${n} ${plural(n, "issue", "issues")}`,
+    reasons: "Reasons for waiting",
+    oldest: "Waiting longest",
+    choose: "Choose an issue from the list on the left",
+  },
+});
+
 /**
  * PaneBorder is the border between the panes, which the user drags (or moves with the arrow keys) to change the list
  * pane's width. A double click puts it back at the default.
  */
 function PaneBorder({ width, setWidth }: { width: number; setWidth: (w: number) => void }) {
+  const t = useMessages(messages);
   const drag = useRef<{ x: number; width: number } | null>(null);
 
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
@@ -47,7 +76,7 @@ function PaneBorder({ width, setWidth }: { width: number; setWidth: (w: number) 
   return (
     <div
       role="separator"
-      aria-label="一覧の幅"
+      aria-label={t.width}
       aria-orientation="vertical"
       aria-valuenow={width}
       aria-valuemin={LIST_WIDTH_MIN}
@@ -69,11 +98,13 @@ function PaneBorder({ width, setWidth }: { width: number; setWidth: (w: number) 
  * section of the list has, then how many waits each reason has, most first, with the reason's badge.
  */
 function Summary({ items }: { items: Item[] }) {
+  const t = useMessages(messages);
+  const { state } = useMessages(common);
   const sections = [
-    { name: "返答待ち", n: items.filter(isWaiting).length },
-    { name: "実行中", n: items.filter(isRunning).length },
-    { name: "順番待ち", n: items.filter(isQueued).length },
-    { name: "完了", n: items.filter(isDone).length },
+    { name: state.waiting, n: items.filter(isWaiting).length },
+    { name: state.running, n: items.filter(isRunning).length },
+    { name: state.queued, n: items.filter(isQueued).length },
+    { name: state.done, n: items.filter(isDone).length },
   ];
   const reasons = new Map<string, number>();
   for (const it of items.filter(isWaiting)) reasons.set(it.reason, (reasons.get(it.reason) ?? 0) + 1);
@@ -81,23 +112,23 @@ function Summary({ items }: { items: Item[] }) {
   return (
     <section aria-labelledby="inbox-summary" className="flex flex-col gap-sm">
       <h2 id="inbox-summary" className="text-label-md font-semibold text-muted">
-        受信箱の概要
+        {t.summary}
       </h2>
       <Card className="flex flex-col gap-md">
         <dl className="grid grid-cols-4 gap-sm">
           {sections.map((s) => (
             <div key={s.name} className="flex flex-col gap-xs">
               <dt className="text-label-md text-muted">{s.name}</dt>
-              <dd className="text-headline-md font-semibold">{`${s.n}件`}</dd>
+              <dd className="text-headline-md font-semibold">{t.count(s.n)}</dd>
             </div>
           ))}
         </dl>
         {byCount.length > 0 && (
-          <ul aria-label="待ちの理由" className="flex flex-col gap-xs border-t border-outline pt-md">
+          <ul aria-label={t.reasons} className="flex flex-col gap-xs border-t border-outline pt-md">
             {byCount.map(([reason, n]) => (
               <li key={reason} className="flex items-center justify-between gap-sm">
                 <ReasonBadge reason={reason} />
-                <span className="text-label-md text-muted">{`${n}件`}</span>
+                <span className="text-label-md text-muted">{t.count(n)}</span>
               </li>
             ))}
           </ul>
@@ -112,23 +143,26 @@ function Summary({ items }: { items: Item[] }) {
  * issue that has waited longest, or, while nothing waits, a line that asks to choose one from the list.
  */
 function NothingChosen({ items }: { items: Item[] | null }) {
+  const t = useMessages(messages);
   useMinute();
   // The waits as the list shows them: an issue being processed (lib/pending.ts) is not offered.
   const it = oldestWaiting(items ?? []);
   return (
     <div className="flex flex-col gap-xl pt-xl">
       {items && <Summary items={items} />}
-      {it ? <OldestWaiting it={it} /> : <p className="text-muted">左の一覧からissueを選んでください</p>}
+      {it ? <OldestWaiting it={it} /> : <p className="text-muted">{t.choose}</p>}
     </div>
   );
 }
 
 /** OldestWaiting is the card that leads to the issue that has waited longest. */
 function OldestWaiting({ it }: { it: Item }) {
+  const lang = useLang();
+  const t = useMessages(messages);
   return (
     <section aria-labelledby="oldest-waiting" className="flex flex-col gap-sm">
       <h2 id="oldest-waiting" className="text-label-md font-semibold text-muted">
-        最も古い待ち
+        {t.oldest}
       </h2>
       <Link to={issuePath(it.ref)} className="block rounded-md focus-visible:outline-2 focus-visible:outline-primary">
         <Card className="flex flex-col gap-xs">
@@ -138,7 +172,7 @@ function OldestWaiting({ it }: { it: Item }) {
           </span>
           <span className="flex flex-wrap items-center gap-sm text-label-md text-muted">
             <ReasonBadge reason={it.reason} />
-            <span>{timeText("waiting", it.waiting_since)}</span>
+            <span>{timeText(lang, "waiting", it.waiting_since)}</span>
           </span>
         </Card>
       </Link>
@@ -156,6 +190,7 @@ function OldestWaiting({ it }: { it: Item }) {
  * issue starts at its top (IssuePane).
  */
 export function InboxLayout() {
+  const t = useMessages(messages);
   const ref = useParams().ref;
   const [width, setWidth] = useListWidth();
   const { inbox, view } = useInbox();
@@ -196,9 +231,9 @@ export function InboxLayout() {
         style={{ "--list-width": `${width}px` } as CSSProperties}
         className="flex-1 lg:relative lg:grid lg:min-h-0 lg:grid-cols-[var(--list-width)_minmax(0,1fr)]"
       >
-        <nav aria-label="一覧" className={cn("min-w-0 px-lg py-xl lg:overflow-y-auto lg:border-r lg:border-outline", ref && "hidden lg:block")}>
+        <nav aria-label={t.list} className={cn("min-w-0 px-lg py-xl lg:overflow-y-auto lg:border-r lg:border-outline", ref && "hidden lg:block")}>
           <InboxList selected={ref} />
-          <p className="mt-lg hidden text-label-md text-muted lg:block">{"j/k：待ちの間を移る　r：返答の欄へ"}</p>
+          <p className="mt-lg hidden text-label-md text-muted lg:block">{t.keys}</p>
         </nav>
         <PaneBorder width={width} setWidth={setWidth} />
         {/* No padding on top: the issue's pinned head brings its own, so nothing shows above it once scrolled. */}

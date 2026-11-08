@@ -1,54 +1,56 @@
-# セキュリティ設計
+日本語: [SECURITY.ja.md](SECURITY.ja.md)
 
-## 1. 守るもの
+# Security design
 
-- 各端末のソースコード・認証情報・実行環境
-- フォージのトークン
-- Claude Code に与える指示の正当性（自分以外の指示で動かないこと）
+## 1. What we protect
 
-## 2. 信頼境界
+- The source code, credentials, and execution environment on each host
+- The forge tokens
+- The legitimacy of the instructions given to Claude Code (it acts on no one's instructions but yours)
 
-| 領域 | 信頼 | 理由 |
+## 2. Trust boundaries
+
+| Zone | Trust | Reason |
 |---|---|---|
-| 各端末（エージェント・Claude Code） | 信頼 | 自分の管理下 |
-| フォージ（GitHub/GitLab）の API 応答 | 条件付き | 認証・認可はフォージに委ねるが、本文は第三者が書ける |
-| issue 本文・コメント | 非信頼（データ） | 投稿者検証を通ったもののみ指示として採用 |
-| 中継サーバー | 非信頼に近い | 侵害されても ID しか流せない設計にする |
-| webhook 送信元 | 署名検証で判定 | 検証できないものは破棄 |
+| Each host (agent, Claude Code) | Trusted | Under your control |
+| API responses from the forge (GitHub/GitLab) | Conditional | Authentication and authorization are left to the forge, but third parties can write the text |
+| Issue text and comments | Untrusted (data) | Only what passes the author check is taken as instructions |
+| Relay server | Close to untrusted | Designed so that, even when compromised, it can pass on nothing but IDs |
+| Webhook sender | Decided by the signature check | Anything that fails the check is dropped |
 
-## 3. 脅威と対策
+## 3. Threats and countermeasures
 
-| # | 脅威 | 対策 |
+| # | Threat | Countermeasure |
 |---|---|---|
-| T1 | 第三者がissueにコメントし、プロンプトインジェクションでエージェントを操作 | `trusted_authors` 以外のコメントは指示として扱わない。プロンプト上も「参考データ」として区切る。本文、タイトル、コメントは、最後に編集した人も信頼済みでなければ採らない。公開リポジトリも対象にする（ADR-062）が、公開リポジトリでは `include_untrusted` を拒み、非信頼のコメントはプロンプトに入れない。CIのログとpushの失敗の出力も、直す実行にはnonce付きの区切りで非信頼のデータとして渡し、許可するツールは増やさない（ADR-041）。baseとの衝突を直す実行には、PR/MRの番号とbaseの名前だけを渡す（ADR-044） |
-| T2 | 中継サーバーの侵害による任意指示の注入 | 中継は ID のみを流し、本文はローカルがフォージから再取得。中継にフォージのトークンを置かない |
-| T3 | 偽装 webhook の送信 | 署名検証（定数時間比較）。検証失敗はログに残し破棄 |
-| T4 | webhook の再送・リプレイ | 配信ID による重複排除。エージェント側でも「処理済みコメントID」を記録 |
-| T5 | 端末への直接攻撃（受信口） | 端末は受信ポートを開かない。中継への接続は外向きのみ。例外は受信箱のWeb表示で、ループバック、プライベート、リンクローカルのアドレスに限って待つ（IPv4射影のアドレスは戻してから検査する）。読み取りを含むすべての要求で `Host` を検査し、DNS rebindingで一覧を読ませない。返答のPOSTは `Origin` も検査する。issueの作成のPOSTも同じ検査をする（ADR-040）。完了のPR/MRのマージのPOSTも同じ検査をし、画面で見たコミットに限ってマージする（ADR-043）。認証は、`inbox.auth` を書いたときだけ、GitLabのOpenID Connectのログインで行う（ADR-036、ADR-059）。Androidのアプリの登録と承認のPOSTも同じ検査をする。アプリは、設定したWUIのURLを `Origin` に付けて送る。承認は、通知に載せた待ちの開始時刻が最新の待ちの投稿と一致するときに限る（ADR-047）。中継のwebhookの受け口も、LANの別の機械のGitLabから受けるときはLANのアドレスで待つ。すべてのインターフェースでは待たない。このとき、GitLabのwebhookは署名トークン（HMACとタイムスタンプ）でだけ検証し、平文のシークレットを送る `gitlab_token` は拒む。送り元のアドレスは絞らず、LANの中を平文で流れるペイロードは受け入れる。中継が配るのはIDだけで、エージェントはフォージから取り直す（ADR-004、ADR-060） |
-| T6 | フォージトークンの漏えい | 最小権限（対象リポジトリの issues 読み書き・contents 必要最小）。fine-grained PAT / Project Access Token を使い、OS キーチェーンに保存 |
-| T7 | エージェントの暴走による破壊的操作 | 渡すツールの固定（ADR-052）、許可ツールの明示、worktree での作業、タイムアウト。push はエージェントだけが issue のブランチに行い、Claude の環境には資格情報を渡さない。main への push・マージ・リリースを止める防壁は、sandbox と push 前の検査（保護パス、秘密、ブランチ）である（ADR-063）。保護パスは、下の階層の `CLAUDE.md`、`AGENTS.md`、`.claude/` と、改名の元のパスにも及ぶ。利用者が足す許可（`allow_tools_extra`）は設定ファイルにだけ書け、受信箱のAPIとWeb表示からは変えられない。読み込みのときに、制限の無い `Bash` と、拒否している操作（`git push`、`git rebase`、`gh`、`WebFetch`）を名指しする項目を誤りにする。denyは境界ではない（V5）ので、フォージの資格情報を渡さないこと（ADR-012）を防壁とする（ADR-045）。シェルのコマンドは実行ごとのsandboxの中で動き、書き込みはworktreeと `$TMPDIR` に限られ、ネットワークに届かない。資格情報の置き場所と、switchboardの設定と状態のディレクトリは読めない。sandboxの外で動くのは `git` と検証コマンドだけで、sandboxを使えない端末ではclaudeを起動しない（ADR-057） |
-| T8 | 隠しマーカーの偽装による受信箱の混乱 | マーカーは投稿者がエージェント用アカウント（または自分）のコメントのみ採用 |
-| T11 | 受信箱を共有する人どうしのなりすましと、見る権限の無いプロジェクトの閲覧 | `inbox.auth` を書いた構成では、GitLabへの書き込みはログインした人のOAuthのトークンで行い、共有のトークンでは書かない。GitHubはownerだけが見て書ける。一覧と1件の表示は、その人が自分のトークンで読めるプロジェクトに絞る。エージェントはbotの身元で動き、`trusted_authors` に入れない（ADR-061） |
-| T10 | 同じLANでの、受信箱のWeb表示のセッションのcookieの盗み見 | Web表示は当面HTTPで待つので、cookieは平文で流れる。盗んだ人は、その利用者として操作できる。cookieが持つのはセッションIDだけで、GitLabのトークンは受信箱のサービスから出ない。セッションは24時間使わないか7日で終わる。HTTPSは #155 で扱う（ADR-059） |
-| T9 | issue 本文経由での秘密情報の外部送信 | 出力（コメント）に秘密情報を含めない指示、可能なら送信前のパターン検査。FCMのプッシュ通知に載せるのは、issueの参照、待ちの理由、タイトル、時刻、PR/MRの番号とコミットだけで、質問、計画、コメントの本文は載せない（ADR-047） |
+| T1 | A third party comments on an issue and steers the agent through prompt injection | Comments by anyone outside `trusted_authors` are never treated as instructions. The prompt also marks them off as "reference data". The body, title, and comments are not taken unless the person who last edited them is also trusted. Public repositories are supported too (ADR-062); for them, `include_untrusted` is refused and untrusted comments stay out of the prompt. CI logs and the output of a failed push reach a fix run as untrusted data inside nonce-tagged delimiters, and the allowed tools are not extended (ADR-041). A run that fixes a conflict with the base branch receives only the pull or merge request number and the base branch name (ADR-044) |
+| T2 | Injection of arbitrary instructions through a compromised relay server | The relay passes on only IDs, and the local agent fetches the text again from the forge. No forge token is stored on the relay |
+| T3 | Forged webhooks | Signature check (constant-time comparison). A failed check is logged and the webhook is dropped |
+| T4 | Redelivered or replayed webhooks | Deduplication by delivery ID. The agent also records the IDs of the comments it has processed |
+| T5 | Direct attacks on a host (through an inbound port) | Hosts open no listening ports, and the connection to the relay is always outbound. The exception is the web inbox, which listens only on loopback, private, and link-local addresses (an IPv4-mapped address is converted back before the check). Every request, reads included, has its `Host` checked, so DNS rebinding cannot be used to read the list. A reply POST also has its `Origin` checked. A POST that creates an issue gets the same checks (ADR-040). So does a POST that merges the pull or merge request of a done issue, and it merges only the commit shown on screen (ADR-043). Users are authenticated only when `inbox.auth` is set, by logging in with GitLab OpenID Connect (ADR-036, ADR-059). The Android app's registration and approval POSTs get the same checks. The app sends the web inbox URL it is configured with as its `Origin`. An approval is accepted only when the wait's start time carried in the notification matches the latest waiting post (ADR-047). When the relay's webhook endpoint receives from a GitLab on another machine in the LAN, it too listens on a LAN address, never on all interfaces. In that setup, GitLab webhooks are verified only by the signing token (HMAC and timestamp), and `gitlab_token`, which sends the secret in plain text, is refused. The source address is not restricted, and payloads that cross the LAN in plain text are accepted. The relay passes on only IDs, and the agent fetches everything again from the forge (ADR-004, ADR-060) |
+| T6 | Leaked forge tokens | Least privilege (read/write on the issues of the target repositories, and only the contents access that is needed). Use a fine-grained PAT or a Project Access Token, stored in the OS keychain |
+| T7 | Destructive actions by a runaway agent | A fixed set of tools passed to the run (ADR-052), explicitly allowed tools, work in a worktree, and timeouts. Only the agent pushes, and only to the issue's branch; Claude's environment gets no credentials. What stops pushes to main, merges, and releases is the sandbox and the checks before a push on protected paths, secrets, and the branch (ADR-063). The protected paths also cover `CLAUDE.md`, `AGENTS.md`, and `.claude/` in subdirectories, and the original path of a rename. Tools the user adds (`allow_tools_extra`) can be written only in the config file; the inbox API and the web inbox cannot change them. When the config is loaded, an unrestricted `Bash` entry and any entry that names a denied operation (`git push`, `git rebase`, `gh`, `WebFetch`) are errors. A deny rule is not a boundary (V5), so withholding the forge credentials (ADR-012) is the barrier (ADR-045). Shell commands run in a per-run sandbox: writes are limited to the worktree and `$TMPDIR`, and the network is unreachable. The places that hold credentials, and switchboard's config and state directories, cannot be read. Only `git` and the verify commands run outside the sandbox, and on a host that cannot use the sandbox, claude is not started (ADR-057) |
+| T8 | Spoofed hidden markers that confuse the inbox | Markers are taken only from comments posted by the agent's account (or by you) |
+| T11 | Impersonation among the people who share the inbox, and viewing projects one has no right to see | With `inbox.auth` set, writes to GitLab use the OAuth token of the person logged in, never a shared token. On GitHub, only the owner can view and write. The list and the single-issue view show only the projects that person can read with their own token. The agent acts as a bot identity and is not in `trusted_authors` (ADR-061) |
+| T10 | Sniffing of the web inbox session cookie on the same LAN | For now the web inbox serves plain HTTP, so the cookie travels in plain text. Whoever steals it can act as that user. The cookie holds only a session ID, and GitLab tokens never leave the inbox service. A session ends after 24 hours without use or after 7 days. HTTPS is tracked in #155 (ADR-059) |
+| T9 | Leaking secrets to the outside through issue text | An instruction to keep secrets out of the output (comments), and where possible a pattern check before posting. An FCM push notification carries only the issue reference, the waiting reason, the title, times, and the pull or merge request number and commit; it never carries the text of questions, plans, or comments (ADR-047) |
 
-## 4. トークンと権限
+## 4. Tokens and permissions
 
-- GitHub：fine-grained PAT。対象リポジトリのみ、Issues: Read/Write、Pull requests: Read/Write、Contents: Read/Write（PR作成に必要な範囲）、Actions: ReadとCommit statuses: Read（PRのCIを見張るため。ADR-041）。PRとbaseの衝突は `Pull requests: Read` で読むので、権限は増えない（ADR-044）
-- GitLab：Project Access Token または PAT の `api` スコープ（最小化できない場合は対象プロジェクト限定の Project Access Token を推奨）
-- 受信箱専用のトークン（`inbox_token_ref`）は人の身元で、エージェントのトークンと分ける（ADR-008）。権限は、GitHubではIssues、Pull requests、Contentsの読み書きとする。Pull requestsとContentsの書き込みは、受信箱のWeb表示から完了のPRをマージするために使う（ADR-043）。加えて、Actions: ReadとCommit statuses: Readを持たせる。マージの確認ダイアログにCIの結果を出すために使う読み取りだけの権限で、無いときはダイアログにCIが出ないだけである（ADR-050）。GitLabは `api` スコープで足りる
-- 受信箱のトークンでは、Web表示に出すプロジェクトのアイコンも読む。GitHubはオーナーの公開のプロフィール、GitLabはプロジェクトとグループのアバターを読むだけで、新しい権限は要らない。トークンはフォージのAPIのホストとGitLabのインスタンスのホストにだけ送り、GitHubのアバターの画像のホスト、設定の `icon` のURL、リダイレクトの先の別のホストには送らない。画像はPNG、JPEG、GIF、WebPの256KiBまでとし、SVGは受け付けない。switchboard-webは画像を自分のオリジンから返すので、CSP（`default-src 'self'`）は緩めない（ADR-055）
-- 受信箱のサービスは、`inbox.notify.fcm` があるとき、Firebaseのサービスアカウントの鍵を `credentials_ref` でSecret Serviceから読む。鍵はFCMで送る権限だけを持つものにし、エージェントのサービスには渡さない（ADR-047）
-- 中継サーバーが持つのは webhook シークレットのみ。空のシークレットは、起動時と検証時に誤りにする
-- `switchboard doctor` がトークンの権限を診断する。GitLabはスコープを読み、`api` が無ければ失敗、`sudo` などは警告とする。GitHubのclassic PATは `X-OAuth-Scopes` を読み、`repo` も `public_repo` も無ければ失敗、`repo` 全体や `admin:*` などは警告とする。fine-grained PATは権限を読めないので、issue、PR、contentsの読み取りだけを試す。書き込みは副作用が出るので試さない
+- GitHub: a fine-grained PAT limited to the target repositories, with Issues: Read/Write, Pull requests: Read/Write, and Contents: Read/Write (as much as opening pull requests needs). To watch the CI of a pull request, it also has Actions: Read and Commit statuses: Read (ADR-041). A conflict between a pull request and its base branch is read with `Pull requests: Read`, so no permission is added (ADR-044).
+- GitLab: the `api` scope of a Project Access Token or a PAT (when the scope cannot be narrowed, a Project Access Token limited to the target project is recommended).
+- The inbox token (`inbox_token_ref`) carries a person's identity and is kept separate from the agent's token (ADR-008). On GitHub it gets read/write on Issues, Pull requests, and Contents. The write access to Pull requests and Contents lets the web inbox merge the pull request of a done issue (ADR-043). It also gets Actions: Read and Commit statuses: Read, read-only permissions that put the CI results in the merge confirmation dialog. Without them, the dialog only leaves out the CI (ADR-050). On GitLab the `api` scope is enough.
+- The inbox token also reads the project icons shown in the web inbox. This needs no new permission, because the token reads only the owner's public profile on GitHub and only project and group avatars on GitLab. The token is sent only to the forge API host and the GitLab instance host. It is never sent to the GitHub avatar image host, to an `icon` URL in the config, or to another host a redirect leads to. Images are limited to PNG, JPEG, GIF, and WebP of up to 256 KiB, and SVG is not accepted. Because switchboard-web serves the images from its own origin, its CSP (`default-src 'self'`) is not loosened (ADR-055).
+- When `inbox.notify.fcm` is set, the inbox service reads the Firebase service account key from Secret Service through `credentials_ref`. The key has only the permission to send through FCM, and it is not given to the agent service (ADR-047).
+- The relay server holds only the webhook secret. An empty secret is an error at startup and at verification.
+- `switchboard doctor` checks the permissions of the tokens. It reads the scopes of a GitLab token: no `api` fails, and `sudo` and the like warn. For a GitHub classic PAT it reads `X-OAuth-Scopes`: neither `repo` nor `public_repo` fails, and the whole of `repo`, `admin:*`, and the like warn. A fine-grained PAT's permissions cannot be read, so doctor only tries to read issues, pull requests, and contents. It does not try writing, which would have side effects.
 
-## 5. 監査
+## 5. Audit
 
-- エージェントは「受信イベント・検証結果（採用/破棄と理由）・実行コマンド・終了コード」をローカルにログ出力する
-- issue のコメント履歴がそのまま操作履歴になる
+- The agent writes a local log of the received events, the check results (taken or dropped, and why), the commands it ran, and their exit codes.
+- The comment history of each issue is the history of operations.
 
-## 6. 未確認事項（ROADMAP.md の検証項目と連動）
+## 6. Unverified behavior (linked to the verification items in ROADMAP.md)
 
-- 対話中のセッションと `--resume` が同じセッションIDで重なった場合の挙動
-- Notification フックで「権限確認待ち」と「入力待ち」を区別できるか（`-p` では発火しないため、フックは使わない。V2、V13、ADR-063）
-- ヘッドレス実行時に権限確認が必要になった場合の挙動（停止するか、失敗するか）
+- What happens when an interactive session and `--resume` overlap on the same session ID
+- Whether the Notification hook can tell "waiting for permission" from "waiting for input" (it does not fire under `-p`, so hooks are not used; V2, V13, ADR-063)
+- What happens when a headless run needs a permission prompt (whether it stops or fails)

@@ -1,11 +1,14 @@
 <!doctype html>
-<html lang="ja">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>switchboard</title>
-<meta name="description" content="GitHubとGitLabのissueから、Claude Codeの自動の実行を複数の端末で動かし、返答を待つissueを1つの受信箱に集める個人用ツールです。">
+<meta name="description" content="A personal tool that runs Claude Code from GitHub and GitLab issues on several hosts and gathers the issues waiting for your reply into one inbox.">
 <link rel="icon" href="favicon.png" type="image/png">
+<link rel="alternate" hreflang="en" href="https://uskanda.github.io/switchboard/">
+<link rel="alternate" hreflang="ja" href="https://uskanda.github.io/switchboard/ja/">
+<link rel="alternate" hreflang="x-default" href="https://uskanda.github.io/switchboard/">
 <style>
   /* Values come from the tokens in DESIGN.md at the repository root. */
   :root {
@@ -68,12 +71,14 @@
   }
   .brand { display: flex; align-items: center; gap: var(--sm); font-weight: 600; text-decoration: none; }
   .brand img { width: 24px; height: 24px; }
-  nav a { font: 500 13px/1.4 var(--font); color: var(--muted); text-decoration: none; margin-left: var(--lg); }
-  nav a:hover { color: var(--on-surface); text-decoration: underline; }
+  .links { display: flex; align-items: center; }
+  nav a, .lang { font: 500 13px/1.4 var(--font); color: var(--muted); text-decoration: none; margin-left: var(--lg); }
+  nav a:hover, .lang:hover { color: var(--on-surface); text-decoration: underline; }
 
   .hero { padding-top: 64px; padding-bottom: 40px; display: grid; gap: 40px; grid-template-columns: 1fr; }
   @media (min-width: 880px) { .hero { grid-template-columns: 1.05fr 1fr; align-items: center; } }
-  h1 { font: 700 40px/1.2 var(--font); margin: 0 0 var(--lg); letter-spacing: -0.01em; }
+  /* English breaks the heading at its spaces; balance keeps the two lines of even length. */
+  h1 { font: 700 40px/1.2 var(--font); margin: 0 0 var(--lg); letter-spacing: -0.01em; text-wrap: balance; }
   @media (max-width: 559px) {
     h1 { font-size: 28px; }
     nav { display: none; }
@@ -155,119 +160,123 @@
 <header class="top">
   <div class="wrap">
     <a class="brand" href="./"><img src="favicon.png" alt="" width="24" height="24">switchboard</a>
-    <nav aria-label="ページ内">
-      <a href="#flow">動き方</a>
-      <a href="#features">機能</a>
-      <a href="#limits">前提</a>
-      <a href="#start">はじめ方</a>
-    </nav>
+    <div class="links">
+      <nav aria-label="On this page">
+        <a href="#flow">How it works</a>
+        <a href="#features">Features</a>
+        <a href="#limits">Limits</a>
+        <a href="#start">Get started</a>
+      </nav>
+      <!-- The other language's page; it stays visible on a phone, where the in-page links hide. -->
+      <a class="lang" href="ja/" hreflang="ja" lang="ja">日本語</a>
+    </div>
   </div>
 </header>
 
 <main>
   <div class="wrap hero">
     <div>
-      <h1>エージェントの質問を、<br>1つの受信箱で捌く。</h1>
-      <p class="lead">switchboardは、GitHubとGitLabのissueから、Claude Codeの自動の実行を複数の端末とリポジトリで動かす個人用ツールです。質問を残して止まった実行を「待ち」として集め、CLI、ブラウザ、Androidのアプリから返答できます。</p>
+      <h1>Answer your agents' questions from one inbox.</h1>
+      <p class="lead">switchboard is a personal tool that runs Claude Code from GitHub and GitLab issues, across several hosts and repositories. When a run stops with a question, its issue shows up as waiting, and you reply from the CLI, a browser, or the Android app.</p>
       <div class="actions">
-        <a class="btn primary" href="https://github.com/uskanda/switchboard">GitHubで見る</a>
-        <a class="btn" href="https://github.com/uskanda/switchboard/blob/main/docs/GUIDE.md">運用ガイド</a>
+        <a class="btn primary" href="https://github.com/uskanda/switchboard">View on GitHub</a>
+        <a class="btn" href="https://github.com/uskanda/switchboard/blob/main/docs/GUIDE.md">Guide</a>
       </div>
     </div>
 
-    <div class="inbox" role="img" aria-label="受信箱のWeb表示の例。返答待ちが2件、実行中が1件、完了が1件並んでいる。">
-      <div class="inbox-bar"><span class="count">待ち 2</span><span class="fresh">自動更新中（即時）</span></div>
-      <div class="sect">返答待ち</div>
+    <div class="inbox" role="img" aria-label="An example of the web inbox: two issues waiting for a reply, one running, and one done.">
+      <div class="inbox-bar"><span class="count">2 waiting</span><span class="fresh">Live updates on (instant)</span></div>
+      <div class="sect">Waiting</div>
       <div class="row">
-        <div class="meta"><span class="ref">notes#41</span><span class="badge b-gh">GitHub</span><span class="badge b-attn">plan</span></div>
-        <p class="title">検索の結果をタグで絞れるようにする</p>
-        <p class="sub">laptop・12分前から待ち</p>
+        <div class="meta"><span class="ref">notes#41</span><span class="badge b-gh">GitHub</span><span class="badge b-attn">plan approval</span></div>
+        <p class="title">Filter search results by tag</p>
+        <p class="sub">laptop, waiting 12m</p>
       </div>
       <div class="row">
-        <div class="meta"><span class="ref">tools/cli#7</span><span class="badge b-gl">GitLab</span><span class="badge b-err">ci</span></div>
-        <p class="title">設定ファイルの読み込みを1か所にまとめる</p>
-        <p class="sub">desktop・CIを2回直しても失敗</p>
+        <div class="meta"><span class="ref">tools/cli#7</span><span class="badge b-gl">GitLab</span><span class="badge b-err">ci failed</span></div>
+        <p class="title">Load the config file in one place</p>
+        <p class="sub">desktop, CI still fails after 2 fixes</p>
       </div>
-      <div class="sect">実行中</div>
+      <div class="sect">Running</div>
       <div class="row">
         <div class="meta"><span class="ref">notes#38</span><span class="badge b-gh">GitHub</span></div>
-        <p class="title">一覧の並び順を更新日時にする</p>
-        <p class="sub">laptop・4分・Edit ×3 テストを直しています</p>
+        <p class="title">Sort the list by last update</p>
+        <p class="sub">laptop, 4m elapsed, Edit ×3, fixing the tests</p>
       </div>
-      <div class="sect">完了（close待ち）</div>
+      <div class="sect">Done (waiting for close)</div>
       <div class="row">
         <div class="meta"><span class="ref">tools/cli#5</span><span class="badge b-gl">GitLab</span><span class="badge b-neutral">MR !12</span></div>
-        <p class="title">ヘルプの文言を直す</p>
+        <p class="title">Fix the help text</p>
       </div>
     </div>
   </div>
 
   <section id="flow">
     <div class="wrap">
-      <h2>動き方</h2>
+      <h2>How it works</h2>
       <ol class="flow">
-        <li><h3>ラベルを付ける</h3><p>issueに <code>agent:ready</code> か <code>agent:plan</code> を付けます。</p></li>
-        <li><h3>端末が実行する</h3><p>担当の端末のエージェントが、issueごとのworktreeで <code>claude -p</code> を動かします。</p></li>
-        <li><h3>質問で止まる</h3><p>質問はissueのコメントになり、<code>agent:waiting</code> と通知が届きます。</p></li>
-        <li><h3>受信箱で返す</h3><p>CLI、ブラウザ、アプリのどこから返答しても、同じissueで実行が再開します。</p></li>
-        <li><h3>PRになる</h3><p>検証を通したブランチをpushし、draftのPR/MRを作ります。受信箱からマージできます。</p></li>
+        <li><h3>Add a label</h3><p>Put <code>agent:ready</code> or <code>agent:plan</code> on an issue.</p></li>
+        <li><h3>A host runs it</h3><p>The agent on the project's host runs <code>claude -p</code> in a worktree of its own for the issue.</p></li>
+        <li><h3>It stops on a question</h3><p>The agent posts the question as an issue comment. It labels the issue <code>agent:waiting</code>, and you get a notification.</p></li>
+        <li><h3>Reply from the inbox</h3><p>Reply from the CLI, a browser, or the app. The run resumes on the same issue.</p></li>
+        <li><h3>It becomes a PR</h3><p>The agent pushes a branch that passed the checks and opens a draft pull or merge request. You can merge it from the inbox.</p></li>
       </ol>
     </div>
   </section>
 
   <section id="features">
     <div class="wrap">
-      <h2>主な機能</h2>
+      <h2>Features</h2>
       <div class="grid">
-        <div class="card"><h3>計画を先に立てる</h3><p>実装の前に質問と計画をコメントし、<code>/ok</code> の返答で承認してから実装します。</p></div>
-        <div class="card"><h3>両フォージを横断</h3><p>GitHubとGitLab（セルフホストを含む）の待ちを、1つの一覧に古い順で並べます。</p></div>
-        <div class="card"><h3>複数の端末</h3><p>プロジェクトごとに担当の端末を決めます。2台が同じissueを重ねて実行することはありません。</p></div>
-        <div class="card"><h3>直す実行</h3><p>CIの失敗、pushの拒否、baseとの衝突を見つけると、同じPRで直す実行を自動で始めます。</p></div>
-        <div class="card"><h3>通知とアプリ</h3><p>待ちと完了をTelegramとAndroidのプッシュ通知で知らせます。計画は通知から承認できます。</p></div>
-        <div class="card"><h3>実行の制御</h3><p>同時に動かす数、順番待ち、利用上限での一時停止、APIの費用の上限を設定できます。</p></div>
+        <div class="card"><h3>Plan first</h3><p>Before writing code, the agent comments its questions and plan. It starts the work after you approve with a <code>/ok</code> reply.</p></div>
+        <div class="card"><h3>Both forges</h3><p>Waiting issues from GitHub and GitLab, self-hosted included, share one list, oldest first.</p></div>
+        <div class="card"><h3>Several hosts</h3><p>Each project has one host that runs it. Two hosts never run the same issue at once.</p></div>
+        <div class="card"><h3>Fix runs</h3><p>On a CI failure, a rejected push, or a conflict with the base branch, the agent starts a run that fixes it in the same pull or merge request.</p></div>
+        <div class="card"><h3>Notifications and app</h3><p>Telegram and Android push notifications tell you when an issue is waiting or done. You can approve a plan from the notification.</p></div>
+        <div class="card"><h3>Run limits</h3><p>Set how many runs go at once, queue the rest, pause at the usage limit, and cap the API cost.</p></div>
       </div>
     </div>
   </section>
 
   <section id="safety">
     <div class="wrap">
-      <h2>安全のための前提</h2>
+      <h2>Security model</h2>
       <ul class="plain">
-        <li>issueから読んだ文字列はデータとして扱います。指示として採るのは <code>trusted_authors</code> のコメントだけです。</li>
-        <li><code>claude</code> にはフォージの資格情報を渡しません。push、PRの作成、コメントはエージェントが行います。</li>
-        <li>実行のシェルのコマンドはsandboxで動き、書き込めるのはworktreeだけで、ネットワークには出られません。</li>
-        <li>端末は受信ポートを開きません。例外は受信箱のWeb表示で、LANのアドレスに限ります。</li>
-        <li>中継が配るのはissueのIDとイベントの種類だけで、本文とトークンは持ちません。</li>
+        <li>Text read from issues is data. Only comments by <code>trusted_authors</code> count as instructions.</li>
+        <li><code>claude</code> gets no forge credentials. The agent pushes, opens pull or merge requests, and posts comments.</li>
+        <li>A run's shell commands run in a sandbox. They can write only to the worktree and cannot reach the network.</li>
+        <li>Hosts open no listening ports. The one exception is the web inbox, and only on LAN addresses.</li>
+        <li>The relay passes on only issue IDs and event types. It holds no issue text and no tokens.</li>
       </ul>
     </div>
   </section>
 
   <section id="limits">
     <div class="wrap">
-      <h2>前提と制約</h2>
-      <p class="muted">作者1人の環境で作り、確かめてきました。使う前に、次の前提に合うかを確かめてください。</p>
+      <h2>Assumptions and limits</h2>
+      <p class="muted">switchboard was built and tested on its author's own setup. Before you use it, check that your setup fits the points below.</p>
       <ul class="plain">
-        <li>利用者は1人です。対象は非公開のリポジトリで、エージェントも既定では自分のアカウントで投稿します。</li>
-        <li>端末はLinuxで、systemd、Secret Service、<code>bubblewrap</code>、<code>socat</code> が要ります。macOSでは確かめていません。</li>
-        <li>受信箱のWeb表示は利用者を認証しません。LANの中だけで使います。</li>
-        <li>GitHubはgithub.comだけに対応します。GitHub.comのwebhookは中継に届かないので、ポーリングで扱います。</li>
-        <li>配布するバイナリは無く、ソースから作ります。Androidのアプリは、自分のFirebaseのプロジェクトで作ります。</li>
-        <li>画面の文言は日本語だけです。</li>
+        <li>It is for one user and targets private repositories. By default, the agent posts as your own account.</li>
+        <li>Hosts run Linux with systemd, Secret Service, <code>bubblewrap</code>, and <code>socat</code>. It has not been tested on macOS.</li>
+        <li>The web inbox does not authenticate users. Use it only inside your LAN.</li>
+        <li>On GitHub, only github.com is supported. Its webhooks cannot reach the relay, so switchboard polls it.</li>
+        <li>No binaries are published; you build switchboard from source. You build the Android app with your own Firebase project.</li>
+        <li>The UI is in English and Japanese only. The web inbox picks the language from the browser, and you can change it in its settings. The Android app follows the device language.</li>
       </ul>
     </div>
   </section>
 
   <section id="start">
     <div class="wrap">
-      <h2>はじめ方</h2>
-      <p>Go 1.24以上、Node.js 24、pnpm 12、Claude Code CLIを入れてから、クローンして作ります。</p>
+      <h2>Get started</h2>
+      <p>Install Go 1.24 or later, Node.js 24, pnpm 12, and the Claude Code CLI. Then clone the repository and build it.</p>
 <pre><code>git clone https://github.com/uskanda/switchboard.git &amp;&amp; cd switchboard
 make install
 mkdir -p ~/.config/switchboard &amp;&amp; cp config/switchboard.example.yaml ~/.config/switchboard/config.yaml
 switchboard doctor
 switchboard labels sync
 switchboard agent run</code></pre>
-      <p>トークンの登録、常駐、中継、通知、Web表示の設置は <a href="https://github.com/uskanda/switchboard/blob/main/docs/GUIDE.md">運用ガイド</a> にあります。</p>
+      <p>The <a href="https://github.com/uskanda/switchboard/blob/main/docs/GUIDE.md">guide</a> covers registering tokens, running the agent as a service, and setting up the relay, notifications, and the web inbox.</p>
     </div>
   </section>
 </main>
@@ -275,8 +284,8 @@ switchboard agent run</code></pre>
 <footer>
   <div class="wrap">
     <a href="https://github.com/uskanda/switchboard">GitHub</a>
-    <a href="https://github.com/uskanda/switchboard/blob/main/docs/SECURITY.md">セキュリティ</a>
-    <a href="https://github.com/uskanda/switchboard/blob/main/LICENSE">MITライセンス</a>
+    <a href="https://github.com/uskanda/switchboard/blob/main/docs/SECURITY.md">Security</a>
+    <a href="https://github.com/uskanda/switchboard/blob/main/LICENSE">MIT License</a>
   </div>
 </footer>
 </body>
