@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Markdown } from "@/components/Markdown";
 import { Card } from "@/components/ui/card";
-import type { Detail } from "@/lib/api";
+import { parseProgress, type Detail, type ProgressLine } from "@/lib/api";
 import { threadOf, type Round, type Shown } from "@/lib/scrollTarget";
 import { cn } from "@/lib/utils";
 
@@ -31,6 +31,44 @@ function Byline({ author, at, agent }: { author: string; at: string | null | und
 
 type Answering = { index: number; node: ReactNode };
 
+/**
+ * Progress draws a run's progress comment read line by line (issue #185): the latest line's words as the card's text,
+ * with its time, elapsed time and tools in a muted line under them, then every line in a log folded under a details,
+ * oldest first. Words not yet said read as working, as on the list.
+ */
+function Progress({ lines }: { lines: ProgressLine[] }) {
+  const last = lines[lines.length - 1];
+  const words = (w: string) => (w && w !== "?" ? w : "作業しています");
+  return (
+    <>
+      <p className="break-words">{words(last.words)}</p>
+      <p className="text-label-md text-muted break-words">{last.head}</p>
+      <details className="group">
+        <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-xs rounded-sm text-label-md text-muted focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
+          {`進捗の記録（${lines.length}行）`}
+          <span aria-hidden className="transition-transform group-open:rotate-90">
+            ▸
+          </span>
+        </summary>
+        <ol className="flex flex-col gap-xs">
+          {lines.map((l, k) => (
+            <li key={k} className="flex flex-col text-label-md break-words">
+              <span className="text-muted">{l.head}</span>
+              <span>{words(l.words)}</span>
+            </li>
+          ))}
+        </ol>
+      </details>
+    </>
+  );
+}
+
+/** Body draws a comment's text: a progress comment that can be read line by line as Progress, any other as Markdown. */
+function Body({ c }: { c: Shown["c"] }) {
+  const lines = c.agent && c.kind === "progress" ? parseProgress(c.body) : null;
+  return lines ? <Progress lines={lines} /> : <Markdown text={c.body} />;
+}
+
 /** Item draws one comment shown picks: a claim of a run or a queued comment as a line, any other as a card. */
 function Item({ item: { c, i, folded, latest }, answering }: { item: Shown; answering?: Answering }) {
   return folded ? (
@@ -43,7 +81,7 @@ function Item({ item: { c, i, folded, latest }, answering }: { item: Shown; answ
     <li data-index={i}>
       <Card className={cn("flex flex-col gap-sm", latest && "border-2 border-primary")} aria-current={latest ? "true" : undefined}>
         <Byline author={c.author} at={c.created_at} agent={c.agent} />
-        {answering?.index === i ? answering.node : <Markdown text={c.body} />}
+        {answering?.index === i ? answering.node : <Body c={c} />}
       </Card>
     </li>
   );
@@ -83,8 +121,10 @@ function RoundLine({ round: { question, replies }, answering }: { round: Round; 
  * (revealAndScroll opens a folded round first); it stops below the pinned head of the issue (--header-h and
  * --pane-head-h). A round opened stays open while the Thread is kept; give it the issue as its key, so another issue
  * starts folded.
+ * pendingReply, when given, is a reply sent from this page that the forge's thread does not show yet: it is drawn as a
+ * last card, said to be sent and waiting to show on the forge (issue #182).
  */
-export function Thread({ detail, answering }: { detail: Detail; answering?: Answering }) {
+export function Thread({ detail, answering, pendingReply }: { detail: Detail; answering?: Answering; pendingReply?: string }) {
   return (
     <ol
       className="flex flex-col gap-sm [&_[data-index]]:scroll-mt-[calc(var(--header-h,0px)+var(--pane-head-h,0px))] lg:[&_[data-index]]:scroll-mt-[var(--pane-head-h,0px)]"
@@ -102,6 +142,17 @@ export function Thread({ detail, answering }: { detail: Detail; answering?: Answ
         ) : (
           <Item key={it.i} item={it} answering={answering} />
         ),
+      )}
+      {pendingReply !== undefined && (
+        <li>
+          <Card className="flex flex-col gap-sm border-dashed">
+            <p className="flex flex-wrap items-center gap-sm text-label-md text-muted">
+              <span className="font-medium">あなた</span>
+              <span>送信済み・フォージへの反映待ち</span>
+            </p>
+            <Markdown text={pendingReply} />
+          </Card>
+        </li>
       )}
     </ol>
   );

@@ -156,7 +156,7 @@ describe("the list", () => {
     at("/");
     // The link to the issue sits inside the card's frame, beside a done one's change link and merge button, so the
     // frame draws the focus of that link, apart from itself.
-    const link = within(await screen.findByRole("list")).getAllByRole("link")[0];
+    const link = within(within(await screen.findByRole("navigation", { name: "一覧" })).getByRole("list")).getAllByRole("link")[0];
     expect(link).toHaveClass("focus-visible:outline-none");
     expect(link.parentElement).toHaveClass("has-[>a:focus-visible]:outline-2", "has-[>a:focus-visible]:outline-offset-2");
   });

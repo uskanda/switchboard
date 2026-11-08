@@ -235,14 +235,14 @@ describe("the pinned head of an issue", () => {
     serve({ "gh:o/r#12": detail({ comments: asked }) }, listing(item()));
     at("/issue/gh%3Ao%2Fr%2312");
     const title = await screen.findByRole("heading", { level: 2, name: "Add a flag" });
-    expect(title).not.toHaveClass("line-clamp-2");
+    expect(title).not.toHaveClass("lg:line-clamp-2");
     expect(title).not.toHaveAttribute("title");
 
     const top = document.querySelector("[data-pane-top]")!;
     intersect(top, false);
-    expect(title).toHaveClass("line-clamp-2");
+    expect(title).toHaveClass("lg:line-clamp-2");
     expect(title).toHaveAttribute("title", "Add a flag");
     intersect(top, true);
-    expect(title).not.toHaveClass("line-clamp-2");
+    expect(title).not.toHaveClass("lg:line-clamp-2");
   });
 });

@@ -118,6 +118,9 @@ function questionsOf(detail: Detail | null) {
   return parsed && { index, parsed, key: JSON.stringify([detail.ref, c.created_at, c.body]), defaults: defaultAnswers(parsed.questions) };
 }
 
+/** RESUMED_TEXT is what a running issue says once its run started on a reply sent from this page. */
+const RESUMED_TEXT = "返答を受けて、エージェントが作業を再開しました。質問か完了になると、この画面が自動で切り替わります。";
+
 /** SentMark tells one wait apart from the next: its start and the agent's latest post of a wait. */
 type SentMark = { since: string | null; waitKey: string };
 
@@ -181,6 +184,10 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
   }, [issueRef]);
   // sentAt is the wait a reply was sent to, or null when none was.
   const [sentAt, setSentAt] = useState<SentMark | null>(null);
+  // sentText is the reply sent to that wait, shown in the thread until the forge's thread has it (issue #182).
+  const [sentText, setSentText] = useState<string | null>(null);
+  // resumedFor is the issue whose run started on a reply sent from this page, while it runs.
+  const [resumedFor, setResumedFor] = useState<string | null>(null);
   const [choices, setChoices] = useState<{ key: string; answers: Answer[] } | null>(() => draftOf(issueRef).choices);
   // fresh is whether detail came from a read of this issue, not from the cache.
   const [fresh, setFresh] = useState(false);
@@ -199,6 +206,8 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
     setFresh(false);
     setText(draft.text);
     setSentAt(null);
+    setSentText(null);
+    setResumedFor(null);
     setError(null);
     setChoices(draft.choices);
     setNotice(null);
@@ -325,7 +334,10 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
       markPending(to, "reply");
       if (shown.current === to) {
         justSent.current = true;
-        if (detail) setSentAt(markOf(detail));
+        if (detail) {
+          setSentAt(markOf(detail));
+          setSentText(reply);
+        }
         setText("");
         setChoices(null);
       } else {
@@ -390,8 +402,16 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
   }, [askMerge, mergeable]);
   // Once out of that wait, the mark goes, so coming back to it later does not say sent again.
   useEffect(() => {
-    if (sentAt && !sent) setSentAt(null);
-  }, [sentAt, sent]);
+    if (!sentAt || sent) return;
+    // A reply that took the issue out of its wait into a run is said to have been taken up.
+    if (running) setResumedFor(issueRef);
+    setSentAt(null);
+    setSentText(null);
+  }, [sentAt, sent, running, issueRef]);
+  // The words of a run taken up last as long as it runs.
+  useEffect(() => {
+    if (resumedFor && !running) setResumedFor(null);
+  }, [resumedFor, running]);
   useEffect(() => {
     if (!sent || !justSent.current) return;
     justSent.current = false;
@@ -403,6 +423,14 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
   const next = sent ? nextWait(inbox?.items.filter((it) => isWaiting(it) && (it.ref === issueRef || !busy.has(it.ref))) ?? [], issueRef) : null;
   // The form stays while something is typed or chosen, so a draft survives the issue leaving its wait.
   const showForm = detail && !sent && (replyable || text !== "" || touched);
+  // The reply sent stays in the thread as a card of its own until the forge's thread ends on a comment of a person
+  // with the same text (issue #182).
+  const lastPerson = [...(detail?.comments ?? [])].reverse().find((c) => !c.agent);
+  const pendingReply = sent && sentText !== null && lastPerson?.body.trim() !== sentText.trim() ? sentText : undefined;
+  // The list marks the issue as being processed from the reply until the agent takes it up (lib/pending.ts).
+  const processing = !!view?.some((it) => it.ref === issueRef && it.pending === "reply");
+  // The head shrinks once scrolled; only below 1024px, through the max-lg: classes.
+  const compact = !!detail && !atTop;
 
   return (
     <article ref={article} className={cn("relative flex flex-col gap-lg", !detail && "lg:pt-lg")}>
@@ -410,22 +438,43 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
       <div
         ref={head}
         data-pane-head
+        data-compact={compact ? "" : undefined}
         className={cn(
           "sticky top-[var(--header-h,0px)] z-[1] -mx-lg flex flex-col gap-xs border-b border-outline bg-surface px-lg pt-lg pb-md lg:top-0",
+          compact && "max-lg:gap-0 max-lg:pt-xs max-lg:pb-xs",
           !detail && "lg:hidden",
         )}
       >
-        <Link to="/" className="inline-flex min-h-11 items-center self-start text-label-md text-muted underline lg:hidden">
-          ← 一覧へ
-        </Link>
+        {/* Below 1024px, once scrolled, the way back shrinks to an arrow beside a one-line title (issue #181). */}
+        <div className={cn("flex min-w-0 flex-col gap-xs", compact && "max-lg:flex-row max-lg:items-center max-lg:gap-sm")}>
+          <Link
+            to="/"
+            aria-label={compact ? "一覧へ" : undefined}
+            className={cn(
+              "inline-flex min-h-11 shrink-0 items-center self-start text-label-md text-muted underline lg:hidden",
+              compact && "max-lg:min-w-11 max-lg:justify-center max-lg:self-center max-lg:no-underline",
+            )}
+          >
+            {compact ? "←" : "← 一覧へ"}
+          </Link>
+          {detail && (
+            <>
+              <IssueRef value={detail.ref} className={cn("self-start", compact && "max-lg:hidden")} />
+              <h2
+                className={cn("min-w-0 text-headline-md font-semibold break-words", compact && "max-lg:line-clamp-1 lg:line-clamp-2")}
+                title={atTop ? undefined : detail.title}
+              >
+                {detail.title}
+              </h2>
+            </>
+          )}
+        </div>
         {detail && (
           <>
-            <IssueRef value={detail.ref} className="self-start" />
-            <h2 className={cn("text-headline-md font-semibold break-words", !atTop && "line-clamp-2")} title={atTop ? undefined : detail.title}>
-              {detail.title}
-            </h2>
             <span className="flex flex-wrap items-center gap-sm text-label-md text-muted">
-              {running ? (
+              {processing ? (
+                <span className="pending-pulse font-medium">処理中</span>
+              ) : running ? (
                 <span className="font-medium">実行中</span>
               ) : queued ? (
                 <span className="font-medium">順番待ち</span>
@@ -438,9 +487,9 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
                 <ReasonBadge reason={detail.reason} />
               )}
               {queued && <span>{queueText(detail.reason)}</span>}
-              <span>{detail.host}</span>
+              <span className={cn(compact && "max-lg:hidden")}>{detail.host}</span>
               <span>{timeText(running ? "running" : queued ? "queued" : finished ? "done" : "waiting", detail.since)}</span>
-              <a href={detail.url} className="inline-flex min-h-11 items-center underline" target="_blank" rel="noreferrer" aria-label="フォージで開く（新しいタブ）">
+              <a href={detail.url} className={cn("inline-flex min-h-11 items-center underline", compact && "max-lg:hidden")} target="_blank" rel="noreferrer" aria-label="フォージで開く（新しいタブ）">
                 フォージで開く ↗
               </a>
               {reading && (
@@ -488,6 +537,7 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
             <Thread
               key={detail.ref}
               detail={detail}
+              pendingReply={pendingReply}
               answering={
                 plan && !sent
                   ? {
@@ -589,7 +639,7 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
               )}
             </form>
           )}
-          {running && !sent && !showForm && <p className="text-muted">実行中です。質問か完了になると、この画面が自動で切り替わります。</p>}
+          {running && !sent && !showForm && <p className="text-muted">{resumedFor === issueRef ? RESUMED_TEXT : "実行中です。質問か完了になると、この画面が自動で切り替わります。"}</p>}
           {queued && !replyable && !sent && !showForm && <p className="text-muted">順番待ちのため、まだ返答は要りません</p>}
           {!replyable && !running && !queued && !creating && !sent && !showForm && <p className="text-muted">このissueは待ちではありません。返答は送れません。</p>}
         </>

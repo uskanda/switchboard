@@ -115,6 +115,25 @@ export function progressText(progress: string | undefined): string {
   return words && words !== "?" ? words : "作業しています";
 }
 
+/** ProgressLine is one line of a run's progress comment: the time, elapsed time and tools, then the agent's words. */
+export type ProgressLine = { head: string; words: string };
+
+/**
+ * parseProgress reads the lines of a run's progress comment, the list items under its heading, oldest first, each cut
+ * at its first separator ("｜" or "|"). A comment with no list item is not read, and gives null.
+ */
+export function parseProgress(body: string): ProgressLine[] | null {
+  const lines = body
+    .split("\n")
+    .filter((l) => l.startsWith("- "))
+    .map((l) => {
+      const line = l.slice(2).trim();
+      const at = line.search(/[｜|]/);
+      return at < 0 ? { head: line, words: "" } : { head: line.slice(0, at).trim(), words: line.slice(at + 1).trim() };
+    });
+  return lines.length > 0 ? lines : null;
+}
+
 /** plainText is the start of a question as one plain line: the bold and code marks of its Markdown left out. */
 export const plainText = (s: string) => s.replace(/\*\*|__|`/g, "").replace(/^#+\s+/, "");
 
