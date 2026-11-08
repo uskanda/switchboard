@@ -273,7 +273,14 @@ function Items({ items, timeHead, selected, grouped }: { items: ViewItem[]; time
  */
 function GroupToggle({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
   return (
-    <Button type="button" variant="secondary" aria-pressed={on} onClick={() => onChange(!on)} className={cn(on && "border-primary")}>
+    <Button
+      type="button"
+      variant="secondary"
+      aria-pressed={on}
+      aria-label="プロジェクトでまとめる"
+      onClick={() => onChange(!on)}
+      className={cn(on && "border-primary")}
+    >
       <svg
         viewBox="0 0 20 20"
         width="18"
@@ -288,7 +295,9 @@ function GroupToggle({ on, onChange }: { on: boolean; onChange: (on: boolean) =>
       >
         <path d="M4.5 10.5l3.5 3.5 7.5-8" />
       </svg>
-      プロジェクトでまとめる
+      {/* Below 640px the words shrink, so the buttons fit beside the heading of the waits (issue #184). */}
+      <span className="sm:hidden">まとめる</span>
+      <span className="max-sm:hidden">プロジェクトでまとめる</span>
     </Button>
   );
 }
@@ -315,21 +324,23 @@ export function InboxList({ selected }: { selected?: string }) {
   return (
     <div ref={root} className="flex flex-col gap-lg">
       <h2 className="sr-only">一覧</h2>
-      <div className="flex flex-wrap justify-end gap-sm">
-        <GroupToggle on={grouped} onChange={setGrouped} />
-        <NewIssue />
-      </div>
-      {!inbox && !error && <Loading />}
-      {inbox && (
-        <section className="flex flex-col gap-sm">
+      {/* The buttons share the row of the heading of the waits, so the waits start right under it (issue #184). */}
+      <section className="flex flex-col gap-sm">
+        <div className="flex flex-wrap items-center justify-between gap-sm">
           <h2 className="text-label-md font-semibold text-muted">返答待ち</h2>
-          {waiting.length > 0 ? (
+          <div className="flex flex-wrap justify-end gap-sm">
+            <GroupToggle on={grouped} onChange={setGrouped} />
+            <NewIssue />
+          </div>
+        </div>
+        {!inbox && !error && <Loading />}
+        {inbox &&
+          (waiting.length > 0 ? (
             <Items items={waiting} timeHead="待ち" selected={selected} grouped={grouped} />
           ) : (
             <p className="text-muted">待ちのissueはありません</p>
-          )}
-        </section>
-      )}
+          ))}
+      </section>
       {running.length > 0 && (
         <section className="flex flex-col gap-sm">
           <h2 className="text-label-md font-semibold text-muted">実行中</h2>

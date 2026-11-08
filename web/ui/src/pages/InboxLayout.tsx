@@ -7,7 +7,7 @@ import { IssuePane } from "@/components/IssuePane";
 import { IssueRef } from "@/components/IssueRef";
 import { ReasonBadge } from "@/components/ReasonBadge";
 import { Card } from "@/components/ui/card";
-import { isWaiting, issuePath, oldestWaiting, timeText, type Item } from "@/lib/api";
+import { isDone, isQueued, isRunning, isWaiting, issuePath, oldestWaiting, timeText, type Item } from "@/lib/api";
 import { keepListScroll, listScroll } from "@/lib/listScroll";
 import { LIST_WIDTH_DEFAULT, LIST_WIDTH_MAX, LIST_WIDTH_MIN, LIST_WIDTH_STEP, useListWidth } from "@/lib/paneWidth";
 import { useInbox } from "@/lib/inbox";
@@ -65,16 +65,68 @@ function PaneBorder({ width, setWidth }: { width: number; setWidth: (w: number) 
 }
 
 /**
- * NothingChosen fills the right pane while no issue is chosen: a card that leads to the issue that has waited longest,
- * or, while nothing waits, a line that asks to choose one from the list.
+ * Summary is the inbox at a glance, for the right pane while no issue is chosen (issue #183): how many issues each
+ * section of the list has, then how many waits each reason has, most first, with the reason's badge.
+ */
+function Summary({ items }: { items: Item[] }) {
+  const sections = [
+    { name: "返答待ち", n: items.filter(isWaiting).length },
+    { name: "実行中", n: items.filter(isRunning).length },
+    { name: "順番待ち", n: items.filter(isQueued).length },
+    { name: "完了", n: items.filter(isDone).length },
+  ];
+  const reasons = new Map<string, number>();
+  for (const it of items.filter(isWaiting)) reasons.set(it.reason, (reasons.get(it.reason) ?? 0) + 1);
+  const byCount = [...reasons].sort((a, b) => b[1] - a[1]);
+  return (
+    <section aria-labelledby="inbox-summary" className="flex flex-col gap-sm">
+      <h2 id="inbox-summary" className="text-label-md font-semibold text-muted">
+        受信箱の概要
+      </h2>
+      <Card className="flex flex-col gap-md">
+        <dl className="grid grid-cols-4 gap-sm">
+          {sections.map((s) => (
+            <div key={s.name} className="flex flex-col gap-xs">
+              <dt className="text-label-md text-muted">{s.name}</dt>
+              <dd className="text-headline-md font-semibold">{`${s.n}件`}</dd>
+            </div>
+          ))}
+        </dl>
+        {byCount.length > 0 && (
+          <ul aria-label="待ちの理由" className="flex flex-col gap-xs border-t border-outline pt-md">
+            {byCount.map(([reason, n]) => (
+              <li key={reason} className="flex items-center justify-between gap-sm">
+                <ReasonBadge reason={reason} />
+                <span className="text-label-md text-muted">{`${n}件`}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+    </section>
+  );
+}
+
+/**
+ * NothingChosen fills the right pane while no issue is chosen: the summary of the inbox, then a card that leads to the
+ * issue that has waited longest, or, while nothing waits, a line that asks to choose one from the list.
  */
 function NothingChosen({ items }: { items: Item[] | null }) {
   useMinute();
   // The waits as the list shows them: an issue being processed (lib/pending.ts) is not offered.
   const it = oldestWaiting(items ?? []);
-  if (!it) return <p className="pt-xl text-muted">左の一覧からissueを選んでください</p>;
   return (
-    <section aria-labelledby="oldest-waiting" className="flex flex-col gap-sm pt-xl">
+    <div className="flex flex-col gap-xl pt-xl">
+      {items && <Summary items={items} />}
+      {it ? <OldestWaiting it={it} /> : <p className="text-muted">左の一覧からissueを選んでください</p>}
+    </div>
+  );
+}
+
+/** OldestWaiting is the card that leads to the issue that has waited longest. */
+function OldestWaiting({ it }: { it: Item }) {
+  return (
+    <section aria-labelledby="oldest-waiting" className="flex flex-col gap-sm">
       <h2 id="oldest-waiting" className="text-label-md font-semibold text-muted">
         最も古い待ち
       </h2>

@@ -409,7 +409,8 @@ describe("the thread", () => {
     expect(within(list).getByText("着手しました")).toBeInTheDocument();
     expect(within(list).queryByText("Started on host desk.")).toBeNull();
     expect(within(list).queryByText("old progress line")).toBeNull();
-    expect(within(list).getByText("new progress line")).toBeInTheDocument();
+    // The progress card leads with the latest line and lists it again in its folded log.
+    expect(within(list).getAllByText("new progress line").length).toBeGreaterThan(0);
     expect(within(list).getByText("Use the top one.")).toBeInTheDocument();
     // The claim, the progress and the question are the agent's; the person's comment is not marked.
     expect(within(list).getAllByText("エージェント")).toHaveLength(3);

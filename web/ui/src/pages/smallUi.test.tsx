@@ -87,7 +87,7 @@ describe("the times and progress on the list", () => {
     });
     at("/issue/gh%3Ao%2Fr%2312");
     const heading = await screen.findByRole("heading", { level: 2, name: "Add a flag" });
-    expect(within(heading.parentElement!).getByText("5分前から待ち")).toBeInTheDocument();
+    expect(within(heading.closest<HTMLElement>("[data-pane-head]")!).getByText("5分前から待ち")).toBeInTheDocument();
   });
 
   it("cut a long title on a card to two lines, with the whole of it in its title", async () => {
