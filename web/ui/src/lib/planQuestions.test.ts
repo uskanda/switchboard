@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { smarternews80 } from "@/lib/planQuestions.fixture";
-import { composeReply, decidedBefore, defaultAnswers, groupsOf, parsePlanQuestions, questionState, setNoteOnly, splitHead, withoutAnswerHint, type Question } from "@/lib/planQuestions";
+import { composeReply, decidedBefore, defaultAnswers, groupsOf, parsePlanQuestions, questionState, setNoteOnly, splitHead, withoutAnswerHint, withoutRecommendedMark, type Question } from "@/lib/planQuestions";
 
 const labels = (q: Question) => groupsOf(q).map((g) => g.options.map((o) => o.label).join(""));
 
@@ -323,5 +323,39 @@ describe("decidedBefore", () => {
     const two: [number, string, string, string] = [1, "既定", "範囲: A 全体 / B 一部\n欄: X 両方 / Y 題", "範囲はA、欄はX。"];
     const cs = [round(two), person("Q1 既定: 範囲はB、欄はX"), claim, round(q3)];
     expect(decidedBefore("ja", cs, 3, "/ok")).toEqual([{ kind: "question", n: 1, title: "既定", answer: "範囲はB、欄はX" }]);
+  });
+});
+
+describe("the diagram of a question", () => {
+  const body = (q: string) => `### 計画についての質問\n\n${q}`;
+  const kinds = (q: Question) => q.parts.map((p) => p.kind);
+
+  it("is the first mermaid code block before the options", () => {
+    const q = parsePlanQuestions(body("❓ **Q1** - **流れ**\n\nどこで分けますか。\n\n```mermaid\nflowchart TD\n  A --> B:::focus\n```\n\nA: 今のまま\nB: 分ける\n\n➡️ **推奨：B** 速い。\n"))!.questions[0];
+    expect(kinds(q)).toEqual(["text", "diagram", "group"]);
+    expect(q.parts[1]).toEqual({ kind: "diagram", source: "flowchart TD\n  A --> B:::focus" });
+    expect(defaultAnswers([q])[0].choices).toEqual(["B"]);
+  });
+
+  it("is not a code block of another language, nor one after the options", () => {
+    const q = parsePlanQuestions(body("❓ **Q1** - **流れ**\n\n```go\nx := 1\n```\n\nA: 今のまま\nB: 分ける\n\n```mermaid\nflowchart TD\n  A --> B\n```\n\n➡️ A\n"))!.questions[0];
+    expect(kinds(q)).toEqual(["text", "group", "text"]);
+  });
+
+  it("keeps an unclosed mermaid block as text", () => {
+    const q = parsePlanQuestions(body("❓ **Q1** - **流れ**\n\n```mermaid\nflowchart TD\n  A --> B\n\n➡️ A\n"))!.questions[0];
+    expect(kinds(q)).toEqual(["text"]);
+    expect((q.parts[0] as { text: string }).text).toMatch(/^```mermaid\nflowchart TD/);
+  });
+});
+
+describe("withoutRecommendedMark", () => {
+  it("drops the bold label at the start of a recommendation, in either language", () => {
+    expect(withoutRecommendedMark("**推奨：B** 読み込みが速くなる")).toBe("読み込みが速くなる");
+    expect(withoutRecommendedMark("**Recommended: B** It loads faster.")).toBe("It loads faster.");
+  });
+
+  it("leaves a recommendation of the older form as it is", () => {
+    expect(withoutRecommendedMark("Bを勧めます。速いためです。")).toBe("Bを勧めます。速いためです。");
   });
 });

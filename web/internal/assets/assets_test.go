@@ -6,8 +6,9 @@ import (
 	"testing"
 )
 
-// The page's CSP (default-src 'self') blocks the <style> that sonner inserts at run time, so its layout must come
-// in the built stylesheet; without it the toasts sit unpositioned below the page, out of sight.
+// sonner inserts its layout as a <style> at run time, which the page's CSP blocked until ADR-066 allowed inline
+// styles. The layout still comes in the built stylesheet, so the toasts do not depend on that allowance: without it
+// they would sit unpositioned below the page, out of sight.
 func TestBuiltStylesheetCarriesTheToasterLayout(t *testing.T) {
 	fsys := FS()
 	if _, err := fs.Stat(fsys, "index.html"); err != nil {

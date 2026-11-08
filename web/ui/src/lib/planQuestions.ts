@@ -12,7 +12,8 @@ export type Option = { label: string; text: string };
 /** Group is one set of options that a single choice answers, with the heading it had on its line, if any. */
 export type Group = { heading?: string; options: Option[] };
 
-export type Part = { kind: "text"; text: string } | { kind: "group"; group: Group };
+/** Part is a piece of a question's body: text, a group of options, or the Mermaid diagram before the options. */
+export type Part = { kind: "text"; text: string } | { kind: "group"; group: Group } | { kind: "diagram"; source: string };
 
 export type Question = { n: number; title: string; parts: Part[]; recommendation: string };
 
@@ -30,6 +31,8 @@ const HEADING = /^❓️?\s*\*\*Q(\d+)\*\*\s*[-–—]\s*\*\*(.+?)\*\*\s*(?:[:�
 const ARROW = /^➡️?\s*/u;
 const SEPARATOR = /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/;
 const FENCE = /^\s*(?:```|~~~)/;
+// The opening line of the code block of a question's diagram (internal/agent/planrun.go writes it).
+const MERMAID = /^\s*```\s*mermaid\s*$/;
 // An option on a line of its own: a list mark, bold or a parenthesis may come around the label, and a delimiter or
 // a space after it.
 const OPTION_LINE = /^\s*(?:[-*+]\s+)?(?:\*\*)?[(（]?([A-Z]|\d{1,2})[)）]?(?:\*\*)?(?:[:：.、．](?:\*\*)?\s*|\s+)(\S.*)$/u;
@@ -77,6 +80,8 @@ function parseParts(lines: string[]): Part[] {
   const parts: Part[] = [];
   let text: string[] = [];
   let run: (Option & { raw: string })[] = []; // the options read so far, with their lines in case they make no group
+  let diagram: string[] | null = null; // the lines of a mermaid block being read
+  let drawn = false; // a diagram or a group was read: a later mermaid block is text
   let blanks: string[] = []; // blank lines seen inside a run: dropped if the run goes on, text otherwise
 
   const pushText = () => {
@@ -94,6 +99,7 @@ function parseParts(lines: string[]): Part[] {
     }
     pushText();
     parts.push({ kind: "group", group });
+    drawn = true;
   };
   const flush = () => {
     if (run.length >= 2) pushGroup({ options: run.map(({ label, text }) => ({ label, text })) });
@@ -105,6 +111,23 @@ function parseParts(lines: string[]): Part[] {
 
   let fenced = false;
   for (const line of lines) {
+    if (diagram) {
+      if (!FENCE.test(line)) {
+        diagram.push(line);
+        continue;
+      }
+      // The first mermaid block before the options is the question's diagram.
+      pushText();
+      parts.push({ kind: "diagram", source: diagram.join("\n").trim() });
+      diagram = null;
+      drawn = true;
+      continue;
+    }
+    if (!fenced && !drawn && run.length < 2 && MERMAID.test(line)) {
+      flush();
+      diagram = [];
+      continue;
+    }
     if (FENCE.test(line)) fenced = !fenced;
     if (fenced || FENCE.test(line)) {
       flush();
@@ -143,6 +166,8 @@ function parseParts(lines: string[]): Part[] {
     }
     text.push(line);
   }
+  // A mermaid block left open is text, as it was written.
+  if (diagram) text.push("```mermaid", ...diagram);
   flush();
   pushText();
   return parts;
@@ -396,3 +421,10 @@ export function decidedBefore(lang: Lang, comments: Comment[], latest: number, w
     return [{ kind: "reply", from: questions[0].n, to: questions[questions.length - 1].n, text: first.split("\n")[0].trim() }];
   });
 }
+
+// The bold start of a recommendation that switchboard writes before the reason, in each of its languages
+// (internal/agent/messages.go, planRecommended).
+const RECOMMENDED_MARK = /^\*\*(?:推奨：|Recommended: )(?:[A-Z]|\d{1,2})\*\*\s*/u;
+
+/** withoutRecommendedMark drops the bold label a recommendation starts with, which the option it sits under shows. */
+export const withoutRecommendedMark = (recommendation: string) => recommendation.replace(RECOMMENDED_MARK, "");

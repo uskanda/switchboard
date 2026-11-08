@@ -64,9 +64,14 @@ type Server struct {
 	files   map[string]*staticFile
 }
 
+// csp is the page's Content-Security-Policy. Everything loads from this origin only, scripts included. Inline styles
+// are allowed, as Mermaid styles the diagram of a plan question with them (ADR-066, which amends ADR-055); the web
+// inbox draws only a diagram that passed the checks, so a diagram can say what to draw, never how.
+const csp = "default-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h := w.Header()
-	h.Set("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+	h.Set("Content-Security-Policy", csp)
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Referrer-Policy", "no-referrer")
 	// Every request, reads included, must name this address as its Host: a page that rebinds its own name to this

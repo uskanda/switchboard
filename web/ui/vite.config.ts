@@ -10,6 +10,27 @@ const vendorChunks: Record<string, RegExp> = {
   vendor: /[\\/]node_modules[\\/]/,
 };
 
+type ModuleInfo = { isEntry: boolean; importedIds: readonly string[] } | null;
+
+/**
+ * staticModules lists the modules the entry reaches by static imports alone. Only these go into the vendor chunks:
+ * what is loaded with import() (Mermaid and everything it needs, for the diagram of a question) is left to Rollup's
+ * own chunks, so a page without a diagram never loads it.
+ */
+function staticModules(ids: Iterable<string>, info: (id: string) => ModuleInfo): Set<string> {
+  const seen = new Set<string>();
+  const todo = [...ids].filter((id) => info(id)?.isEntry);
+  while (todo.length > 0) {
+    const id = todo.pop()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    todo.push(...(info(id)?.importedIds ?? []));
+  }
+  return seen;
+}
+
+let reached: Set<string> | null = null;
+
 // The build goes into the Go module's embedded directory; switchboard-web serves it.
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -19,7 +40,11 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       output: {
-        manualChunks: (id) => Object.keys(vendorChunks).find((name) => vendorChunks[name].test(id)),
+        manualChunks: (id, { getModuleIds, getModuleInfo }) => {
+          reached ??= staticModules(getModuleIds(), getModuleInfo);
+          if (!reached.has(id)) return undefined;
+          return Object.keys(vendorChunks).find((name) => vendorChunks[name].test(id));
+        },
       },
     },
   },

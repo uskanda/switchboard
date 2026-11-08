@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { Diagram } from "@/components/Diagram";
 import { Markdown } from "@/components/Markdown";
 import { Textarea } from "@/components/ui/textarea";
 import { defineMessages, useMessages } from "@/lib/i18n";
@@ -8,6 +9,7 @@ import {
   setNoteOnly,
   splitHead,
   withoutAnswerHint,
+  withoutRecommendedMark,
   type Answer,
   type Decided,
   type Group,
@@ -176,6 +178,10 @@ function OneQuestion({ q, place, total, answer, disabled, onChange }: {
       body.push(<Markdown key={i} text={p.text} />);
       return;
     }
+    if (p.kind === "diagram") {
+      body.push(<Diagram key={i} n={q.n} source={p.source} />);
+      return;
+    }
     const g = k++;
     const choose = (label: string) => onChange({ ...answer, choices: answer.choices.map((c, m) => (m === g ? label : c)) });
     body.push(
@@ -186,7 +192,7 @@ function OneQuestion({ q, place, total, answer, disabled, onChange }: {
         group={p.group}
         choice={answer.choices[g] ?? null}
         recommended={recommended[g] ?? null}
-        reason={underOption ? q.recommendation : undefined}
+        reason={underOption ? withoutRecommendedMark(q.recommendation) : undefined}
         disabled={disabled || noteOnly}
         onChoose={choose}
       />,
