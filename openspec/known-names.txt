@@ -42,3 +42,7 @@ exp.host
 expo-task-manager
 react-native-safe-area-context
 expo-system-ui
+navigator.language
+navigator.languages
+document.documentElement.lang
+window.navigator
