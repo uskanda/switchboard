@@ -162,10 +162,12 @@ describe("the questions of a plan in English", () => {
     await screen.findByRole("button", { name: "Send answers" });
     const q1 = within(screen.getByRole("group", { name: "Q1 options" }));
     expect(q1.getByRole("radio", { name: /^A Right-click only\. \(recommended\)$/ })).toBeChecked();
-    expect(q1.getByRole("radio", { name: "None (answer in the note)" })).not.toBeChecked();
+    expect(q1.queryByRole("radio", { name: "None (answer in the note)" })).toBeNull();
     expect(screen.getByRole("group", { name: "Scope" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Add a note to Q1" })).toBeInTheDocument();
-    expect(screen.getAllByText("Recommended")).toHaveLength(3);
+    expect(screen.getByRole("button", { name: "Write another answer or a note for Q1" })).toBeInTheDocument();
+    // Only the question of two groups keeps the recommendation under its own label; the others have it under the option.
+    expect(screen.getAllByText("Recommended")).toHaveLength(1);
+    expect(screen.getByText("A, as the issue asks.")).toBeInTheDocument();
     expect(screen.getByText(/Choose an answer to each question/)).toHaveTextContent('"Send answers"');
     expect(screen.queryByText(/to accept the recommended answers/)).toBeNull();
   });
@@ -176,15 +178,47 @@ describe("the questions of a plan in English", () => {
     at(path);
     const send = await screen.findByRole("button", { name: "Send answers" });
     await userEvent.click(within(screen.getByRole("group", { name: "Q1 options" })).getByRole("radio", { name: /^B / }));
-    await userEvent.click(screen.getByRole("button", { name: "Add a note to Q1" }));
+    await userEvent.click(screen.getByRole("button", { name: "Write another answer or a note for Q1" }));
     await userEvent.type(screen.getByRole("textbox", { name: "Q1 note" }), "keep it small");
-    await userEvent.click(within(screen.getByRole("group", { name: "Q3 options" })).getByRole("radio", { name: "None (answer in the note)" }));
+    await userEvent.click(screen.getByRole("button", { name: "Write another answer or a note for Q3" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Q3: answer in the note alone, without an option" }));
     await userEvent.type(screen.getByRole("textbox", { name: "Reply" }), "no rush");
     const text = "Q1 Entry point: B. Note: keep it small\nQ2 Defaults: Scope: A; Field: X\nQ3 Android: No answer\n\nOverall note:\nno rush";
     expect(screen.getByRole("region", { name: 'What "Send answers" posts' }).textContent).toBe(text);
     await userEvent.click(send);
     expect(await within(screen.getByRole("article")).findByRole("status")).toHaveTextContent("Sent");
     expect(posted(calls)).toEqual([{ ref: "gh:o/r#12", text }]);
+  });
+});
+
+describe("the cards and chips of a plan's questions in English", () => {
+  it("say where every answer stands, in English", async () => {
+    setLanguageChoice("en");
+    answer({ [issue]: detail("plan-questions", questions) });
+    at(path);
+    await screen.findByRole("button", { name: "Send answers" });
+    const chips = () => within(screen.getByRole("list", { name: "Question status" })).getAllByRole("button").map((b) => b.textContent);
+    expect(chips()).toEqual(["Q1 As recommended", "Q2 As recommended", "Q3 As recommended"]);
+    await userEvent.click(within(screen.getByRole("group", { name: "Q1 options" })).getByRole("radio", { name: /^B / }));
+    await userEvent.click(screen.getByRole("button", { name: "Write another answer or a note for Q3" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Q3: answer in the note alone, without an option" }));
+    expect(chips()).toEqual(["Q1 Changed", "Q2 As recommended", "Q3 Unanswered"]);
+    expect(screen.getByText("Answer in the note alone, without an option")).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "Q1 Entry point" })).getByText("1/3")).toBeInTheDocument();
+  });
+
+  it("list what earlier rounds settled, in English", async () => {
+    setLanguageChoice("en");
+    const first = "### The agent has questions for the plan\n\n❓ **Q1** - **Before**\n\nA: x\nB: y\n\n➡️ A\n";
+    const next = "### The agent has questions for the plan\n\n**Plan:** Filters\n\nI read a.go.\n\n❓ **Q2** - **Next**\n\nA: p\nB: q\n\n➡️ B\n";
+    const comments = [agent(1, "waiting", first), person(2, "/ok"), agent(3, "running"), agent(4, "waiting", next)];
+    answer({ [issue]: { ...detail("plan-questions", next), comments } });
+    at(path);
+    await screen.findByRole("button", { name: "Send answers" });
+    const settled = within(screen.getByRole("region", { name: "Settled so far" }));
+    expect(settled.getByText("Q1 Before")).toBeInTheDocument();
+    expect(settled.getByText("A x")).toBeInTheDocument();
+    expect(screen.getByText("What the agent looked at")).toBeInTheDocument();
   });
 });
 

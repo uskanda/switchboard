@@ -95,7 +95,8 @@ func TestSystemPromptsResolveConflictsByMergingTheBase(t *testing.T) {
 
 func TestPlanSystemPromptAsksAndChangesNothing(t *testing.T) {
 	s := PlanSystem("ja", "/ok", "")
-	for _, want := range []string{"plan stage", "Do not change", "recommendation", "questions", `"plan"`, "Japanese", "/ok", "git push", "untrusted"} {
+	for _, want := range []string{"plan stage", "Do not change", `"options"`, `"recommended"`, `"reason"`, `"diagram"`, "one group of options",
+		"flowchart", "stateDiagram-v2", "sequenceDiagram", "8 nodes", "flowchart TD", ":::focus", "questions", `"plan"`, "Japanese", "/ok", "git push", "untrusted"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("plan system prompt lacks %q", want)
 		}
@@ -151,10 +152,12 @@ func TestPlanSystemPromptAsksForATitle(t *testing.T) {
 	}
 }
 
-func TestPlanSystemPromptPutsEachOptionOnALine(t *testing.T) {
+func TestPlanSystemPromptLeavesTheLabelsOfTheOptionsToSwitchboard(t *testing.T) {
 	s := PlanSystem("ja", "/ok", "")
-	if !strings.Contains(s, `Put each option of a question on its own line, labeled like "A: ...".`) {
-		t.Fatalf("the plan system prompt does not say how to write the options:\n%s", s)
+	for _, want := range []string{"Do not label them: switchboard labels them A, B, C… in this order.", "Do not list the options here."} {
+		if !strings.Contains(s, want) {
+			t.Errorf("the plan system prompt does not say how to give the options (%q):\n%s", want, s)
+		}
 	}
 }
 

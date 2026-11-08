@@ -38,7 +38,7 @@ func TestProjectIconIsPassedOn(t *testing.T) {
 		t.Fatalf("headers = %v", h)
 	}
 	// The icon comes from this server, so the policy stays the one every answer has.
-	if h.Get("Content-Security-Policy") != "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" {
+	if h.Get("Content-Security-Policy") != csp {
 		t.Fatalf("CSP = %q, want it unchanged", h.Get("Content-Security-Policy"))
 	}
 }

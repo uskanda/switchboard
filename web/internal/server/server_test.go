@@ -173,8 +173,10 @@ func TestPagesAndHeaders(t *testing.T) {
 		if w.Code != 200 || !strings.Contains(w.Body.String(), "<title>inbox</title>") {
 			t.Fatalf("%s: %d %s", path, w.Code, w.Body)
 		}
-		csp := w.Header().Get("Content-Security-Policy")
-		if !strings.Contains(csp, "default-src 'self'") || !strings.Contains(csp, "frame-ancestors 'none'") || w.Header().Get("X-Content-Type-Options") != "nosniff" {
+		// Inline styles are allowed for the diagrams Mermaid draws (ADR-066); scripts and every load stay on the origin.
+		got := w.Header().Get("Content-Security-Policy")
+		if got != "default-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" ||
+			w.Header().Get("X-Content-Type-Options") != "nosniff" {
 			t.Fatalf("%s headers: %v", path, w.Header())
 		}
 	}

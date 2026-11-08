@@ -350,3 +350,10 @@
 - 決定：紹介ページは英語をルートに、日本語を `/ja/` に置く。`README.md`、`docs/GUIDE.md`、`docs/SECURITY.md` を英語の版にする。日本語の版は、それぞれ `README.ja.md`、`docs/GUIDE.ja.md`、`docs/SECURITY.ja.md` に置く。この3つは、変えるときに両方の版を同じ変更で直す
 - 決定：開発用の文書（SPEC、ARCHITECTURE、DECISIONS、ROADMAP、docs/DESIGN、OpenSpecの成果物）は、ADR-025のとおり日本語で書く
 - 理由：CLI、エージェントのコメント、Telegramの通知は英語で出せたが、受信箱で返答する画面と導入の手順が日本語だけで、日本語を読めない利用者には使えなかった。言語を人ごとにブラウザで選べば、複数の人で共有する構成（ADR-061）でもサーバーを変えずに済む（grilling `add-english-support`）
+
+## ADR-066 計画の質問の選択肢を構造で受け、問いの図をWeb表示で描く（採用、2026-11-08）
+- 決定：計画の実行の宣言で、質問に選択肢の文（2〜6個）、推奨のラベル、理由の文、任意のMermaidの図を持たせる。選択肢のラベルはswitchboardがA、B、C…と振り、推奨のラベルが選択肢の範囲から外れた宣言は出力の誤りにする。ADR-038の質問の形と、`add-web-plan-answers` の「宣言のスキーマは変えない」を改める
+- 決定：図はMermaidの `flowchart`、`stateDiagram-v2`、`sequenceDiagram` に限る。行頭の `classDef`、`style`、`linkStyle`、`click` か、`%%{` を含む図は、switchboardが捨てて監査ログに残す。強調には `:::focus` だけを使わせ、その見た目はWeb表示が決める
+- 決定：Web表示は、最新の質問の問いのカードの図の位置にある図だけを、同じ検査をしてから `mermaid@12.2.0`（`securityLevel: 'strict'`）で描く。描いたSVGは、`DOMParser` で切り出した `<svg>` の要素だけをページに入れる。issueを経た文字列をマークアップとして入れるのは、この1か所だけとする
+- 決定：ADR-055の「CSP（`default-src 'self'`）は緩めない」を、スタイルについてだけ改める。switchboard-webのCSPに `style-src 'self' 'unsafe-inline'` を足す。スクリプトと、ほかのすべての読み込みは、今までどおり自分のオリジンに限る
+- 理由：今のCSPのままでは、Mermaidが描く途中で差し込む `<style>` とstyle属性が止められ、図は黒く塗りつぶされる（Chromiumで確かめた）。CSPを変えずに描く回避策は、Mermaidの内部の処理の順に頼り、図1つに70〜110件の違反の報告が出る。インラインのスタイルを許しても、スクリプトと外への読み込みは止まったままで、データを外へ送ることはできない。残る危険は見た目を偽られることで、スタイルの指示を含む図をGo側とWeb表示の両方で拒むことで小さくする。grillingの記録は `structured-plan-questions` の第1〜第3ラウンドQ1〜Q15（issue `gh:uskanda/switchboard` #190）
