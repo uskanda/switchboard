@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
 import { forgetDrafts } from "@/lib/drafts";
+import { LANGUAGE_KEY } from "@/lib/i18n";
 import { forgetInstructionDrafts } from "@/lib/instructionDrafts";
 import { forgetIssues } from "@/lib/issueCache";
 import { forgetListScroll } from "@/lib/listScroll";
@@ -45,4 +46,6 @@ afterEach(() => {
   dismiss();
   // The pending marks (lib/pending.ts) live in the tab's storage, which jsdom keeps across the tests of a file.
   sessionStorage.clear();
+  // A test that chose English leaves the next test of its file in the browser's language (Japanese, test-language.ts).
+  localStorage.removeItem(LANGUAGE_KEY);
 });

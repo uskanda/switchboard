@@ -3,6 +3,7 @@ import { Toaster as Sonner } from "sonner";
 // sonner inserts these rules as a <style> at run time, which the page's CSP (default-src 'self') blocks; the build
 // carries them in the stylesheet instead, or the toasts are left unpositioned below the page.
 import "sonner/dist/styles.css";
+import { defineMessages, useMessages } from "@/lib/i18n";
 import { setFocused, setHovered } from "@/lib/toast";
 
 // The marks before the text, drawn in the color of the text so they follow each kind and the dark theme.
@@ -25,6 +26,18 @@ const icons = {
   ),
 };
 
+const messages = defineMessages({
+  ja: {
+    /** region names the region the toasts appear in, for assistive technology. */
+    region: "通知",
+    close: "閉じる",
+  },
+  en: {
+    region: "Notifications",
+    close: "Close",
+  },
+});
+
 /**
  * Toaster is where the toasts of lib/toast.ts appear: at the bottom right, the newest at the bottom, all five spread
  * out; below 1024px across the bottom with lg on each side (DESIGN.md, Toast). sonner draws them unstyled, and the
@@ -32,6 +45,7 @@ const icons = {
  * lib/toast.ts import sonner.
  */
 export function Toaster() {
+  const t = useMessages(messages);
   const blur = (e: FocusEvent<HTMLDivElement>) => {
     if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false);
   };
@@ -45,13 +59,13 @@ export function Toaster() {
         offset={16}
         mobileOffset={16}
         gap={8}
-        containerAriaLabel="通知"
+        containerAriaLabel={t.region}
         icons={icons}
         className="max-lg:inset-x-lg! max-lg:w-auto!"
         style={{ "--width": "360px" } as React.CSSProperties}
         toastOptions={{
           unstyled: true,
-          closeButtonAriaLabel: "閉じる",
+          closeButtonAriaLabel: t.close,
           classNames: {
             toast:
               "flex w-full! items-start gap-sm rounded-md border py-sm ps-md pe-sm text-label-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",

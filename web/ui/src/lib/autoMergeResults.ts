@@ -1,6 +1,21 @@
 import { useEffect, useRef } from "react";
 import { autoMergeReason, changeName, type Inbox } from "@/lib/api";
+import { currentLang, defineMessages } from "@/lib/i18n";
 import { toast } from "@/lib/toast";
+
+/** messages is the text of the toasts that tell a finished automatic merge. */
+const messages = defineMessages({
+  ja: {
+    merged: (name: string) => `${name}を自動でマージしました`,
+    closesHint: "issueは、PR/MRの Closes でcloseされると一覧から消えます。",
+    stopped: (name: string) => `${name}の自動マージをやめました`,
+  },
+  en: {
+    merged: (name) => `${name} was merged automatically`,
+    closesHint: 'The issue leaves the list once "Closes" in the pull or merge request closes it.',
+    stopped: (name) => `Auto-merge of ${name} was stopped`,
+  },
+});
 
 /** storageKey is where the finished automatic merges already told are remembered, as "ref@at". */
 const storageKey = "switchboard.autoMergeTold";
@@ -34,6 +49,9 @@ export function useAutoMergeResults(inbox: Inbox | null) {
   useEffect(() => {
     const results = inbox?.auto_merge_results;
     if (!inbox) return;
+    // The toasts are told from this effect, outside the drawing, in the language shown when the listing came.
+    const lang = currentLang();
+    const t = messages[lang];
     told.current = new Set([...told.current, ...loadTold()]);
     const listed = new Set<string>();
     for (const r of results ?? []) {
@@ -43,9 +61,9 @@ export function useAutoMergeResults(inbox: Inbox | null) {
       told.current.add(key);
       const name = changeName(r.ref, r.number);
       if (r.outcome === "merged") {
-        toast.success(`${name}を自動でマージしました`, { description: "issueは、PR/MRの Closes でcloseされると一覧から消えます。" });
+        toast.success(t.merged(name), { description: t.closesHint });
       } else if (r.reason !== "user") {
-        toast.error(`${name}の自動マージをやめました`, { description: autoMergeReason(r.reason) });
+        toast.error(t.stopped(name), { description: autoMergeReason(lang, r.reason) });
       }
     }
     told.current = new Set([...told.current].filter((k) => listed.has(k)));

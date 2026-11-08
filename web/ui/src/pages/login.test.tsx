@@ -79,11 +79,11 @@ describe("the login", () => {
 });
 
 describe("several people", () => {
-  it("leaves the settings to an admin", async () => {
+  it("links the settings for someone not an admin too, for the display section", async () => {
     answer({ "GET /api/auth": { status: 200, body: { enabled: true, user: "alice", admin: false } } });
     at("/");
     expect(await screen.findByText("alice")).toBeInTheDocument();
-    expect(screen.queryByText("設定")).toBeNull();
+    expect(screen.getByRole("link", { name: "設定" })).toHaveAttribute("href", "/settings");
   });
 
   it("shows the settings to an admin", async () => {

@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { Table, TableCell, TableHead } from "@/components/ui/table";
+import { defineMessages, plural, useLang, useMessages, type Lang } from "@/lib/i18n";
+import { common } from "@/lib/i18n/common";
 import { age, elapsed, isDone, isQueued, isRunning, isWaiting, issuePath, plainText, progressText, queueText, timeText } from "@/lib/api";
 import { useFlip } from "@/lib/flip";
 import { groupByProject, type ProjectGroup } from "@/lib/group";
@@ -17,6 +19,49 @@ import { useInbox } from "@/lib/inbox";
 import { useMinute } from "@/lib/now";
 import type { ViewItem } from "@/lib/pending";
 import { cn } from "@/lib/utils";
+
+const messages = defineMessages({
+  ja: {
+    /** processing and merging tag a row this tab asked something of, with the line under its title. */
+    processing: "処理中",
+    processingLine: "実行の開始を待っています",
+    merging: "マージ処理中",
+    mergingLine: "closeされると一覧から消えます",
+    /** count is how many issues a project's group has. */
+    count: (n: number) => `${n}件`,
+    issue: "issue",
+    state: "状態",
+    host: "端末",
+    /** The heads of the time column of the waits and of the runs; the queued and the done say their state. */
+    waitingTime: "待ち",
+    runningTime: "経過",
+    group: "プロジェクトでまとめる",
+    /** groupShort is the toggle's words below 640px. */
+    groupShort: "まとめる",
+    list: "一覧",
+    doneHeading: "完了（close待ち）",
+    doneNote: "closeすると一覧から消えます。コメントすると作業を再開します",
+    noWaits: "待ちのissueはありません",
+  },
+  en: {
+    processing: "Processing",
+    processingLine: "Waiting for the run to start",
+    merging: "Merging",
+    mergingLine: "Leaves the list once closed",
+    count: (n) => `${n} ${plural(n, "issue", "issues")}`,
+    issue: "Issue",
+    state: "Status",
+    host: "Host",
+    waitingTime: "Waiting",
+    runningTime: "Elapsed",
+    group: "Group by project",
+    groupShort: "Group",
+    list: "Inbox",
+    doneHeading: "Done (waiting for close)",
+    doneNote: "Closed issues leave the list. Comment on one to resume the work.",
+    noWaits: "No issues waiting",
+  },
+});
 
 /**
  * ChangeLink is the pull or merge request of a done issue, a link of its own beside the issue's, named by its number
@@ -42,62 +87,65 @@ function ChangeLink({ it, className }: { it: ViewItem; className?: string }) {
 /**
  * What a row shows: a waiting issue its reason, question and wait; a running one what it is doing and how long it ran;
  * a queued one the limit it waits on and since when; a done one since when it is done. time is for the table, whose
- * column head says what it is; timeWords, for a card, says it in its own words ("5分前から待ち"). A row this tab asked
- * something of (lib/pending.ts) shows a turning ring and slowly pulsing words that it is being processed, said to a
- * screen reader as a status; index.css stops both under prefers-reduced-motion, and the words stay readable.
+ * column head says what it is; timeWords, for a card, says it in its own words ("5分前から待ち", "waiting 5m"). A row
+ * this tab asked something of (lib/pending.ts) shows a turning ring and slowly pulsing words that it is being
+ * processed, said to a screen reader as a status; index.css stops both under prefers-reduced-motion, and the words stay
+ * readable.
  */
-function cells(it: ViewItem) {
+function cells(it: ViewItem, lang: Lang) {
+  const t = messages[lang];
+  const { state } = common[lang];
   if (it.pending) {
     const merging = it.pending === "merge";
     return {
       tag: (
         <span role="status" className="inline-flex items-center gap-xs text-label-md font-medium">
           <Spinner />
-          <span className="pending-pulse">{merging ? "マージ処理中" : "処理中"}</span>
+          <span className="pending-pulse">{merging ? t.merging : t.processing}</span>
         </span>
       ),
-      line: merging ? "closeされると一覧から消えます" : "実行の開始を待っています",
-      time: merging ? age(it.done_since ?? null) : elapsed(it.running_since),
-      timeWords: merging ? timeText("done", it.done_since) : timeText("running", it.running_since),
+      line: merging ? t.mergingLine : t.processingLine,
+      time: merging ? age(lang, it.done_since ?? null) : elapsed(lang, it.running_since),
+      timeWords: merging ? timeText(lang, "done", it.done_since) : timeText(lang, "running", it.running_since),
     };
   }
   if (isDone(it)) {
     return {
       tag: it.auto_merge ? (
         <span className="inline-flex flex-wrap items-center gap-xs">
-          <span className="text-label-md font-medium">完了</span>
+          <span className="text-label-md font-medium">{state.done}</span>
           <AutoMergeBadge />
         </span>
       ) : (
-        <span className="text-label-md font-medium">完了</span>
+        <span className="text-label-md font-medium">{state.done}</span>
       ),
       // What closing and commenting do is said once, under the heading of the section.
       line: "",
-      time: age(it.done_since ?? null),
-      timeWords: timeText("done", it.done_since),
+      time: age(lang, it.done_since ?? null),
+      timeWords: timeText(lang, "done", it.done_since),
     };
   }
   if (isQueued(it)) {
     return {
-      tag: <span className="text-label-md font-medium">順番待ち</span>,
-      line: queueText(it.reason, it.queued_until),
-      time: age(it.queued_since ?? null),
-      timeWords: timeText("queued", it.queued_since),
+      tag: <span className="text-label-md font-medium">{state.queued}</span>,
+      line: queueText(lang, it.reason, it.queued_until),
+      time: age(lang, it.queued_since ?? null),
+      timeWords: timeText(lang, "queued", it.queued_since),
     };
   }
   if (isRunning(it)) {
     return {
-      tag: <span className="text-label-md font-medium">実行中</span>,
-      line: progressText(it.progress),
-      time: elapsed(it.running_since),
-      timeWords: timeText("running", it.running_since),
+      tag: <span className="text-label-md font-medium">{state.running}</span>,
+      line: progressText(lang, it.progress),
+      time: elapsed(lang, it.running_since),
+      timeWords: timeText(lang, "running", it.running_since),
     };
   }
   return {
     tag: <ReasonBadge reason={it.reason} />,
     line: plainText(it.question),
-    time: age(it.waiting_since),
-    timeWords: timeText("waiting", it.waiting_since),
+    time: age(lang, it.waiting_since),
+    timeWords: timeText(lang, "waiting", it.waiting_since),
   };
 }
 
@@ -118,7 +166,8 @@ function IssueNumber({ it }: { it: ViewItem }) {
  * badge, which its group's heading shows, and puts the issue's number before the title.
  */
 function Row({ it, selected, grouped }: { it: ViewItem; selected?: string; grouped: boolean }) {
-  const c = cells(it);
+  const lang = useLang();
+  const c = cells(it, lang);
   return (
     <tr data-flip-key={it.ref}>
       <TableCell>
@@ -153,10 +202,11 @@ function Row({ it, selected, grouped }: { it: ViewItem; selected?: string; group
  * last line ends above the bottom, its line height adding to the padding, so the padding above it is md, not lg.
  */
 function CardList({ items, selected, grouped }: { items: ViewItem[]; selected?: string; grouped: boolean }) {
+  const lang = useLang();
   return (
     <ul className="flex flex-col gap-sm">
       {items.map((it) => {
-        const c = cells(it);
+        const c = cells(it, lang);
         const current = it.ref === selected;
         return (
           <li key={it.ref} data-flip-key={it.ref}>
@@ -194,12 +244,13 @@ function CardList({ items, selected, grouped }: { items: ViewItem[]; selected?: 
 
 /**
  * GroupHeading heads a project's group, a step under the section's heading: the project's reference and forge's
- * badge, then how many issues it has, so that it reads "o/r GitHub 3件".
+ * badge, then how many issues it has, so that it reads "o/r GitHub 3件" ("o/r GitHub 3 issues").
  */
 function GroupHeading({ group }: { group: ProjectGroup }) {
+  const t = useMessages(messages);
   return (
     <h3 className="flex flex-wrap items-center gap-xs text-label-md text-muted">
-      <IssueRef value={group.project} /> <span>{group.items.length}件</span>
+      <IssueRef value={group.project} /> <span>{t.count(group.items.length)}</span>
     </h3>
   );
 }
@@ -211,6 +262,7 @@ function GroupHeading({ group }: { group: ProjectGroup }) {
  * number in place of its reference.
  */
 function Items({ items, timeHead, selected, grouped }: { items: ViewItem[]; timeHead: string; selected?: string; grouped: boolean }) {
+  const t = useMessages(messages);
   const groups = grouped ? groupByProject(items) : null;
   return (
     <>
@@ -224,9 +276,9 @@ function Items({ items, timeHead, selected, grouped }: { items: ViewItem[]; time
         </colgroup>
         <thead>
           <tr>
-            <TableHead>issue</TableHead>
-            <TableHead className="whitespace-nowrap">状態</TableHead>
-            <TableHead className="whitespace-nowrap">端末</TableHead>
+            <TableHead>{t.issue}</TableHead>
+            <TableHead className="whitespace-nowrap">{t.state}</TableHead>
+            <TableHead className="whitespace-nowrap">{t.host}</TableHead>
             <TableHead className="whitespace-nowrap">{timeHead}</TableHead>
           </tr>
         </thead>
@@ -272,12 +324,13 @@ function Items({ items, timeHead, selected, grouped }: { items: ViewItem[]; time
  * the eye, with a check mark and a primary border while it is on.
  */
 function GroupToggle({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
+  const t = useMessages(messages);
   return (
     <Button
       type="button"
       variant="secondary"
       aria-pressed={on}
-      aria-label="プロジェクトでまとめる"
+      aria-label={t.group}
       onClick={() => onChange(!on)}
       className={cn(on && "border-primary")}
     >
@@ -296,8 +349,8 @@ function GroupToggle({ on, onChange }: { on: boolean; onChange: (on: boolean) =>
         <path d="M4.5 10.5l3.5 3.5 7.5-8" />
       </svg>
       {/* Below 640px the words shrink, so the buttons fit beside the heading of the waits (issue #184). */}
-      <span className="sm:hidden">まとめる</span>
-      <span className="max-sm:hidden">プロジェクトでまとめる</span>
+      <span className="sm:hidden">{t.groupShort}</span>
+      <span className="max-sm:hidden">{t.group}</span>
     </Button>
   );
 }
@@ -312,6 +365,8 @@ function GroupToggle({ on, onChange }: { on: boolean; onChange: (on: boolean) =>
  */
 export function InboxList({ selected }: { selected?: string }) {
   const { inbox, view, error } = useInbox();
+  const t = useMessages(messages);
+  const { state } = useMessages(common);
   // The times of the rows move on each minute, with or without a new listing.
   useMinute();
   const [grouped, setGrouped] = useGroupByProject();
@@ -323,11 +378,11 @@ export function InboxList({ selected }: { selected?: string }) {
   const done = view?.filter(isDone) ?? [];
   return (
     <div ref={root} className="flex flex-col gap-lg">
-      <h2 className="sr-only">一覧</h2>
+      <h2 className="sr-only">{t.list}</h2>
       {/* The buttons share the row of the heading of the waits, so the waits start right under it (issue #184). */}
       <section className="flex flex-col gap-sm">
         <div className="flex flex-wrap items-center justify-between gap-sm">
-          <h2 className="text-label-md font-semibold text-muted">返答待ち</h2>
+          <h2 className="text-label-md font-semibold text-muted">{state.waiting}</h2>
           <div className="flex flex-wrap justify-end gap-sm">
             <GroupToggle on={grouped} onChange={setGrouped} />
             <NewIssue />
@@ -336,28 +391,28 @@ export function InboxList({ selected }: { selected?: string }) {
         {!inbox && !error && <Loading />}
         {inbox &&
           (waiting.length > 0 ? (
-            <Items items={waiting} timeHead="待ち" selected={selected} grouped={grouped} />
+            <Items items={waiting} timeHead={t.waitingTime} selected={selected} grouped={grouped} />
           ) : (
-            <p className="text-muted">待ちのissueはありません</p>
+            <p className="text-muted">{t.noWaits}</p>
           ))}
       </section>
       {running.length > 0 && (
         <section className="flex flex-col gap-sm">
-          <h2 className="text-label-md font-semibold text-muted">実行中</h2>
-          <Items items={running} timeHead="経過" selected={selected} grouped={grouped} />
+          <h2 className="text-label-md font-semibold text-muted">{state.running}</h2>
+          <Items items={running} timeHead={t.runningTime} selected={selected} grouped={grouped} />
         </section>
       )}
       {queued.length > 0 && (
         <section className="flex flex-col gap-sm">
-          <h2 className="text-label-md font-semibold text-muted">順番待ち</h2>
-          <Items items={queued} timeHead="順番待ち" selected={selected} grouped={grouped} />
+          <h2 className="text-label-md font-semibold text-muted">{state.queued}</h2>
+          <Items items={queued} timeHead={state.queued} selected={selected} grouped={grouped} />
         </section>
       )}
       {done.length > 0 && (
         <section className="flex flex-col gap-sm">
-          <h2 className="text-label-md font-semibold text-muted">完了（close待ち）</h2>
-          <p className="text-label-md text-muted">closeすると一覧から消えます。コメントすると作業を再開します</p>
-          <Items items={done} timeHead="完了" selected={selected} grouped={grouped} />
+          <h2 className="text-label-md font-semibold text-muted">{t.doneHeading}</h2>
+          <p className="text-label-md text-muted">{t.doneNote}</p>
+          <Items items={done} timeHead={state.done} selected={selected} grouped={grouped} />
         </section>
       )}
     </div>

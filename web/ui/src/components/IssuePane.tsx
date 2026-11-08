@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { IssueRef } from "@/components/IssueRef";
 import { Loading } from "@/components/Loading";
@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
+import { currentLang, defineMessages, errorText, useLang, useMessages, type Lang } from "@/lib/i18n";
+import { common } from "@/lib/i18n/common";
 import { ApiError, getIssue, isWaiting, issuePath, postReply, queueText, stateDiffers, timeText, watchKey, type Detail } from "@/lib/api";
 import { draftOf, keepDraft } from "@/lib/drafts";
 import { useInbox } from "@/lib/inbox";
@@ -24,32 +26,146 @@ import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { nextWait } from "@/lib/waits";
 
-/** RETRY_TEXT is the reply that runs a failed run again: a trusted comment is all a wait on an error needs. */
-const RETRY_TEXT = "再実行してください。";
-/**
- * CONFLICT_RETRY_TEXT is the reply that runs the fix of a conflict again. It names the conflict, so neither the agent
- * nor a person reading the thread takes it for doing the first work over.
- */
-const CONFLICT_RETRY_TEXT = "baseとの衝突を解消して、もう一度pushしてください。";
+const messages = defineMessages({
+  ja: {
+    /** retry is the reply that runs a failed run again: a trusted comment is all a wait on an error needs. */
+    retry: "再実行してください。",
+    /**
+     * conflictRetry is the reply that runs the fix of a conflict again. It names the conflict, so neither the agent
+     * nor a person reading the thread takes it for doing the first work over.
+     */
+    conflictRetry: "baseとの衝突を解消して、もう一度pushしてください。",
+    /** ahead says the state shown was read from the forge after the list was, which has yet to catch up. */
+    ahead: "フォージから今読んだ状態です。一覧は更新を待っています",
+    notWaiting: "このissueは待ちではなくなりました。返答は送っていません。",
+    /** cached follows the error of a read when the issue's last read is shown instead. */
+    cached: (failure: string) => `${failure} 前回読んだ内容を表示しています。`,
+    draftKept: "返答の書きかけは、そのissueに残っています。",
+    notMergeable: "このissueは、ここからはマージできません。",
+    notMergeableWhy: "マージできるのは、openで完了のissueのうち、PR/MRの番号とコミットが分かるものだけです。",
+    planHint: (word: ReactNode) => (
+      <>
+        この計画で進めるなら「承認する」を押すか、{word} と送ると承認になり、作業が始まります。直してほしいところがあれば、そのまま書いて「返答を送る」を押してください。
+      </>
+    ),
+    questionsHint:
+      "問いごとに選んで「この内容で返答」を押します。返答の欄に書いた文は、全体への補足として加わります。返答の欄の文だけを送るなら「返答を送る」を押します。",
+    questionsInWordsHint: "問いごとの答えを、返答の欄に書いて送ってください。",
+    errorHint:
+      "エージェントの実行が失敗しました。同じ作業をやり直すなら「再実行する」を押してください。直し方を伝えるなら、返答の欄に書いて「返答を送る」を押してください。",
+    ciHint: "返答するとエージェントが実行を再開し、CIの失敗を自動で直す回数を数え直します。",
+    conflictHint:
+      "baseとの衝突を自動で直せませんでした。もう一度直させるなら「再実行する」を押してください。直し方を伝えるなら、返答の欄に書いて「返答を送る」を押してください。どちらでも、自動で直す回数を数え直します。",
+    pushHint: "pushが拒否されました。返答する前に、エージェントのトークンかリモートの設定（ブランチの保護など）を確かめてください。",
+    /** resumed is what a running issue says once its run started on a reply sent from this page. */
+    resumed: "返答を受けて、エージェントが作業を再開しました。質問か完了になると、この画面が自動で切り替わります。",
+    running: "実行中です。質問か完了になると、この画面が自動で切り替わります。",
+    back: "← 一覧へ",
+    backLabel: "一覧へ",
+    processing: "処理中",
+    openForge: "フォージで開く ↗",
+    openForgeLabel: "フォージで開く（新しいタブ）",
+    reading: "更新を取得中",
+    gone: "このissueは、待ちでも実行中でもなくなりました。",
+    creating: "作ったばかりのissueです。エージェントが取りかかると、この画面が自動で切り替わります。",
+    sent: "送りました。エージェントが作業を再開します。",
+    nextLabel: (title: string) => `次の待ちへ：${title}`,
+    next: "次の待ちへ",
+    noNext: "他に待ちはありません",
+    reply: "返答",
+    untrusted:
+      "あなたはこのプロジェクトの信頼済みのユーザー（trusted_authors）ではありません。返答は投稿されますが、エージェントへの指示としては扱われません。",
+    finished: "作業は終わっています。返答すると、エージェントが同じPR/MRで作業を再開します。",
+    noLongerWaiting: "このissueは待ちではなくなりました。返答は送れません。",
+    preview: "「この内容で返答」で送る文",
+    send: "返答を送る",
+    sending: "送っています",
+    sendAnswers: "この内容で返答",
+    approve: (word: string) => `承認する（${word} を送る）`,
+    runAgain: "再実行する",
+    queuedNoReply: "順番待ちのため、まだ返答は要りません",
+    notWaitingNoReply: "このissueは待ちではありません。返答は送れません。",
+    noticeLabel: "自動更新の知らせ",
+    notice: "自動更新がありました",
+  },
+  en: {
+    retry: "Please run it again.",
+    conflictRetry: "Resolve the conflict with the base branch and push again.",
+    ahead: "Just read from the forge. The list has not caught up yet.",
+    notWaiting: "This issue is no longer waiting. The reply was not sent.",
+    cached: (failure) => `${failure} Showing the issue as it was last read.`,
+    draftKept: "Your draft reply is still on that issue.",
+    notMergeable: "This issue cannot be merged from here.",
+    notMergeableWhy: "Only an open, done issue with a known pull or merge request number and commit can be merged here.",
+    planHint: (word) => (
+      <>
+        To go ahead with this plan, press "Approve" or send {word} to approve it and start the work. To ask for changes, write them and press "Send reply".
+      </>
+    ),
+    questionsHint:
+      'Choose an answer to each question and press "Send answers". Text in the reply field is added as an overall note. To send only the reply field, press "Send reply".',
+    questionsInWordsHint: "Write your answer to each question in the reply field and send it.",
+    errorHint:
+      'The agent\'s run failed. To do the same work again, press "Run again". To say how to fix it, write it in the reply field and press "Send reply".',
+    ciHint: "A reply resumes the agent's run and resets the count of automatic CI fixes.",
+    conflictHint:
+      'The conflict with the base branch could not be fixed automatically. To have the agent try again, press "Run again". To say how to fix it, write it in the reply field and press "Send reply". Either one resets the count of automatic fixes.',
+    pushHint: "The push was rejected. Before replying, check the agent's token or the remote's settings, such as branch protection.",
+    resumed: "The agent resumed the work on your reply. This page updates on its own when it asks a question or finishes.",
+    running: "Running. This page updates on its own when the agent asks a question or finishes.",
+    back: "← Back to inbox",
+    backLabel: "Back to inbox",
+    processing: "Processing",
+    openForge: "Open on the forge ↗",
+    openForgeLabel: "Open on the forge (new tab)",
+    reading: "Updating",
+    gone: "This issue is no longer waiting or running.",
+    creating: "This issue was just created. This page updates on its own when the agent starts on it.",
+    sent: "Sent. The agent resumes the work.",
+    nextLabel: (title) => `Next waiting issue: ${title}`,
+    next: "Next waiting issue",
+    noNext: "No other issues waiting",
+    reply: "Reply",
+    untrusted:
+      "You are not a trusted user of this project (trusted_authors). Your reply is posted, but the agent does not take it as instructions.",
+    finished: "The work is done. A reply makes the agent resume it on the same pull or merge request.",
+    noLongerWaiting: "This issue is no longer waiting, so you cannot reply.",
+    preview: 'What "Send answers" posts',
+    send: "Send reply",
+    sending: "Sending",
+    sendAnswers: "Send answers",
+    approve: (word) => `Approve (sends ${word})`,
+    runAgain: "Run again",
+    queuedNoReply: "Queued, so no reply is needed yet",
+    notWaitingNoReply: "This issue is not waiting, so you cannot reply.",
+    noticeLabel: "Update notice",
+    notice: "Show new comments",
+  },
+});
 
-/** AHEAD_TEXT says the state shown was read from the forge after the list was, which has yet to catch up. */
-const AHEAD_TEXT = "フォージから今読んだ状態です。一覧は更新を待っています";
-
-/** retryTextOf is the fixed reply that "再実行する" sends on a wait with this reason. */
-function retryTextOf(reason: string): string {
-  return reason === "conflict" ? CONFLICT_RETRY_TEXT : RETRY_TEXT;
+/** retryTextOf is the fixed reply, in the language lang, that the button to run again sends on a wait with this reason. */
+function retryTextOf(lang: Lang, reason: string): string {
+  return reason === "conflict" ? messages[lang].conflictRetry : messages[lang].retry;
 }
 
-function failure(err: unknown): string {
+function failure(lang: Lang, err: unknown): string {
   if (err instanceof ApiError) {
     switch (err.code) {
       case "not_waiting":
-        return "このissueは待ちではなくなりました。返答は送っていません。";
+        return messages[lang].notWaiting;
       case "unavailable":
-        return "受信箱のサービス（switchboard inbox serve）に届きません。";
+        return common[lang].unreachable;
     }
   }
-  return `失敗しました：${err instanceof Error ? err.message : String(err)}`;
+  return common[lang].failed(errorText(err));
+}
+
+/** Failure is an error to show, and whether the issue's last read is shown in place of the read that failed. */
+type Failure = { err: unknown; cached?: boolean };
+
+/** failureText says what went wrong, in the language shown. */
+function failureText(lang: Lang, f: Failure): string {
+  return f.cached ? messages[lang].cached(failure(lang, f.err)) : failure(lang, f.err);
 }
 
 /**
@@ -60,52 +176,17 @@ function failure(err: unknown): string {
  * click, or a reply that says how to fix it; for a conflict, either counts the fixes over.
  */
 function PlanHint({ reason, word, answerable }: { reason: string; word: string; answerable: boolean }) {
+  const t = useMessages(messages);
   const code = <code className="font-mono text-mono-sm">{word}</code>;
-  if (reason === "plan") {
-    return (
-      <p className="text-label-md text-muted">
-        この計画で進めるなら「承認する」を押すか、{code} と送ると承認になり、作業が始まります。直してほしいところがあれば、そのまま書いて「返答を送る」を押してください。
-      </p>
-    );
-  }
-  if (reason === "plan-questions") {
-    return (
-      <p className="text-label-md text-muted">
-        {answerable
-          ? "問いごとに選んで「この内容で返答」を押します。返答の欄に書いた文は、全体への補足として加わります。返答の欄の文だけを送るなら「返答を送る」を押します。"
-          : "問いごとの答えを、返答の欄に書いて送ってください。"}
-      </p>
-    );
-  }
-  if (reason === "error") {
-    return (
-      <p className="text-label-md text-muted">
-        エージェントの実行が失敗しました。同じ作業をやり直すなら「再実行する」を押してください。直し方を伝えるなら、返答の欄に書いて「返答を送る」を押してください。
-      </p>
-    );
-  }
-  if (reason === "ci") {
-    return (
-      <p className="text-label-md text-muted">
-        返答するとエージェントが実行を再開し、CIの失敗を自動で直す回数を数え直します。
-      </p>
-    );
-  }
-  if (reason === "conflict") {
-    return (
-      <p className="text-label-md text-muted">
-        baseとの衝突を自動で直せませんでした。もう一度直させるなら「再実行する」を押してください。直し方を伝えるなら、返答の欄に書いて「返答を送る」を押してください。どちらでも、自動で直す回数を数え直します。
-      </p>
-    );
-  }
-  if (reason === "push") {
-    return (
-      <p className="text-label-md text-muted">
-        pushが拒否されました。返答する前に、エージェントのトークンかリモートの設定（ブランチの保護など）を確かめてください。
-      </p>
-    );
-  }
-  return null;
+  const hints: Record<string, ReactNode> = {
+    plan: t.planHint(code),
+    "plan-questions": answerable ? t.questionsHint : t.questionsInWordsHint,
+    error: t.errorHint,
+    ci: t.ciHint,
+    conflict: t.conflictHint,
+    push: t.pushHint,
+  };
+  return reason in hints ? <p className="text-label-md text-muted">{hints[reason]}</p> : null;
 }
 
 /** questionsOf reads the question comment of a plan in the agent's latest wait, keyed by the comment itself. */
@@ -117,9 +198,6 @@ function questionsOf(detail: Detail | null) {
   const c = comments[index];
   return parsed && { index, parsed, key: JSON.stringify([detail.ref, c.created_at, c.body]), defaults: defaultAnswers(parsed.questions) };
 }
-
-/** RESUMED_TEXT is what a running issue says once its run started on a reply sent from this page. */
-const RESUMED_TEXT = "返答を受けて、エージェントが作業を再開しました。質問か完了になると、この画面が自動で切り替わります。";
 
 /** SentMark tells one wait apart from the next: its start and the agent's latest post of a wait. */
 type SentMark = { since: string | null; waitKey: string };
@@ -159,6 +237,8 @@ const headerHeight = () => parseFloat(getComputedStyle(document.documentElement)
  */
 export function IssuePane({ issueRef }: { issueRef: string }) {
   const { inbox, view, markPending } = useInbox();
+  const lang = useLang();
+  const t = messages[lang];
   // The time in the pinned head moves on each minute.
   useMinute();
   const navigate = useNavigate();
@@ -172,7 +252,7 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
   const [detail, setDetail] = useState<Detail | null>(() => cachedIssue(issueRef));
   // reading is set while a read of the issue is on its way; the first one starts as the pane opens.
   const [reading, setReading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Failure | null>(null);
   const [text, setText] = useState(() => draftOf(issueRef).text);
   // sendingFor is the issue a reply is on its way to. The pane stays the same as another issue opens, so a reply
   // sent before that touches only its own issue (send), and the form is held only while that issue is shown.
@@ -241,7 +321,7 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
       (err) => {
         if (stale) return;
         setReading(false);
-        setError(cachedIssue(issueRef) ? `${failure(err)} 前回読んだ内容を表示しています。` : failure(err));
+        setError({ err, cached: !!cachedIssue(issueRef) });
       },
     );
     return () => void (stale = true);
@@ -309,7 +389,8 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
   const touched = !!found && choices?.key === found.key;
   const plan = found && ((detail?.waiting && detail.reason === "plan-questions") || touched) ? found : null;
   const answers = plan ? (touched ? choices!.answers : plan.defaults) : [];
-  const composed = plan ? composeReply(plan.parsed.questions, answers, text) : "";
+  // The reply is written in the language shown, as its preview shows it.
+  const composed = plan ? composeReply(lang, plan.parsed.questions, answers, text) : "";
   const word = detail?.approve_word || "/ok";
   // A wait on a plan is approved by its approval word alone, sent in one click while the reply is empty.
   const approving = detail?.reason === "plan" && !plan;
@@ -345,8 +426,8 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
         keepDraft(to, { text: "", choices: null });
       }
     } catch (err) {
-      if (shown.current === to) setError(failure(err));
-      else toast.error(failure(err), { description: "返答の書きかけは、そのissueに残っています。" });
+      if (shown.current === to) setError({ err });
+      else toast.error(failure(currentLang(), err), { description: messages[currentLang()].draftKept });
     } finally {
       setSendingFor((s) => (s === to ? null : s));
     }
@@ -393,9 +474,8 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
     );
   useEffect(() => {
     if (!askMerge || mergeable) return;
-    toast.error("このissueは、ここからはマージできません。", {
-      description: "マージできるのは、openで完了のissueのうち、PR/MRの番号とコミットが分かるものだけです。",
-    });
+    const t = messages[currentLang()];
+    toast.error(t.notMergeable, { description: t.notMergeableWhy });
     forgetMerge();
     // forgetMerge changes with every render; the query is what is answered.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -449,13 +529,13 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
         <div className={cn("flex min-w-0 flex-col gap-xs", compact && "max-lg:flex-row max-lg:items-center max-lg:gap-sm")}>
           <Link
             to="/"
-            aria-label={compact ? "一覧へ" : undefined}
+            aria-label={compact ? t.backLabel : undefined}
             className={cn(
               "inline-flex min-h-11 shrink-0 items-center self-start text-label-md text-muted underline lg:hidden",
               compact && "max-lg:min-w-11 max-lg:justify-center max-lg:self-center max-lg:no-underline",
             )}
           >
-            {compact ? "←" : "← 一覧へ"}
+            {compact ? "←" : t.back}
           </Link>
           {detail && (
             <>
@@ -473,34 +553,34 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
           <>
             <span className="flex flex-wrap items-center gap-sm text-label-md text-muted">
               {processing ? (
-                <span className="pending-pulse font-medium">処理中</span>
+                <span className="pending-pulse font-medium">{t.processing}</span>
               ) : running ? (
-                <span className="font-medium">実行中</span>
+                <span className="font-medium">{common[lang].state.running}</span>
               ) : queued ? (
-                <span className="font-medium">順番待ち</span>
+                <span className="font-medium">{common[lang].state.queued}</span>
               ) : finished ? (
                 <>
-                  <span className="font-medium">完了</span>
+                  <span className="font-medium">{common[lang].state.done}</span>
                   {autoMerge && <AutoMergeBadge />}
                 </>
               ) : (
                 <ReasonBadge reason={detail.reason} />
               )}
-              {queued && <span>{queueText(detail.reason)}</span>}
+              {queued && <span>{queueText(lang, detail.reason)}</span>}
               <span className={cn(compact && "max-lg:hidden")}>{detail.host}</span>
-              <span>{timeText(running ? "running" : queued ? "queued" : finished ? "done" : "waiting", detail.since)}</span>
-              <a href={detail.url} className={cn("inline-flex min-h-11 items-center underline", compact && "max-lg:hidden")} target="_blank" rel="noreferrer" aria-label="フォージで開く（新しいタブ）">
-                フォージで開く ↗
+              <span>{timeText(lang, running ? "running" : queued ? "queued" : finished ? "done" : "waiting", detail.since)}</span>
+              <a href={detail.url} className={cn("inline-flex min-h-11 items-center underline", compact && "max-lg:hidden")} target="_blank" rel="noreferrer" aria-label={t.openForgeLabel}>
+                {t.openForge}
               </a>
               {reading && (
-                <span role="status" aria-label="更新を取得中" className="inline-flex items-center gap-xs">
+                <span role="status" aria-label={t.reading} className="inline-flex items-center gap-xs">
                   <Spinner />
-                  更新を取得中
+                  {t.reading}
                 </span>
               )}
               {ahead && (
-                <span role="status" aria-label={AHEAD_TEXT}>
-                  {AHEAD_TEXT}
+                <span role="status" aria-label={t.ahead}>
+                  {t.ahead}
                 </span>
               )}
             </span>
@@ -527,12 +607,12 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
           </>
         )}
       </div>
-      {error && <Alert>{error}</Alert>}
+      {error && <Alert>{failureText(lang, error)}</Alert>}
       {!detail && reading && <Loading />}
       {detail && (
         <>
-          {gone && <p className="text-muted">このissueは、待ちでも実行中でもなくなりました。</p>}
-          {creating && <p className="text-muted">作ったばかりのissueです。エージェントが取りかかると、この画面が自動で切り替わります。</p>}
+          {gone && <p className="text-muted">{t.gone}</p>}
+          {creating && <p className="text-muted">{t.creating}</p>}
           {detail.comments ? (
             <Thread
               key={detail.ref}
@@ -555,7 +635,7 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
           )}
           {sent && (
             <p ref={sentLine} role="status" tabIndex={-1} className="text-muted outline-none">
-              送りました。エージェントが作業を再開します。
+              {t.sent}
             </p>
           )}
           {sent &&
@@ -565,23 +645,23 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
                 type="button"
                 variant="secondary"
                 className="self-start"
-                aria-label={`次の待ちへ：${next.title}`}
+                aria-label={t.nextLabel(next.title)}
                 onClick={() => navigate(issuePath(next.ref))}
               >
-                次の待ちへ
+                {t.next}
               </Button>
             ) : (
-              <p className="text-muted">他に待ちはありません</p>
+              <p className="text-muted">{t.noNext}</p>
             ))}
           {showForm && (
             <form onSubmit={submit} className="flex flex-col gap-sm">
               <label htmlFor="reply" className="text-label-md font-medium">
-                返答
+                {t.reply}
               </label>
               <div id="reply-hint">
                 {detail.trusted === false && (
                   <p role="note" className="mb-xs rounded-sm bg-attention-container p-sm text-label-md text-attention">
-                    あなたはこのプロジェクトの信頼済みのユーザー（trusted_authors）ではありません。返答は投稿されますが、エージェントへの指示としては扱われません。
+                    {t.untrusted}
                   </p>
                 )}
                 <PlanHint reason={detail.reason} word={word} answerable={!!plan} />
@@ -595,57 +675,57 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
                 aria-keyshortcuts="Control+Enter Meta+Enter r"
                 disabled={sending}
               />
-              {finished && <p className="text-label-md text-muted">作業は終わっています。返答すると、エージェントが同じPR/MRで作業を再開します。</p>}
-              {!replyable && <p className="text-muted">このissueは待ちではなくなりました。返答は送れません。</p>}
+              {finished && <p className="text-label-md text-muted">{t.finished}</p>}
+              {!replyable && <p className="text-muted">{t.noLongerWaiting}</p>}
               {plan ? (
                 <>
                   <span id="reply-preview" className="text-label-md font-medium text-muted">
-                    「この内容で返答」で送る文
+                    {t.preview}
                   </span>
                   <section aria-labelledby="reply-preview" className="rounded-md border border-outline bg-surface p-md whitespace-pre-wrap break-words">
                     {composed}
                   </section>
                   <div className="flex flex-wrap justify-end gap-sm">
                     <Button type="submit" variant="secondary" disabled={sending || !replyable || text.trim() === ""}>
-                      返答を送る
+                      {t.send}
                     </Button>
                     <Button type="button" disabled={sending || !replyable} onClick={() => void send(composed)}>
-                      {sending ? "送っています" : "この内容で返答"}
+                      {sending ? t.sending : t.sendAnswers}
                     </Button>
                   </div>
                 </>
               ) : approving ? (
                 <div className="flex flex-wrap justify-end gap-sm">
                   <Button type="submit" variant="secondary" disabled={sending || !detail.waiting || text.trim() === ""}>
-                    返答を送る
+                    {t.send}
                   </Button>
                   <Button type="button" disabled={sending || !detail.waiting || text.trim() !== ""} onClick={() => void send(word)}>
-                    {sending ? "送っています" : `承認する（${word} を送る）`}
+                    {sending ? t.sending : t.approve(word)}
                   </Button>
                 </div>
               ) : retrying ? (
                 <div className="flex flex-wrap justify-end gap-sm">
                   <Button type="submit" variant="secondary" disabled={sending || !detail.waiting || text.trim() === ""}>
-                    返答を送る
+                    {t.send}
                   </Button>
-                  <Button type="button" disabled={sending || !detail.waiting || text.trim() !== ""} onClick={() => void send(retryTextOf(detail.reason))}>
-                    {sending ? "送っています" : "再実行する"}
+                  <Button type="button" disabled={sending || !detail.waiting || text.trim() !== ""} onClick={() => void send(retryTextOf(lang, detail.reason))}>
+                    {sending ? t.sending : t.runAgain}
                   </Button>
                 </div>
               ) : (
                 <Button type="submit" disabled={sending || !replyable || text.trim() === ""} className="self-end">
-                  {sending ? "送っています" : "返答を送る"}
+                  {sending ? t.sending : t.send}
                 </Button>
               )}
             </form>
           )}
-          {running && !sent && !showForm && <p className="text-muted">{resumedFor === issueRef ? RESUMED_TEXT : "実行中です。質問か完了になると、この画面が自動で切り替わります。"}</p>}
-          {queued && !replyable && !sent && !showForm && <p className="text-muted">順番待ちのため、まだ返答は要りません</p>}
-          {!replyable && !running && !queued && !creating && !sent && !showForm && <p className="text-muted">このissueは待ちではありません。返答は送れません。</p>}
+          {running && !sent && !showForm && <p className="text-muted">{resumedFor === issueRef ? t.resumed : t.running}</p>}
+          {queued && !replyable && !sent && !showForm && <p className="text-muted">{t.queuedNoReply}</p>}
+          {!replyable && !running && !queued && !creating && !sent && !showForm && <p className="text-muted">{t.notWaitingNoReply}</p>}
         </>
       )}
       {notice !== null && (
-        <div role="status" aria-label="自動更新の知らせ" className="pointer-events-none sticky bottom-lg z-[1] self-center">
+        <div role="status" aria-label={t.noticeLabel} className="pointer-events-none sticky bottom-lg z-[1] self-center">
           <button
             type="button"
             className="pointer-events-auto min-h-11 rounded-md border border-outline bg-surface-raised px-lg text-label-md font-medium"
@@ -654,7 +734,7 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
               setNotice(null);
             }}
           >
-            自動更新がありました
+            {t.notice}
           </button>
         </div>
       )}

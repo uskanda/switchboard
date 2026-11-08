@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { asOf, clockText, fullText } from "@/lib/freshness";
+import { asOf, clockText, dateTimeText, fullText } from "@/lib/freshness";
 
 // Local times, so the tests hold in any time zone.
 const at = (month: number, day: number, h: number, m: number, s = 0) => new Date(2026, month - 1, day, h, m, s);
@@ -23,16 +23,31 @@ describe("asOf", () => {
 
 describe("clockText", () => {
   it("gives hours and minutes for today", () => {
-    expect(clockText(at(11, 2, 9, 5), now)).toBe("09:05");
+    expect(clockText("ja", at(11, 2, 9, 5), now)).toBe("09:05");
   });
 
   it("leads with the date on another day", () => {
-    expect(clockText(at(11, 1, 14, 32), now)).toBe("11/1 14:32");
+    expect(clockText("ja", at(11, 1, 14, 32), now)).toBe("11/1 14:32");
   });
 });
 
 describe("fullText", () => {
   it("gives the date and the time to the second", () => {
-    expect(fullText(at(11, 2, 9, 5, 7))).toBe("2026/11/2 09:05:07");
+    expect(fullText("ja", at(11, 2, 9, 5, 7))).toBe("2026/11/2 09:05:07");
+  });
+});
+
+describe("clockText and fullText in English", () => {
+  it("give the time today, the month's name on another day, and the year in full", () => {
+    expect(clockText("en", at(11, 2, 9, 5), now)).toBe("09:05");
+    expect(clockText("en", at(11, 1, 14, 32), now)).toBe("Nov 1, 14:32");
+    expect(fullText("en", at(11, 2, 9, 5, 7))).toBe("Nov 2, 2026, 09:05:07");
+  });
+});
+
+describe("dateTimeText", () => {
+  it("gives the date and the time to the minute in each language", () => {
+    expect(dateTimeText("ja", at(11, 2, 9, 5))).toBe("2026/11/02 9:05");
+    expect(dateTimeText("en", at(11, 2, 9, 5))).toBe("Nov 2, 2026, 09:05");
   });
 });

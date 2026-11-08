@@ -1,15 +1,17 @@
-# switchboard 運用ガイド
+日本語: [GUIDE.ja.md](GUIDE.ja.md)
 
-インストールのあとの登録、設定、各機能の使い方をまとめる。全体の説明と前提は [README](../README.md) にある。
+# switchboard operations guide
 
-## トークンの登録
+This guide covers what comes after installation: registering tokens, configuration, and how to use each feature. The [README](../README.md) gives the overview and the assumptions.
 
-GitHubのfine-grained personal access tokenを2つ作り、Secret Serviceに登録する。設定ファイルには、トークンを書かない。
+## Registering tokens
 
-| 用途 | 設定のキー | 権限（対象のリポジトリだけ） |
+Create two GitHub fine-grained personal access tokens and register them in the Secret Service. Never write a token in the config file.
+
+| Use | Config key | Permissions (on the target repositories only) |
 |---|---|---|
-| エージェント（ラベル、コメント、push、PR、CIの見張り） | `token_ref` | Contents、Issues、Pull requestsの読み書き。Actions、Commit statusesの読み取り |
-| 受信箱（一覧、返答、WUIからのマージ） | `inbox_token_ref` | Issues、Pull requests、Contentsの読み書き。Actions、Commit statusesの読み取り |
+| Agent (labels, comments, push, PRs, watching CI) | `token_ref` | Read and write on Contents, Issues, and Pull requests. Read on Actions and Commit statuses |
+| Inbox (list, replies, merging from the web inbox) | `inbox_token_ref` | Read and write on Issues, Pull requests, and Contents. Read on Actions and Commit statuses |
 
 ```bash
 secret-tool store --label='switchboard github' service switchboard/github username token
@@ -19,15 +21,15 @@ secret-tool store --label='switchboard github' service switchboard/github userna
 secret-tool store --label='switchboard github inbox' service switchboard/github-inbox username token
 ```
 
-どちらのコマンドも、トークンを標準入力から読む。トークンは `claude` には渡さない。
+Both commands read the token from standard input. switchboard never passes the tokens to `claude`.
 
-エージェントのトークンにActionsとCommit statusesの読み取りが無いと、エージェントはPRのCIを見張らない。ほかの動きは変わらない。`switchboard doctor` が警告を出す。
+If the agent's token cannot read Actions and Commit statuses, the agent does not watch the CI of its PRs. Nothing else changes. `switchboard doctor` warns about it.
 
-受信箱のトークンのPull requestsとContentsの書き込みは、受信箱のWeb表示から完了のPRをマージするために使う（ADR-043）。マージは人の身元で行い、フォージにも人のマージとして残る。今のトークンに足すときは、GitHubのトークンの設定で、Pull requestsとContentsを「Read and write」にして保存する。トークンの値は変わらないので、登録し直さなくてよい。足さないうちは、マージだけが「権限がありません」で断られる。
+The inbox token writes to Pull requests and Contents so that you can merge done PRs from the web inbox (ADR-043). Merges happen under your identity, and the forge records each one as your merge. To add these permissions to an existing token, open the token's settings on GitHub, set Pull requests and Contents to "Read and write", and save. The token's value does not change, so you do not need to register it again. Until you add them, only merging fails, with "The inbox token has no permission to merge."
 
-受信箱のトークンのActionsとCommit statusesの読み取りは、マージの確認ダイアログにCIの結果を出すために使う（ADR-050）。足し方は上と同じで、ActionsとCommit statusesを「Read-only」にする。足さないうちは、ダイアログに「CIを読む権限がありません」と出るだけで、マージはできる。`switchboard doctor` が警告を出す。
+The inbox token reads Actions and Commit statuses to show the CI results in the merge confirmation dialog (ADR-050). Add them the same way, setting Actions and Commit statuses to "Read-only". Until you add them, the dialog says "The inbox token has no permission to read CI", and you can still merge. `switchboard doctor` warns about it.
 
-GitLabのプロジェクトを使うときは、GitLabのpersonal access tokenを `api` スコープで作り、同じように登録する。エージェント用と受信箱用に、同じトークンを登録してもよい。このトークンは自分の全プロジェクトを操作できる。エージェントの影響を1つのプロジェクトに限りたいときは、後述のプロジェクトごとの上書きで、Project Access Tokenを使う。GitLab 19.2以降のfine-grainedのトークンでも絞れるが、switchboardが使うすべてのAPIで動くかは確かめていない。
+For GitLab projects, create a GitLab personal access token with the `api` scope and register it the same way. You may register the same token for the agent and for the inbox. This token can act on all of your projects. To limit the agent to one project, use a Project Access Token through the per-project override described below. The fine-grained tokens of GitLab 19.2 and later can also narrow the scope, but switchboard has not checked that they work with every API it uses.
 
 ```bash
 secret-tool store --label='switchboard gitlab' service switchboard/gitlab username token
@@ -37,9 +39,9 @@ secret-tool store --label='switchboard gitlab' service switchboard/gitlab userna
 secret-tool store --label='switchboard gitlab inbox' service switchboard/gitlab-inbox username token
 ```
 
-## 設定
+## Configuration
 
-例をコピーして、`YOUR_GITHUB_USER`、端末の名前、プロジェクトのパスを書き換える。
+Copy the example, then replace `YOUR_GITHUB_USER`, the host name, and the project paths.
 
 ```bash
 mkdir -p ~/.config/switchboard
@@ -49,25 +51,25 @@ mkdir -p ~/.config/switchboard
 cp config/switchboard.example.yaml ~/.config/switchboard/config.yaml
 ```
 
-書き換えたら、`doctor` で確かめる。トークン、ユーザーID、担当プロジェクトのリポジトリ、`claude` の版を順に調べ、問題があれば0以外の終了コードで終わる。
+After editing, check the result with `doctor`. It checks the tokens, the user IDs, the repositories of the projects this host is in charge of, and the version of `claude`, in that order. If it finds a problem, it exits with a nonzero code.
 
 ```bash
 switchboard doctor
 ```
 
-Phase 1では、エージェントの投稿も自分のアカウントで行う。`trusted_authors` には自分だけを書く。公開リポジトリも対象にできるが、`include_untrusted` は使えない（ADR-062）。`claude` は自分のOSユーザーのsandboxの中で動くため、詳しくは [SECURITY.md](SECURITY.md) を読むこと。
+In Phase 1, the agent also posts as your own account. Put only yourself in `trusted_authors`. Public repositories can be targets too, but you cannot use `include_untrusted` (ADR-062). `claude` runs inside a sandbox under your own OS user; read [SECURITY.md](SECURITY.md) for the details.
 
-`switchboard doctor` は、トークンの権限も診断する。GitLabのトークンとGitHubのclassic PATはスコープを読み、足りなければ失敗、広すぎれば警告にする。GitHubのfine-grained PATは権限を返さないので、各プロジェクトのissue、PR、contentsを読めるかだけを試す。書き込みの権限は確かめられない。
+`switchboard doctor` also checks the tokens' permissions. For GitLab tokens and GitHub classic PATs, it reads the scopes: a missing scope fails the check, and too broad a scope gives a warning. GitHub fine-grained PATs do not report their permissions, so `doctor` only tries reading each project's issues, PRs, and contents. It cannot check write permissions.
 
 ### GitLab
 
-設定例のうち、字下げしたコメントの行がGitLabの設定である。コメントを外し、`forges` の `gitlab` と、`trusted_authors` の `gitlab` を書く。`base_url` を省くと `https://gitlab.com` を使う。プロジェクトは `gl:group/project` の形で書き、サブグループを含む `gl:group/sub/project` も書ける。
+In the example config, the indented comment lines hold the GitLab settings. Uncomment them and fill in `gitlab` under `forges` and `gitlab` under `trusted_authors`. Without `base_url`, switchboard uses `https://gitlab.com`. Write a project as `gl:group/project`; a path with subgroups such as `gl:group/sub/project` works too.
 
-GitLabの `internal` のプロジェクトは、インスタンスの全ユーザーが見てコメントできるため、公開のプロジェクトとして扱う。`doctor` は警告を出し、`include_untrusted: true` を拒否する。
+Every user of a GitLab instance can see and comment on its `internal` projects, so switchboard treats them as public projects. `doctor` warns about them and rejects `include_untrusted: true`.
 
-### プロジェクトごとのエージェントの身元
+### Agent identity per project
 
-エージェントの投稿とpushを1つのプロジェクトに限りたいときは、そのプロジェクトにProject Access Token（GitLab）か、そのリポジトリだけのトークンを作る。プロジェクトの設定に `token_ref` と `agent_identity` を組で書くと、そのプロジェクトのエージェントだけがそのトークンとbotの身元を使う。受信箱は、上書きにかかわらず、フォージの `inbox_token_ref` を使う。
+To confine the agent's posts and pushes to one project, create a Project Access Token (GitLab) for that project, or a token for that repository only. Set `token_ref` and `agent_identity` together in the project's settings, and only that project's agent uses that token and the bot's identity. The inbox uses the forge's `inbox_token_ref` regardless of the override.
 
 ```yaml
 projects:
@@ -78,109 +80,113 @@ projects:
     agent_identity: project_N_bot_XXXX   # the bot user of the project access token
 ```
 
-## 使い方
+## Usage
 
-対象のリポジトリに、状態ラベル（`agent:ready`、`agent:plan`、`agent:go`、`agent:running`、`agent:waiting`、`agent:done`）を作る。既にあるラベルは作り直さない。
+Create the state labels (`agent:ready`, `agent:plan`, `agent:go`, `agent:running`, `agent:waiting`, `agent:done`) in the target repositories. Labels that already exist are left as they are.
 
 ```bash
 switchboard labels sync
 ```
 
-担当プロジェクトの端末で、エージェントを動かす。Ctrl-Cで止まる。
+Run the agent on the host in charge of the projects. Ctrl-C stops it.
 
 ```bash
 switchboard agent run
 ```
 
-issueに `agent:ready` を付けると、次のポーリングで `agent:running` になり、issueごとのworktreeで `claude -p` が動く。実行の終わりは2通りである。
+Put `agent:ready` on an issue, and on the next poll it becomes `agent:running` and `claude -p` runs in a worktree of its own for the issue. A run ends in one of two ways.
 
-- 質問を残したとき：質問のコメントが付き、`agent:waiting` になる。issueに返信すると、次のポーリングで再び実行する
-- 完了したとき：`verify_command` と出力の検査を通れば、`switchboard/issue-<n>` ブランチをpushしてdraftのPRを作り、`agent:done` になる
+- With a question left: the agent posts the question as a comment and sets `agent:waiting`. Reply to the issue, and the next poll runs it again
+- Finished: if the work passes `verify_command` and the output checks, the agent pushes the `switchboard/issue-<n>` branch, opens a draft PR, and sets `agent:done`
 
-`agent:done` のissueも、closeするまでは作業を続けられる。PRに問題があるときやコンフリクトしたときは、issueに返信すると、次のポーリングで再び実行する。実行は同じブランチに積み、開いたPRがあれば新しく作らずに使い続ける。そのときの完了のコメントは「PRを更新しました」になる。baseとの衝突は `git merge` で解消させ、rebaseはさせない。pushはforceなしのままである。
+Work on an `agent:done` issue can go on until you close it. When the PR has a problem or a conflict, reply to the issue, and the next poll runs it again. The run adds commits to the same branch, and if a PR is open, the agent keeps using it instead of opening a new one. In that case, the done comment starts with "Pull request updated". Conflicts with the base are resolved through `git merge`, never through a rebase, and pushes stay without force.
 
-実行の間、エージェントは進捗のコメントを1つ投稿し、1分ごとに書き換えて1行ずつ足す。1行には、時刻、経過時間、使ったツールの名前と回数、`claude -p` が最後に書いたテキストの1行目（120文字まで）を書く。前の行と同じ内容なら足さない。ツールの入力と出力（コマンドの中身、ツールに渡したファイルのパス）は書かない。ただし、`claude -p` のテキストにファイルの名前があれば、目的の1行に出る。書き換えのたびに、秘密の検査と `comments.check_command` を通し、秘密を含むように見える行は伏せる。誰かが進捗のコメントを消したら、次の行で投稿し直す。1分より早く終わる実行には、進捗のコメントは付かない。進捗のコメントは、結果のコメントを投稿したあとと、実行を取り消したあとに消える。エージェントが落ちて残ったものは、再起動のあとの回復で消える。
+During a run, the agent posts one progress comment and rewrites it every minute, adding one line each time. Each line holds the time, the elapsed time, the tools used and how often, and the first line of the latest `claude -p` text (up to 120 characters). Lines identical to the previous one are skipped. Tool inputs and outputs, such as command contents and the paths of files passed to tools, are left out. Still, a file name in the text of `claude -p` shows up in that first line. Each rewrite goes through the secret check and `comments.check_command`, and a line that seems to contain a secret is withheld. If someone deletes the progress comment, the agent posts it again with the next line. Runs that end within a minute get no progress comment. The agent deletes the progress comment after it posts the result comment, and after a run is cancelled. If the agent crashed and left one behind, the recovery after the restart deletes it.
 
-フォージへの要求が一時的に失敗しても、issueは止まったままにならない。結果の書き戻しに失敗した実行は、ポーリングのたびに書き戻し直す。回数に上限は無い。書き戻し直す前にissueを読み直す。issueがcloseされているか、人がラベルを変えていたら、ラベルは変えない。その場合、未投稿の結果のコメントだけを投稿し、通知は送らない。評価の途中で失敗したissueも、次のポーリングで評価し直す。やり直すものがある間は、中継につながっていても `poll_interval` ごとにポーリングする。
+A transient failure of a forge request does not leave an issue stuck. When the agent fails to write back a run's result, it tries again on every poll, with no limit on the attempts. Before each retry, it reads the issue again. If the issue was closed or someone changed its labels, the agent leaves the labels alone. It then posts only the result comment that is not yet posted, and sends no notification. An issue whose evaluation failed partway is evaluated again on the next poll. While anything is left to retry, the agent polls every `poll_interval`, even when it is connected to the relay.
 
-別の端末から、エージェントの状態を見る。
+From another terminal, check the agent's state.
 
 ```bash
 switchboard agent status
 ```
 
-書き戻しを待つ実行は、`runs:` の欄に `write-back pending since <時刻>` と出て、実行中の行とは区別される。
+A run waiting for write-back shows `write-back pending since <time>` in the `runs:` field, set apart from the lines of running runs.
 
-全プロジェクトの待ちのissueを、GitHubとGitLabをまとめて、待ち始めた順に一覧する。その下の「Running」の欄に、`agent:running` のissueを、端末、経過時間、進捗のコメントの最後の行とともに出す。進捗のコメントがまだ無ければ `?` と出る。一番下の「Done (waiting for close)」の欄に、openのままの `agent:done` のissueを、端末、完了からの時間、PR/MRのURLとともに、完了の古い順に出す。closeすると一覧から消える。行番号は、待ちの行から完了の行へ続けて付く。`--json` を付けると、JSONの配列が出る。各要素の `state` は、`waiting`、`done`、`running`、`queued` のどれかになる。`--forge github` か `--forge gitlab` で、片方のフォージに絞れる。片方のフォージに届かないときは、届いた側の一覧を出したうえで、0以外の終了コードで終わる。
+`switchboard inbox` lists the waiting issues of every project, GitHub and GitLab together, in the order they started waiting. Below them, the "Running" section lists the `agent:running` issues with the host, the elapsed time, and the last line of the progress comment. Issues without a progress comment yet show `?`. At the bottom, the "Done (waiting for close)" section lists the open `agent:done` issues with the host, the time since done, and the PR/MR URL, oldest first. Closing an issue removes it from the list. Row numbers run on from the waiting rows to the done rows. With `--json`, the output is a JSON array, and the `state` of each element is one of `waiting`, `done`, `running`, or `queued`. `--forge github` or `--forge gitlab` limits the list to one forge. When one forge cannot be reached, the command lists what the other forge returned, then exits with a nonzero code.
 
 ```bash
 switchboard inbox
 ```
 
-一覧の行番号で、質問の全文を読み、返答する。`--editor` を付けると、`$EDITOR` で返答を書ける。
+Use a row number from the list to read a question in full and reply to it. With `--editor`, you write the reply in `$EDITOR`.
 
 ```bash
 switchboard show 1
 ```
 
 ```bash
-switchboard reply 1 "Bで進めてください"
+switchboard reply 1 "Go with option B."
 ```
 
-すべてのコマンドは `--config` で設定ファイルを指定できる。指定が無いときは `~/.config/switchboard/config.yaml` を読む。
+Every command takes `--config` to name the config file. Without it, a command reads `~/.config/switchboard/config.yaml`.
 
-### 計画を先に立てる
+### Planning first
 
-実装の前に、エージェントにissueのコメントで質問させ、計画を承認してから実装させられる。始めるときに付けるラベルは、いつも1つである。
+You can have the agent ask its questions in issue comments before it implements anything, and implement only after you approve the plan. To start, you always put exactly one label on the issue.
 
-- `agent:ready`：プロジェクトの `plan_first` に従う。`always` なら必ず計画から始め、`auto` なら必要なときだけ計画から始める。無いか `never` なら、すぐ実装する。前の版の `true` は `always`、`false` は `never` として読む
-- `agent:plan`：計画から始める
-- `agent:go`：すぐ実装する
+- `agent:ready`: follows the project's `plan_first`. With `always`, the agent always starts with a plan; with `auto`, only when one is needed. Without the key, or with `never`, it implements right away. The `true` of earlier versions reads as `always`, and `false` as `never`
+- `agent:plan`: starts with a plan
+- `agent:go`: implements right away
 
-`plan_first: auto` の `agent:ready` では、最初の計画の実行が、計画の段階を省くかを決める。省くのは、issueと信頼済みのコメントで設計上の判断がすべて決まっていて、聞くことが1つも無いときだけである。迷えば質問する。省くときは、「要件が明確なので、質問と承認を省いて実装します」と書いた計画をコメントし、待たずに同じ着手のまま実装の実行に移る。実装の実行は、そのコメントの計画を実装する。何を作るつもりで進めたかは、このコメントでissueに残る。省いたあとの返答は、`agent:go` で始めた周期と同じく実装の実行で扱う。省けるのは周期の最初の計画の実行だけで、一度質問をしたissueは、今までどおり計画の承認を待つ。
+For `agent:ready` with `plan_first: auto`, the first plan run decides whether to skip the plan stage. It skips only when the issue and the trusted comments settle every design decision and nothing is left to ask. When in doubt, it asks. If it skips, it comments the plan with this first line:
 
-計画の段階の実行は、ファイルを1つも変えない。使えるのは、読み取りのツールと `git status`、`git diff`、`git log` だけである。終わったあとにworktreeの変更があれば捨てる。pushもPRの作成もしない。実行は、決まっていない判断を推奨の答えとともに1回のコメントでまとめて聞く。決めることが無くなったら、計画をコメントする。どちらも `agent:waiting` になり、待ちの理由は `plan-questions` と `plan` である。
+> The requirements are clear, so the agent skips the questions and the approval and implements this plan now.
 
-返答は、承認の語（既定は `/ok`）で始める。
+Without waiting, it then moves on to the implementation run under the same start, and that run implements the plan in the comment. The comment keeps a record on the issue of what the agent set out to build. Replies after a skip go to implementation runs, as in a cycle started with `agent:go`. Only the first plan run of a cycle can skip. An issue that has asked a question once waits for plan approval as before.
 
-- 質問に `/ok` と返すと、推奨どおりの答えとして次のラウンドに進む。`/ok q2はB` のように続けると、その問いだけを変えられる。質問の番号は、ラウンドをまたいで続く
-- 計画に `/ok` と返すと承認になり、次の実行で実装に入る。`/ok` 以外の返答は、計画の直しの依頼として、計画を出し直す
-- 承認の語は、信頼済みの人のコメントの最初の行の最初の語だけを見る。`/okay` や、信頼済みでない人に編集されたコメントは承認にならない
+A run in the plan stage changes no files. It may use only the read tools and `git status`, `git diff`, and `git log`. If the worktree has changes after the run ends, the agent discards them. The run neither pushes nor opens a PR. It asks about all the open decisions in one comment, each with a recommended answer. Once nothing is left to decide, it comments the plan. Both end in `agent:waiting`, with the wait reasons `plan-questions` and `plan`.
 
-承認の語は設定で変えられる。
+Start your reply with the approval word (`/ok` by default).
+
+- Reply `/ok` to the questions to take the recommended answers and go on to the next round. To change only some questions, add to it, as in `/ok q2 is B`. Question numbers continue across rounds
+- Reply `/ok` to the plan to approve it, and the next run starts implementing. Any other reply is a request to revise the plan, and the agent posts the plan again
+- Only the first word of the first line of a trusted person's comment counts. `/okay`, or a comment edited by someone not trusted, does not approve
+
+You can change the approval word in the config.
 
 ```yaml
 plan:
   approve_word: /ok
 projects:
   - ref: gh:YOUR_GITHUB_USER/switchboard
-    plan_first: auto                  # always、auto、never のどれか
+    plan_first: auto                  # always, auto, or never
 ```
 
-計画の段階の実行には、利用者の追加の指示を渡せる。全プロジェクトに1つと、プロジェクトごとに1つで、両方あれば全体、プロジェクトの順につなげる。実装の実行には渡らない（実装の実行には、別の `run.md` を渡せる）。指示は、設定ファイルと同じディレクトリの `instructions/` の下にある、ただのファイルである。全体は `instructions/plan.md` である。GitHubのプロジェクトの指示は `instructions/gh/<owner>/<repo>/plan.md` に置く。GitLabなら `instructions/gl/<group>/<project>/plan.md` である。
+You can give runs in the plan stage additional instructions of your own: one file for all projects and one per project. When both exist, the agent joins them, the one for all projects first. Implementation runs do not get them; they can get a separate `run.md`. The instructions are plain files under `instructions/` in the directory of the config file. For all projects, the file is `instructions/plan.md`. A GitHub project's instructions go in `instructions/gh/<owner>/<repo>/plan.md`, and a GitLab project's in `instructions/gl/<group>/<project>/plan.md`.
 
 ```bash
-switchboard instructions edit                 # 全プロジェクトの指示
-switchboard instructions edit gh:o/switchboard  # 1つのプロジェクトの指示
+switchboard instructions edit                 # instructions for all projects
+switchboard instructions edit gh:o/switchboard  # instructions for one project
 ```
 
-受信箱のWeb表示の「設定」の画面からも編集できる。保存は32 KiBまでで、秘密を含むように見えるものは拒まれる。保存のたびに、監査ログに内容のSHA-256が残る。ファイルは端末ごとにある。Web表示が変えるのは、Web表示の端末のファイルだけである。エージェントが別の端末で動くときは、その端末で編集するか、設定ファイルと一緒に同期する。
+You can also edit them on the Settings page of the web inbox. A save may be up to 32 KiB, and the web inbox rejects content that seems to contain a secret. Each save records the SHA-256 of the content in the audit log. The files are kept per host, and the web inbox changes only the files on its own host. If the agent runs on another host, edit the files there, or sync them along with the config file.
 
-### 実行のsandbox
+### The run sandbox
 
-実行の中のシェルのコマンドは、実行ごとのsandboxの中で動く。書き込めるのはworktreeと `$TMPDIR` だけで、ネットワークには接続できない。資格情報の置き場所（`~/.ssh`、`~/.config/gh` など）と、switchboardの設定と状態のディレクトリは読めない。sandboxの中のコマンドは、許可の規則が無くても動く。拒否する操作（`git push`、`git rebase`、`gh` など）は、sandboxの中でも拒否される。
+Shell commands in a run execute inside a sandbox of their own for each run. They can write only to the worktree and `$TMPDIR`, and they cannot connect to the network. Credential locations (`~/.ssh`, `~/.config/gh`, and so on) and switchboard's config and state directories are unreadable to them. Commands in the sandbox run without permission rules. Denied operations (`git push`, `git rebase`, `gh`, and so on) stay denied inside the sandbox too.
 
-sandboxの外で動くのは、`git` と、プロジェクトの検証コマンドの全体（`make verify` など）だけである。この2つは、許可の規則で決まる。同じ道具のほかのコマンド（`make deploy` など）は、sandboxの中で動く。
+Only `git` and the project's whole verify command (`make verify` or similar) run outside the sandbox, and permission rules decide those two. Other commands of the same tool (`make deploy`, for example) run inside the sandbox.
 
-実行は、Claude Codeの利用者の全体設定（`~/.claude/settings.json` のsandbox、フック、プラグイン、許可の規則）を使わない。対象リポジトリのプロジェクト設定は読み込む。
+A run does not use the Claude Code user's global settings (the sandbox, hooks, plugins, and permission rules in `~/.claude/settings.json`). It does load the project settings of the target repository.
 
-Linuxの端末には、`bubblewrap` と `socat` が要る。エージェントは実行のたびに、claudeを起動する前に、bwrapで名前空間を作れるかを確かめる。作れないとき（別のsandboxやコンテナの中など）は、claudeを起動せず、実行を誤りにして理由をコメントに書く。
+Linux hosts need `bubblewrap` and `socat`. For each run, before it starts claude, the agent checks that bwrap can create namespaces. When it cannot, as inside another sandbox or a container, the agent does not start claude. It marks the run as an error and gives the reason in a comment.
 
-### 実装の実行に足す許可と指示
+### Extra permissions and instructions for implementation runs
 
-ファイルを書く実行（直接の実装、承認のあとの実装、CIとpushの失敗を直す実行、baseとの衝突を直す実行）には、許可するツールと利用者の追加の指示を足せる。手作業で使っているスキルやCLIを、自動の実行でも使わせるためのものである。計画の実行には、どちらも足さない。
+You can give extra allowed tools and additional instructions of your own to the runs that write files. These are direct implementation, implementation after approval, and the runs that fix a CI failure, a push failure, or a conflict with the base. With these, unattended runs can use the skills and CLIs you use by hand. Plan runs get neither.
 
-許可は、設定ファイルにClaude Codeの権限の規則の形で書く。`allowed-tools` を持つスキル（多くのハーネスのスキル）は、`Skill` を許可しないと呼べない。全体の `agent.allow_tools_extra` と、プロジェクトごとの `allow_tools_extra` をつなげて使う。
+Write the permissions in the config file, as Claude Code permission rules. A skill with `allowed-tools` (as many harness skills have) cannot be called unless `Skill` is allowed. The agent joins the global `agent.allow_tools_extra` and each project's `allow_tools_extra`.
 
 ```yaml
 agent:
@@ -190,44 +196,44 @@ projects:
     allow_tools_extra: ["Bash(openspec *)"]
 ```
 
-sandboxの中のコマンドは規則なしで動くので、`Bash(openspec *)` のような `Bash` の項目は、ほとんどの場合要らない。ネットワークやsandboxの外の書き込みが要るコマンドは、項目を足しても動かない。`allow_tools_extra` の各項目のツール名（`Skill`、`Bash(openspec *)` なら `Bash`）は、実行に渡すツールにも足される。実行に渡すツールは、ファイルを書く実行では `Bash`、`Read`、`Edit`、`Write`、`Glob`、`Grep`、`WebSearch` だけである。計画の実行には、`Bash`、`Read`、`Glob`、`Grep`、`WebSearch` を渡す。
+Commands in the sandbox run without rules, so you rarely need `Bash` entries such as `Bash(openspec *)`. A command that needs the network or writes outside the sandbox fails even with an entry. The tool name of each `allow_tools_extra` entry (`Skill`, or `Bash` for `Bash(openspec *)`) is also added to the tools the run gets. Runs that write files otherwise get only `Bash`, `Read`, `Edit`, `Write`, `Glob`, `Grep`, and `WebSearch`. Plan runs get `Bash`, `Read`, `Glob`, `Grep`, and `WebSearch`.
 
-設定を読むときに、空の項目、制限の無い `Bash` と `Bash(*)`、どの実行でも拒否する操作（`git push`、`git rebase`、`gh`、`WebFetch`）を名指しする項目は誤りになる。`Bash(git *)` のような広い項目は通るが、拒否する操作は拒否されたままである。プロジェクトの `allow_tools_extra` は再起動せずに反映され、`agent.allow_tools_extra` は再起動で反映される。許可は設定ファイルにだけ書け、受信箱のWeb表示からは変えられない。
+When switchboard reads the config, three kinds of entries are errors. They are an empty entry, an unrestricted `Bash` or `Bash(*)`, and an entry that names an operation every run denies (`git push`, `git rebase`, `gh`, `WebFetch`). A broad entry such as `Bash(git *)` passes, but the denied operations stay denied. Changes to a project's `allow_tools_extra` take effect without a restart; `agent.allow_tools_extra` needs a restart. You can write permissions only in the config file. The web inbox cannot change them.
 
-指示は、計画の指示と同じディレクトリに `run.md` の名前で置く。全体は `instructions/run.md` である。GitHubのプロジェクトは `instructions/gh/<owner>/<repo>/run.md` に置く。GitLabなら `instructions/gl/<group>/<project>/run.md` である。保存の検査と監査ログは計画の指示と同じで、Web表示の「設定」の画面からも編集できる。
+The instructions go in the same directory as the plan instructions, in a file named `run.md`. For all projects, the file is `instructions/run.md`. A GitHub project's goes in `instructions/gh/<owner>/<repo>/run.md`, and a GitLab project's in `instructions/gl/<group>/<project>/run.md`. Saves get the same checks and audit log entries as the plan instructions, and you can also edit the files on the Settings page of the web inbox.
 
-実行を始めるたびに、監査ログに `run.started` が残る。中身は、実行のID、実行の種類、足した許可の一覧、使った指示のファイルごとのSHA-256である。計画の実行では、足した許可は空で、ハッシュは `plan.md` のものになる。同じ値を持つ `instructions.saved` の行から、どの保存の版で動いたかが分かる。指示の内容そのものは残らない。
+Each time a run starts, the audit log records `run.started`. This record holds the run ID, the kind of run, the list of extra permissions, and the SHA-256 of each instruction file used. For a plan run, the extra permissions are empty and the hash is that of `plan.md`. Matching the hash against the `instructions.saved` lines tells you which saved version the run used. Instruction content itself never goes into the log.
 
 ```bash
-switchboard instructions edit --run                   # 全プロジェクトの実装の指示
-switchboard instructions edit --run gh:o/switchboard  # 1つのプロジェクトの実装の指示
+switchboard instructions edit --run                   # implementation instructions for all projects
+switchboard instructions edit --run gh:o/switchboard  # implementation instructions for one project
 ```
 
-OpenSpecを使うプロジェクトでの書き方の例は、[examples/openspec.md](examples/openspec.md) にある。
+For an example of instructions in a project that uses OpenSpec, see [examples/openspec.md](examples/openspec.md) (Japanese).
 
-### 計画のラウンドのセッションの引き継ぎ
+### Resuming the session across plan rounds
 
-計画の段階では、質問への返答や計画への修正の返信で、次の計画の実行が始まる。この端末で前回の計画の実行が質問か計画を投稿してから `agent.resume_within`（既定1時間）以内なら、次の実行は前回のセッションから分岐して始まる。前回に読んだコードを読み直さずに済み、入力のトークンの多くがキャッシュから読まれる。
+In the plan stage, a reply to the questions, or a reply asking to revise the plan, starts the next plan run. The next run starts as a fork of the previous session if the previous plan run on this host posted its questions or plan less than `agent.resume_within` ago. `agent.resume_within` is 1 hour by default. It does not have to read again the code it read before, and much of its input is read from the cache.
 
-計画用の指示、承認の語、言語、モデル、effortを前回のあとに変えたときは、引き継がずに新しく始まる。worktreeのHEADが動いたときも同じである。承認のあとの実行と直す実行は、いつも新しく始まる。`agent.resume_within: 0s` にすると、計画の実行も毎回新しく始まる。
+If you changed the plan instructions, the approval word, the language, the model, or the effort since the previous run, the next run starts fresh instead. The same goes when the worktree's HEAD has moved. Runs after approval and fix runs always start fresh. With `agent.resume_within: 0s`, plan runs also start fresh every time.
 
 ```yaml
 agent:
   resume_within: 30m
 ```
 
-### 実行のディレクトリの保持期間
+### Retention of run directories
 
-実行ごとのファイル（`runs/<run-id>/` の `prompt.md`、`stream.jsonl` など）は、最後の書き込みから `agent.retention`（既定720h）を過ぎると、エージェントが消す。起動時と、その後1日ごとに調べる。実行中のもの、書き戻しを待つもの、各issueの最新の実行のものは残す。`0s` にすると消さない。
+The agent deletes the files of each run (`prompt.md`, `stream.jsonl`, and others under `runs/<run-id>/`) once `agent.retention` (720h by default) has passed since their last write. It checks at startup and once a day after that. Files of running runs, of runs waiting for write-back, and of the latest run of each issue are kept. `0s` turns deletion off.
 
 ```yaml
 agent:
   retention: 168h
 ```
 
-### 実行のモデルとeffort
+### Model and effort of runs
 
-`agent.model` と `agent.effort` で、実行のモデルとeffortを選べる。計画の実行は `agent.plan`、直す実行（CIとpushの失敗、baseとの衝突）は `agent.fix` で上書きできる。値が空のときは、Claude Codeの既定が使われる。利用者の全体設定のモデルとeffortは使われない。effortは `low`、`medium`、`high`、`xhigh`、`max` のどれかで、それ以外は設定の誤りになる。どちらも再起動で反映される。
+`agent.model` and `agent.effort` choose the model and effort of runs. `agent.plan` overrides them for plan runs, and `agent.fix` for fix runs (CI and push failures, conflicts with the base). When a value is empty, Claude Code's default applies. The model and effort in the user's global settings are not used. Valid efforts are `low`, `medium`, `high`, `xhigh`, and `max`; any other value is a config error. Both take effect on restart.
 
 ```yaml
 agent:
@@ -236,96 +242,96 @@ agent:
   fix: { effort: low }
 ```
 
-### 実装の実行だけへの追加の指示とスクリーンショット
+### Instructions for implementation runs only, and screenshots
 
-`run.md` は直す実行にも渡る。直接の実装（`agent:ready`・`agent:go`）と承認のあとの実装にだけ渡したい指示は、`implement.md` に書く。置き場所は `run.md` と同じディレクトリで、全体は `instructions/implement.md` である。両方あるときは、`run.md` のあとにつなげる。計画の実行と、CI・push・baseとの衝突を直す実行には渡らない。保存の検査と監査ログは、ほかの指示と同じである。`run.started` には、`implement` の鍵でこのファイルのハッシュが残る。
+Fix runs get `run.md` too. Instructions meant only for direct implementation (`agent:ready`, `agent:go`) and implementation after approval go in `implement.md`. It sits in the same directory as `run.md`, and the file for all projects is `instructions/implement.md`. When both exist, the agent joins it after `run.md`. Plan runs and the runs that fix CI, a push, or a conflict with the base do not get it. Saves get the same checks and audit log entries as the other instructions. `run.started` records the hash of this file under the `implement` key.
 
 ```bash
 switchboard instructions edit --implement gh:o/switchboard
 ```
 
-同じ2種類の実行には、画像の置き場所の取り決めもいつも渡す。取り決めでは、issueへ付けたい画像を、worktreeの `.switchboard/screenshots/` の直下に置く。switchboardは、この場所を `.git/info/exclude` へ足す。実行を始める前には、中を消す。doneで終わったら、doneの投稿に続けて、画像だけのコメントを1件issueへ付ける。付けるのは `.png`・`.jpg`・`.jpeg`・`.webp` だけで、1枚5MB、10枚までである。外れたファイルは、名前と理由をそのコメントに書く。画像をコミットするとpushを止め、検査の失敗として待つ。
+The same two kinds of runs always get a convention for where to put images. Under the convention, the run puts each image to attach to the issue directly in `.switchboard/screenshots/` in the worktree. The agent adds this path to `.git/info/exclude` and empties the directory before a run starts. When a run ends as done, the agent adds one comment with only the images to the issue, after the done post. It attaches only `.png`, `.jpg`, `.jpeg`, and `.webp` files, up to 5 MB each and 10 in all. That comment names each file left out and the reason. If the run commits an image, the agent stops the push and waits, as for a failed check.
 
-GitHubでは、端末の `gh`（v2.99.0以上）の `gh issue comment --attach` で付ける。`gh` にはエージェントのトークンだけを渡し、利用者の `gh` のログインは使わない。GitLabでは、uploads APIで上げてノートに並べる。付けられなかったときは、理由だけを書いたコメントを付け、doneはそのままにする。たとえば `gh` が無いときや古いとき、権限が無いときである。`switchboard doctor` は、GitHubのプロジェクトがあるときに `gh` の版を確かめる。
+On GitHub, the agent attaches the images with `gh issue comment --attach` of the host's `gh` (v2.99.0 or later). It gives `gh` only the agent's token and does not use your `gh` login. For GitLab, the agent uploads them through the uploads API and lists them in a note. When it cannot attach them, the agent posts a comment with only the reason and leaves the done state as it is. Examples are a missing or old `gh`, and a token without the permission. `switchboard doctor` checks the version of `gh` when there are GitHub projects.
 
-撮影の手順と、それに要るコマンドの許可（`allow_tools_extra`）は、利用者が書く。例は [examples/screenshots.md](examples/screenshots.md) にある。
+You write the steps for taking screenshots and the permissions for the commands they need (`allow_tools_extra`) yourself. See [examples/screenshots.md](examples/screenshots.md) (Japanese) for an example.
 
-### 常駐させる
+### Running as a service
 
-ログインしていなくてもエージェントが動き続けるように、systemdのサービスとして常駐させられる。サービスは自分のOSユーザーで動き、異常に終わると自動で再起動する。トークンは、ホストの鍵で暗号化したsystemdのクレデンシャルとして置く。置くのは、この端末の担当プロジェクトのエージェント用トークンだけで、受信箱のトークンは置かない。
+You can run the agent as a systemd service, so it keeps running while you are logged out. The service runs as your own OS user and restarts on its own when it ends abnormally. Tokens are stored as systemd credentials encrypted with the host's key. Only the agent tokens for this host's projects are stored, never the inbox token.
 
-設置するときは、Secret Serviceからトークンを読むので、keyringを解錠しておく。unitには、実行した `switchboard` の場所を書く。`make install` で `~/.local/bin` に置いたものを使う。`go run` で作ったものはビルドキャッシュにあり、古い版のまま動くか消えるので、設置を断る。まず、何をsudoで実行するかを確かめる。
+The installer reads the tokens from the Secret Service, so unlock the keyring first. It writes the path of the `switchboard` you ran into the unit. Use the one `make install` put in `~/.local/bin`. A binary built by `go run` lives in the build cache, where it can go stale or disappear, so the installer refuses it. First, check what the installer will run with sudo.
 
 ```bash
 switchboard service install --dry-run
 ```
 
-表示されるのは、次のコマンドである（クレデンシャルの行は、トークンの数だけ並ぶ）。トークンは標準入力で渡し、画面には出さない。
+It shows the following commands, with one credential line per token. Tokens are passed on standard input and never shown on screen.
 
-| コマンド | 目的 |
+| Command | Purpose |
 |---|---|
-| `sudo install -d -m 0700 /etc/credstore.encrypted` | クレデンシャルの置き場所を作る |
-| `sudo systemd-creds encrypt --name=<名前> - /etc/credstore.encrypted/switchboard.<名前>` | トークンを暗号化して置く |
-| `sudo install -m 0644 <一時ファイル> /etc/systemd/system/switchboard-agent.service` | unitを置く |
-| `sudo systemctl daemon-reload` | unitを読み込ませる |
-| `sudo systemctl enable switchboard-agent.service` | 起動時に動くようにする |
-| `sudo systemctl restart switchboard-agent.service` | 動かし直す（初めてなら起動する） |
+| `sudo install -d -m 0700 /etc/credstore.encrypted` | Create the directory for the credentials |
+| `sudo systemd-creds encrypt --name=<name> - /etc/credstore.encrypted/switchboard.<name>` | Encrypt and store a token |
+| `sudo install -m 0644 <temp file> /etc/systemd/system/switchboard-agent.service` | Install the unit |
+| `sudo systemctl daemon-reload` | Load the unit |
+| `sudo systemctl enable switchboard-agent.service` | Start it at boot |
+| `sudo systemctl restart switchboard-agent.service` | Restart it (or start it, the first time) |
 
-よければ設置する。コマンドを全部表示してから、`[y/N]` で確認を求める。sudoのパスワードは、端末で入力する。
+If that looks right, install it. The installer shows every command, then asks for confirmation with `[y/N]`. Type the sudo password in the terminal.
 
 ```bash
 switchboard service install
 ```
 
-状態は `switchboard service status` で、ログは `journalctl -u switchboard-agent.service` で見る。撤去は `switchboard service uninstall` で行う。
+Check the state with `switchboard service status` and the logs with `journalctl -u switchboard-agent.service`. Remove the service with `switchboard service uninstall`.
 
-置いてあるサービス（エージェント、中継、受信箱、Web表示）を、まとめて動かし直せる。置いていないサービスは飛ばす。sudoのパスワードを端末で入力する。
+You can restart all the installed services (agent, relay, inbox, web inbox) at once. Services that are not installed are skipped. Type the sudo password in the terminal.
 
 ```bash
 make restart
 ```
 
-作り直した版で動かし直すときは、`make deploy` を使う。2つのバイナリを作って `~/.local/bin` に置いてから、`make restart` と同じことをする。置き場所は `PREFIX` で変えられる。チェックアウトがmain以外のブランチにあるときは警告を出す。端末から実行していれば、続けるかを尋ね、`y` 以外の答えで止まる。
+To restart on a fresh build, use `make deploy`. It builds the two binaries, puts them in `~/.local/bin`, then does what `make restart` does. `PREFIX` changes the install location. When the checkout is on a branch other than main, it warns. Run from a terminal, it asks whether to continue and stops on any answer other than `y`.
 
-次のときは、`switchboard service install` をもう一度実行する。
+Run `switchboard service install` again in these cases:
 
-- トークンを入れ替えたとき（クレデンシャルを置き直す）
-- `claude` や `git` の場所を変えたとき（unitには、設置したときの `PATH` を書く）
-- 設定ファイルの場所や、担当のプロジェクトを変えたとき
+- When you replace a token (to store the credentials again)
+- When you move `claude` or `git` (the unit records the `PATH` from the time of installation)
+- When you change the location of the config file or the projects this host is in charge of
 
-サブスクリプションの認証（`claude.auth: subscription`）で常駐させてよいかは、switchboardでは確かめていない。Claudeの利用規約に照らして、利用者が判断すること。
+switchboard has not checked whether a service may run with subscription authentication (`claude.auth: subscription`). Read Claude's terms of use and decide for yourself.
 
-### 複数の端末で動かす
+### Running on several hosts
 
-担当は、プロジェクトの `host` で端末ごとに分ける。設定を誤って2台が同じプロジェクトを担当しても、同じissueを2台が実行することは無い。エージェントは、着手のときに「端末ubuntu-aで実行を始めます」のような着手のコメントを投稿してから、issueを取り直す。最も早く着手のコメントを出した端末だけが実行し、他の端末は自分のコメントを消して退く。2台とも、この版のswitchboardにすること。
+The `host` of each project assigns it to a host. Even if a config mistake puts two hosts in charge of the same project, the two never run the same issue. When it takes up an issue, the agent posts a claim comment such as "Started on host ubuntu-a." and then reads the issue again. Only the host whose claim comment came first runs the issue; the others delete their own comments and back off. Both hosts must run this version of switchboard.
 
-### 中継で返答にすぐ着手する
+### Starting runs on replies right away with the relay
 
-既定では、エージェントはポーリングで更新を見つける。返答してから実行が始まるまで、最大で `poll_interval` だけかかる。中継（`switchboard relay serve`）を置くと、フォージのwebhookを受けた中継がissueのIDだけをエージェントへ配り、エージェントは数秒で取り直す。中継は、issueの本文、コメント、タイトル、ユーザー名を持たず、フォージのトークンも持たない。
+By default, the agent finds updates by polling, so a run can take up to `poll_interval` to start after you reply. With a relay (`switchboard relay serve`), the relay receives the forge's webhook and passes only the issue ID to the agent, which reads the issue again within seconds. The relay holds no issue bodies, comments, titles, or user names, and no forge token.
 
-今の版の中継は、インターネットには公開しない。GitLabのプロジェクトに使い、受け口の置き方は次の2通りある。GitHub.comからのwebhookには公開の受け口が要るので、GitHubのプロジェクトは当面ポーリングで扱う。
+The relay in this version is not exposed to the internet. Use it for GitLab projects, with its endpoint set up in one of the two ways below. Webhooks from GitHub.com need a public endpoint, so switchboard handles GitHub projects by polling for now.
 
-- GitLabが中継と同じ端末にある：既定のまま、受け口を `127.0.0.1:8781` で待つ
-- GitLabがLANの別の機械にある：受け口をこの端末のLANのアドレスで待つ。手順の終わりの「別の機械のGitLabから受ける」を見る
+- GitLab runs on the same host as the relay: keep the default, and the endpoint listens on `127.0.0.1:8781`
+- GitLab runs on another machine in the LAN: the endpoint listens on this host's LAN address. See [Receiving webhooks from GitLab on another machine](#receiving-webhooks-from-gitlab-on-another-machine) after the steps
 
-中継につながっている間、エージェントは、`relay.hooks` にwebhookを登録したプロジェクトを `reconcile_interval`（既定10分）ごとに照合する。webhookの無いプロジェクト（たとえばGitHubのプロジェクト）には中継からイベントが届かないので、中継につながっていても `poll_interval` ごとにポーリングする。中継が止まったら、すぐに全プロジェクトが `poll_interval` のポーリングに戻り、中継が戻ったらつなぎ直す。
+While connected to the relay, the agent reconciles the projects whose webhooks are registered in `relay.hooks` every `reconcile_interval` (10 minutes by default). Projects without a webhook (GitHub projects, for example) get no events from the relay, so the agent polls them every `poll_interval` even while connected. If the relay stops, every project goes back to polling at `poll_interval` at once, and the agent reconnects when the relay comes back.
 
-設置の手順は次のとおりである。
+The setup steps are as follows.
 
-1. 端末のトークンを作る。トークンはSecret Serviceに置かれ、画面には、設定に足す項目（トークンのハッシュと、エージェントの `relay`）だけが出る
+1. Create a token for the host. The token is stored in the Secret Service, and the screen shows only the entries to add to the config (the token's hash and the agent's `relay`)
 
    ```bash
-   switchboard relay token add <端末名>
+   switchboard relay token add <host>
    ```
 
-2. GitLabの管理画面で、`Admin > Settings > Network > Outbound requests` を開く。「Local IP addresses and domain names that hooks and integrations can access」に、受け口のアドレスとポート（既定は `127.0.0.1:8781`）を足す。「Allow requests to the local network from webhooks and integrations」はオフのままにする。足してから数分の間、GitLabのバックグラウンドの処理は、このアドレスへの送信を拒むことがある
-3. プロジェクトのwebhookを登録する。シークレットはSecret Serviceに置かれ、受信箱のトークンでwebhookが登録される。GitLabでは、署名トークンで登録する。トークンに権限が無ければ、画面から登録する手順が、シークレットとともに1回だけ表示される
+2. In the GitLab admin area, open `Admin > Settings > Network > Outbound requests`. Add the endpoint's address and port (`127.0.0.1:8781` by default) to "Local IP addresses and domain names that hooks and integrations can access". Leave "Allow requests to the local network from webhooks and integrations" off. For a few minutes after you add it, GitLab's background jobs may refuse to send to this address
+3. Register the project's webhook. The secret is stored in the Secret Service, and the webhook is registered with the inbox token. On GitLab, the webhook is registered with a signing token. If the token lacks the permission, the command shows the steps to register the webhook in the GitLab UI, once, along with the secret
 
    ```bash
    switchboard relay hook add gl:nas/switchboard-sandbox
    ```
 
-4. 1と3で表示された項目を、設定ファイルの `relay:` 節と `agent:` 節に貼り付ける。switchboardは設定ファイルを書き換えない
+4. Paste the entries shown in steps 1 and 3 into the `relay:` and `agent:` sections of the config file. switchboard does not rewrite the config file
 
    ```yaml
    relay:
@@ -334,303 +340,303 @@ make restart
          key: <hook-key>
          secret_ref: switchboard/relay-hook-<hook-key>
      hosts:
-       - name: <端末名>
-         token_hash: sha256:<16進>
+       - name: <host>
+         token_hash: sha256:<hex>
    agent:
      reconcile_interval: 10m
      relay:
        url: http://127.0.0.1:8782/events
-       token_ref: switchboard/relay-<端末名>
+       token_ref: switchboard/relay-<host>
    ```
 
-5. 中継をサービスとして置き、エージェントを中継モードで置き直す。sudoで実行するコマンドは、エージェントのサービスと同じ形で、unitの名前が `switchboard-relay.service` になる。中継のクレデンシャルは、webhookのシークレットだけである
+5. Install the relay as a service, and reinstall the agent in relay mode. The sudo commands have the same form as for the agent service, with the unit named `switchboard-relay.service`. Webhook secrets are the relay's only credentials
 
    ```bash
    switchboard service install --relay
    switchboard service install
    ```
 
-中継の状態は `switchboard service status --relay` で、ログは `journalctl -u switchboard-relay.service` で見る。webhookをやめるときは `switchboard relay hook remove <プロジェクト>` を実行し、設定から項目を消して `service install --relay` をやり直す。
+Check the relay's state with `switchboard service status --relay` and its logs with `journalctl -u switchboard-relay.service`. To drop a webhook, run `switchboard relay hook remove <project>`, remove its entry from the config, and run `service install --relay` again.
 
-GitLabは、4回続けて失敗したwebhookを一時的に止める。中継を長く止めると、webhookも止まりうる。止まっている間の更新も、照合で処理される。webhookを有効に戻すには、GitLabのプロジェクトの `Settings > Webhooks` でテストを送る。
+GitLab temporarily disables a webhook that fails four times in a row, so a long relay outage may disable the webhook too. Reconciliation still handles the updates made while it is disabled. To enable the webhook again, send a test from `Settings > Webhooks` of the GitLab project.
 
-署名トークンを使えないGitLabでは、`relay hook add --gitlab-token` で、`X-Gitlab-Token` を使って登録できる。このとき、設定の項目に `gitlab_token: true` が付く。`X-Gitlab-Token` は平文の共有シークレットなので、署名トークンが使えるならそちらを使う。受け口をLANのアドレスで待つときは、`--gitlab-token` と `gitlab_token: true` は使えない。
+On a GitLab that cannot use signing tokens, `relay hook add --gitlab-token` registers the webhook with `X-Gitlab-Token`. The config entry then gets `gitlab_token: true`. `X-Gitlab-Token` is a shared secret in plain text, so use signing tokens when you can. When the endpoint listens on a LAN address, you cannot use `--gitlab-token` or `gitlab_token: true`.
 
-#### 別の機械のGitLabから受ける
+#### Receiving webhooks from GitLab on another machine
 
-GitLabがLANの別の機械にあるときは、受け口をこの端末のLANのアドレスで待つ。受け口はHTTPのままなので、LANの中ではwebhookのペイロード（issueの本文やコメント）が平文で流れる。インターネットには公開しない。
+When GitLab runs on another machine in the LAN, the endpoint listens on this host's LAN address. The endpoint still speaks plain HTTP, so webhook payloads (issue bodies and comments) travel unencrypted inside the LAN. Do not expose it to the internet.
 
-1. 設定の `relay:` 節に、この端末のLANのIPアドレスとポートを書く。ホスト名と、すべてのインターフェース（`0.0.0.0`、`::`）は、設定の誤りとして拒まれる。`webhook_url` を書かなければ、`http://<webhook_listen>` がGitLabに登録される
+1. In the `relay:` section of the config, write this host's LAN IP address and port. Host names and all interfaces (`0.0.0.0`, `::`) are rejected as config errors. Without `webhook_url`, switchboard registers `http://<webhook_listen>` with GitLab
 
    ```yaml
    relay:
      webhook_listen: 192.168.0.82:8781
    ```
 
-2. この端末のファイアウォールで、GitLabの機械からこのポートへの受信を許す（例：`sudo ufw allow from <GitLabのアドレス> to any port 8781 proto tcp`）
-3. 手順2の許可リストには、このアドレスとポート（例：`192.168.0.82:8781`）を足す。「Allow requests to the local network from webhooks and integrations」はオフのままにする
-4. webhookは署名トークンで登録する。署名トークンはGitLab 19.0以降で使える。平文のシークレットがLANを流れるのを避けるため、`relay hook add --gitlab-token` は断られ、`gitlab_token: true` の項目は設定の誤りになる。19.0より古いGitLabのプロジェクトは、webhookを登録せずにポーリングで扱う
+2. In this host's firewall, allow incoming connections to this port from the GitLab machine (for example, `sudo ufw allow from <GitLab address> to any port 8781 proto tcp`)
+3. Add this address and port (for example, `192.168.0.82:8781`) to the allowlist from step 2 of the setup steps. Leave "Allow requests to the local network from webhooks and integrations" off
+4. Register the webhook with a signing token. Signing tokens are available in GitLab 19.0 and later. To keep plain-text secrets off the LAN, switchboard refuses `relay hook add --gitlab-token`, and an entry with `gitlab_token: true` is a config error. Projects on a GitLab older than 19.0 get no webhook, and switchboard polls them instead
 
-GitLabのHTTPSの証明書が私設のCAのものなら、そのCAの証明書をこの端末のOSの信頼ストアに入れる。switchboardのAPIの呼び出しも、clone、fetch、pushのgitも、OSの信頼ストアを読む。systemdで常駐するサービスにも、そのまま効く。
+If GitLab's HTTPS certificate comes from a private CA, add that CA's certificate to the OS trust store of this host. Both switchboard's API calls and git's clone, fetch, and push read the OS trust store. This also covers the services that systemd runs.
 
 ```bash
-sudo cp <私設のCA>.crt /usr/local/share/ca-certificates/
+sudo cp <private-ca>.crt /usr/local/share/ca-certificates/
 sudo update-ca-certificates
 ```
 
-### 待ちと完了をTelegramに知らせる
+### Telegram notifications for waiting and done issues
 
-issueが待ちになったときと完了したときに、エージェントがTelegramのbotから知らせる。待ちの通知には、プロジェクト、issue番号、タイトル、待ちの理由、質問の抜粋、issueのURLが載る。完了の通知には、作ったPRかMRのURLが載る。タイトルと質問の抜粋はTelegramのサーバーを通るので、載せたくないプロジェクトでは通知を使わない。
+When an issue starts waiting or is done, the agent notifies you through a Telegram bot. A waiting notification carries the project, the issue number, the title, the wait reason, an excerpt of the question, and the issue URL. Done notifications carry the URL of the PR or MR the agent opened. The title and the question excerpt pass through Telegram's servers, so leave notifications off for projects where you do not want that.
 
-1. @BotFatherでbotを作り、そのbotに一言送ってから、chat idを調べる。既にあるbotを使ってもよい
-2. botのトークンをSecret Serviceに置く。トークンは標準入力から読む
+1. Create a bot with @BotFather, send the bot a message, then look up the chat id. An existing bot works too
+2. Store the bot's token in the Secret Service. `secret-tool` reads the token from standard input
 
    ```bash
    secret-tool store --label='switchboard telegram' service switchboard/telegram username token
    ```
 
-3. 設定に `notify` 節を足し、`switchboard service install` でエージェントを置き直す。botのトークンも、暗号化したクレデンシャルとしてサービスに渡る
+3. Add a `notify` section to the config and reinstall the agent with `switchboard service install`. The bot's token also reaches the service as an encrypted credential
 
    ```yaml
    notify:
      telegram:
        chat_id: "<chat id>"
        token_ref: switchboard/telegram
-     web_url: http://192.168.0.82:8783   # 受信箱のWeb表示。あれば通知にリンクが付く
+     web_url: http://192.168.0.82:8783   # the web inbox; when set, notifications link to it
    ```
 
-通知に失敗しても、エージェントの処理は止まらない。失敗は監査ログ（`~/.local/state/switchboard/audit.jsonl`）に `notify.failed` として残る。
+A failed notification does not stop the agent's work. The audit log (`~/.local/state/switchboard/audit.jsonl`) records the failure as `notify.failed`.
 
-### ブラウザで受信箱を見る
+### The inbox in a browser
 
-受信箱のWeb表示（`switchboard-web`）は、待ちと実行中の一覧と、1件のissueのスレッドを出し、そこから返答できる。
+The web inbox (`switchboard-web`) shows the list of waiting and running issues and the thread of one issue, and you can reply from it.
 
-- 画面の上のヘッダに、待ちと実行中の件数、自動更新の状態、設定へのリンクが出る
-- 幅1024px以上では、左に一覧、右に選んだissueが並ぶ。それより狭い幅（スマホ）では、一覧と1件を別の画面で行き来する
-- 1件の表示には、issueの本文とコメントが古い順に出る。本文とコメントはMarkdownとして描く。生のHTMLは文字のまま出し、HTMLのコメント（`<!-- ... -->`）は出さない。画像は読み込まずにリンクとして出す。エージェントの投稿には「エージェント」の印が付く。着手のコメントは1行で、進捗のコメントは最新の1件だけが出る
-- 実行中の欄には、端末、経過時間、最新の進捗の1行が出る。実行中のissueには返答できない
-- 順番待ちの欄は実行中の欄の下にあり、当たった上限と、順番待ちになってからの時間が出る。返答の待ちから順番待ちになったissueには、今までどおり返答できる
-- 「完了（close待ち）」の欄は順番待ちの欄の下にあり、端末、完了からの時間、PR/MRへのリンクが出る。ヘッダの完了の件数は、1件以上のときだけ出る。完了のissueにも返答でき、返答すると同じPR/MRで作業を再開する。issueをcloseすると欄から消える
-- 完了の行と1件の表示には「マージ」のボタンが出る。確認のダイアログには、PR/MRの衝突の有無と、CIの結果（成功・失敗・実行中の数と、失敗中・実行中のチェックへのリンク）が出る。どちらも情報だけで、マージは止めない（ADR-050）。ダイアログで「マージする」を押すと、受信箱のトークンでPR/MRのdraftを解除してマージする。マージするのは、エージェントが完了を知らせたときのコミットだけで、その後にPR/MRへコミットが足されていれば断る。CIの結果でフォージが断ったときは、その理由がトーストに出る。issueは、PR/MRの本文の `Closes #N` でcloseされ、一覧から消える。baseが既定のブランチでないときはissueが閉じないので、手でcloseする（ADR-043）
-- PR/MRがbaseと衝突していて断られたときは、エージェントが衝突を直したあとに、受信箱のサービスが自動でマージする。待っている間は、行と1件の表示に「自動マージ待ち」の印が出て、1件の表示の「自動マージを取り消す」でやめられる。自動でマージするのは、押したあとにエージェントの直す実行（衝突、CIの失敗、pushの拒否）がpushしたコミットだけである。その間に人がコメントしたか、PR/MRへpushしたときは、自動のマージをやめる。結果は、次に画面を開いたときにトーストで出る（ADR-048）
-- 実行の失敗（理由が `error`）の待ちには「再実行する」のボタンが出る。返答の欄が空のときに押すと再実行を頼む決まった文を返答し、エージェントが同じ作業をやり直す
-- 衝突を直す回数が上限に達した待ち（理由が `conflict`）にも「再実行する」が出る。押すと衝突の解消を頼む決まった文を返答し、エージェントが衝突を直す回数を数え直して、もう一度直す
-- 画面を開いている間は、一覧と選んだissueが自動で更新される。返答の書きかけは、更新されても消えない
-- 参照の前に、プロジェクトのアイコンが出る。既定はフォージのアバターで、GitLabはプロジェクトのアバター（無ければグループのアバター）、GitHubはオーナーのアバターを使う。受信箱のサービスが受信箱のトークンで取り、`~/.local/state/switchboard/project-icons/` に24時間保存する。取れないときはプロジェクト名の頭文字が出る。設定のプロジェクトに `icon` を書くと、そちらが優先される（ADR-055）
+- The header at the top of the page shows the counts of waiting and running issues, the state of live updates, and a "Settings" link
+- At widths of 1024px and up, the list is on the left and the selected issue on the right. At narrower widths (phones), the list and an issue are separate pages
+- An issue shows its body and comments, oldest first, rendered as Markdown. Raw HTML is shown as text, and HTML comments (`<!-- ... -->`) are not shown. Images are not loaded but shown as links. The agent's posts carry an "agent" tag. Claim comments take one line each, and only the latest progress comment is shown
+- The running section shows the host, the elapsed time, and the latest progress line. A running issue takes no replies
+- The queued section sits below the running section and shows the limit the issue hit and how long it has been queued. An issue that went from waiting for a reply to queued still takes replies
+- The "Done (waiting for close)" section sits below the queued section and shows the host, the time since done, and a link to the PR/MR. The header shows the count of done issues only when there is at least one. You can reply to a done issue too, and a reply resumes the work on the same PR/MR. An issue leaves the section once you close it
+- Done rows and the issue page have a "Merge" button. The confirmation dialog shows whether the PR/MR has conflicts, and the CI results: the counts of passed, failed, and running checks, with links to the failing and running ones. Both are information only and do not block the merge (ADR-050). Press "Merge" in the dialog, and the inbox token takes the PR/MR out of draft and merges it. The merge covers only the commit the agent reported as done; if commits were added to the PR/MR after that, the merge is refused. When the forge refuses the merge because of the CI results, a toast shows its reason. `Closes #N` in the PR/MR body closes the issue, which then leaves the list. When the base is not the default branch, the issue does not close, so close it by hand (ADR-043)
+- If the merge is refused because the PR/MR conflicts with the base, the inbox service merges it automatically after the agent fixes the conflict. While it waits, the row and the issue page show an "Auto-merge pending" tag, and "Cancel auto-merge" on the issue page stops it. The automatic merge covers only the commits that the agent's fix runs (for conflicts, CI failures, and rejected pushes) pushed after you pressed the button. If someone comments or pushes to the PR/MR in the meantime, the automatic merge is called off. A toast shows the result the next time you open the page (ADR-048)
+- A wait on a failed run (reason `error`) has a "Run again" button. Pressed while the reply field is empty, it posts a fixed reply asking to run again, and the agent does the same work over
+- A wait that reached the limit of conflict fixes (reason `conflict`) also has "Run again". Pressing it posts a fixed reply asking to resolve the conflict, and the agent resets its count of conflict fixes and fixes the conflict again
+- The list and the selected issue update on their own while the page is open. A reply you are writing survives the updates
+- A project icon comes before each reference. By default, it is the forge's avatar: on GitLab, the project's avatar (or the group's, if the project has none), and on GitHub, the owner's. The inbox service fetches it with the inbox token and keeps it in `~/.local/state/switchboard/project-icons/` for 24 hours. When it cannot fetch one, the first letter of the project name is shown. An `icon` on a project in the config takes precedence (ADR-055)
 
   ```yaml
   projects:
     - ref: gh:YOUR_GITHUB_USER/switchboard-sandbox
-      icon: "<絵文字1文字>"                  # 絵文字は文字のまま出る
+      icon: "<one emoji>"                   # an emoji is shown as it is
     - ref: gl:YOUR_GROUP/tools
-      icon: ~/icons/tools.png               # 端末の画像ファイル（/か~/で始める）
+      icon: ~/icons/tools.png               # an image file on the host (starts with / or ~/)
     - ref: gh:YOUR_GITHUB_USER/notes
-      icon: https://example.com/notes.png   # 画像のURL（https://だけ。トークンは付けない）
+      icon: https://example.com/notes.png   # an image URL (https:// only; no token is sent)
   ```
 
-  画像はPNG、JPEG、GIF、WebPの256KiBまでで、SVGは使えない
-- 一覧の上の「新規issue」から、設定にあるどのプロジェクトにもissueを作れる。開始ラベルは、設定の `labels.ready`、`labels.plan`、`labels.go` から1つを選ぶか、「ラベルなし（実装開始しない）」を選ぶ（初期値はready）。issueは受信箱のトークンで作るので、開始ラベルがあればエージェントがそのまま着手する（ADR-040）。ラベルなしのissueには着手しない。あとで開始ラベルを付ければ着手する（ADR-049）
+  Images may be PNG, JPEG, GIF, or WebP, up to 256 KiB. SVG is not supported
+- "New issue" above the list creates an issue in any project in the config. For the start label, choose one of the config's `labels.ready`, `labels.plan`, and `labels.go`, or "No label (do not start)". By default, ready is selected. The inbox token creates the issue, so with a start label, the agent takes it up as it is (ADR-040). Without a label, the agent leaves the issue alone until you add a start label later (ADR-049)
 
-仕組みは次の2つのサービスに分かれる。
+The work is split between two services.
 
-- `switchboard inbox serve`：受信箱のトークンを持つ。Unixソケット（`/run/switchboard/inbox.sock`）で、一覧、1件、返答のAPIと、一覧の変化を知らせるSSEを出す。一覧は60秒キャッシュする。SSEでつないでいる画面がある間だけ、フォージから一覧を取り直し、変わったときに知らせる。プッシュ通知の設定（`inbox.notify.fcm`）があるときは、画面が無くても取り直す。取り直す間隔は `inbox.refresh_interval` で、既定は30秒、下限は10秒である
-- `switchboard-web serve`：そのAPIを呼び、LANのアドレスで画面を出す。SSEはブラウザへ中継する。フォージのトークンは持たない
+- `switchboard inbox serve`: holds the inbox token. Over a Unix socket (`/run/switchboard/inbox.sock`), it serves the APIs for the list, one issue, and replies, plus SSE that announces changes to the list. It caches the list for 60 seconds. Only while a page is connected over SSE does it fetch the list from the forges again and announce changes. With push notifications configured (`inbox.notify.fcm`), it fetches the list even with no page open. The interval is `inbox.refresh_interval`: 30 seconds by default, and 10 seconds at least
+- `switchboard-web serve`: calls that API and serves the pages on a LAN address. It relays the SSE to the browser and holds no forge token
 
-画面が見えている間は、フォージへの問い合わせが続く。待ちが5件で間隔が30秒なら、GitHubのREST APIを1時間に約600回、検索を約120回使う。タブが裏に回ると、画面はSSEを閉じる。見えている画面が無くなれば、問い合わせも止まる。減らしたいときは、設定ファイルで間隔を延ばす。
+While a page is visible, requests to the forges continue. With five waiting issues and a 30-second interval, the inbox service uses about 600 GitHub REST API calls and about 120 searches an hour. When the tab goes to the background, the page closes the SSE, and once no page is visible, the requests stop. To make fewer requests, lengthen the interval in the config file.
 
 ```yaml
 inbox:
   refresh_interval: 60s
 ```
 
-Web表示は、端末で受信ポートを開く唯一の部品である（ADR-036）。LANの中だけに出す。今の版では、利用者を認証しない。そのため、LANの中の機器なら誰でも、自分の名前で返答でき、issueを作って実行を起こせる（ADR-040）。外のWebページからの返答とissueの作成は、`Origin` と `Host` の検査で拒む。一覧などの読み取りも、`Host` がこのアドレスでなければ421で断る（DNS rebindingを防ぐ）。
+The web inbox is the only part that opens a listening port on a host (ADR-036). Expose it only inside the LAN. This version does not authenticate users, so any device inside the LAN can reply under your name and create issues that start runs (ADR-040). The `Origin` and `Host` checks refuse replies and issue creation from outside web pages. Reads such as the list are also refused with 421 when the `Host` is not this address, to prevent DNS rebinding.
 
-1. `~/.config/switchboard/web.yaml` に、待ち受けのアドレスを書く。この端末のLANのIPアドレスとポートを明示する。許すのは、ループバック、プライベート（`10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16`、`fc00::/7`）、リンクローカルのアドレスだけである。`0.0.0.0`、`[::ffff:0.0.0.0]`、グローバルなアドレス、Tailscaleなどの `100.64.0.0/10` は拒まれる。ホスト名は書けない。`Host` の検査を、この1つの値との比較にするためである。ブラウザでも、このIPアドレスで開く
+1. Write the listen address in `~/.config/switchboard/web.yaml`, giving this host's LAN IP address and port explicitly. Only loopback, private (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`), and link-local addresses are allowed. `0.0.0.0`, `[::ffff:0.0.0.0]`, global addresses, and `100.64.0.0/10` (used by Tailscale and others) are rejected. Host names are not accepted, so that the `Host` check compares against this one value. Open the page in the browser by this IP address too
 
    ```yaml
    listen: 192.168.0.82:8783
    ```
 
-2. 2つのサービスを置く。受信箱のサービスには、各フォージの `inbox_token_ref` だけがクレデンシャルとして渡る。Web表示のサービスは、`PATH` にある `switchboard-web` を動かし、クレデンシャルを持たない
+2. Install the two services. The inbox service gets only each forge's `inbox_token_ref` as credentials. `switchboard-web` on the `PATH` runs as the web inbox service, which holds no credentials
 
    ```bash
    switchboard service install --inbox
    switchboard service install --web
    ```
 
-3. ブラウザで `http://192.168.0.82:8783` を開く。防火壁でポートを閉じているときは、LANからだけ開ける。firewalldなら、たとえば次のようにする
+3. Open `http://192.168.0.82:8783` in the browser. If your firewall closes the port, open it to the LAN only. With firewalld, for example:
 
    ```bash
    sudo firewall-cmd --permanent --zone=public --add-rich-rule='rule family="ipv4" source address="192.168.0.0/24" port port="8783" protocol="tcp" accept'
    sudo firewall-cmd --reload
    ```
 
-状態は `switchboard service status --inbox` と `--web` で見る。手で試すときは、`switchboard inbox serve` を動かしてから `switchboard-web serve` を動かす。このときソケットは `$XDG_RUNTIME_DIR/switchboard/inbox.sock` にでき、`web.yaml` の `socket` で場所を指定できる。
+Check the state with `switchboard service status --inbox` and `--web`. To try it by hand, start `switchboard inbox serve`, then `switchboard-web serve`. The socket is then created at `$XDG_RUNTIME_DIR/switchboard/inbox.sock`, and `socket` in `web.yaml` sets its location.
 
-#### GitLabでログインさせる
+#### Logging in with GitLab
 
-`config.yaml` に `inbox.auth` を書くと、Web表示を開いた人にGitLabのログインを求める（ADR-059）。ログインできるのは、指定したGitLabのグループ（その下位のグループを含む）に属する人と、`owner` の1人だけである。書かなければ、今までどおりログインは求めない。
+With `inbox.auth` in `config.yaml`, the web inbox asks whoever opens it to log in with GitLab (ADR-059). Only members of the GitLab groups you name (including their subgroups) and the one `owner` can log in. Without it, the web inbox asks for no login, as before.
 
-1. GitLabで、アプリケーションを登録する。管理者なら `Admin > Applications`、そうでなければ利用者の設定の `Applications` で作る。confidentialにし、スコープは `openid`、`profile`、`api` を選ぶ。戻り先のURLは、`web.yaml` の `listen` を使って `http://192.168.0.82:8783/auth/callback` のように書く
-2. 表示されたsecretを、Secret Serviceに置く。secretは標準入力から読む
+1. Register an application in GitLab. As an administrator, create it under `Admin > Applications`; otherwise, under `Applications` in your user settings. Make it confidential and choose the scopes `openid`, `profile`, and `api`. Write the redirect URI from `listen` in `web.yaml`, as in `http://192.168.0.82:8783/auth/callback`
+2. Store the secret that GitLab shows in the Secret Service. `secret-tool` reads the secret from standard input
 
    ```bash
    secret-tool store --label='switchboard gitlab oidc' service switchboard/gitlab-oidc username token
    ```
 
-3. 設定に `inbox.auth` を足し、`switchboard service install --inbox` で受信箱のサービスを置き直す。secretも、暗号化したクレデンシャルとしてサービスに渡る
+3. Add `inbox.auth` to the config and reinstall the inbox service with `switchboard service install --inbox`. The secret also reaches the service as an encrypted credential
 
    ```yaml
    inbox:
      auth:
-       client_id: <アプリケーションのID>
+       client_id: <application ID>
        client_secret_ref: switchboard/gitlab-oidc
        member_groups: [team]
        admin_groups: [team/leads]
-       owner: <あなたのGitLabのユーザー名>
+       owner: <your GitLab username>
    ```
 
-ログインに使うのは、`forges.gitlab.base_url` のGitLabである。セッションは受信箱のサービスのメモリーにだけあり、受信箱のサービスを再起動すると、全員がログインし直す。セッションは、24時間使わないか、ログインから7日たつと終わる。グループから外された人は、トークンの更新（約2時間ごと）のときに締め出される。ヘッダには、ログインしたユーザー名とログアウトが出る。
+Login uses the GitLab at `forges.gitlab.base_url`. Sessions live only in the inbox service's memory, so everyone has to log in again when the inbox service restarts. A session ends after 24 hours without use, or 7 days after login. Anyone removed from the groups is locked out at the next token refresh (about every 2 hours). The header shows the logged-in username and "Log out".
 
-Web表示は当面HTTPで待つので、セッションのcookieは平文で流れる。同じLANで盗み見た人は、その利用者として操作できる。家の外から使うときと、信頼できない機器があるLANでは使わない（#155）。
+The web inbox listens over HTTP for now, so the session cookie travels in plain text. Someone snooping on the same LAN can act as that user. Do not use it from outside your home, or on a LAN with devices you do not trust (#155).
 
-Androidのアプリでは、GitLabのログインの画面もアプリの中に開く。
+In the Android app, the GitLab login page also opens inside the app.
 
-#### 複数の人で使う
+#### Sharing the inbox with several people
 
-`inbox.auth` を書くと、複数の人で1つの受信箱を共有できる（ADR-061）。Web表示とアプリからのGitLabへの返答、承認、issueの作成、マージは、ログインした人のGitLabの権限で行われ、その人の操作としてフォージに残る。エージェントの書き込みは、エージェントのトークン（bot）の権限で行う。
+With `inbox.auth`, several people can share one inbox (ADR-061). Replies, approvals, issue creation, and merges that the web inbox and the app send to GitLab run with the GitLab permissions of the person logged in. The forge records them as that person's actions. Writes by the agent use the permissions of the agent's token (the bot).
 
-- 一覧と1件の表示には、その人が読めるGitLabのプロジェクトだけが出る
-- GitHubのプロジェクトは、`owner` の人にだけ出る。書き込みは、GitHubの受信箱のトークンで行う
-- 追加の指示の編集とプロジェクトの追加は、`admin_groups` の人と `owner` だけができる
-- `trusted_authors` に無い人の返答も投稿されるが、エージェントへの指示にはならない。返答の欄の上にそう出る
-- 自動のマージは、押した人の身元で行う。受信箱のサービスを再起動すると取り消され、次に画面を開いたときにトーストで出る
-- 監査ログには、Web表示からの書き込みのたびに `web.action` の行が、操作した人とともに残る
-- Androidの通知の「承認」は、アプリを開いてから、画面で承認する
+- The list and the issue page show only the GitLab projects that person can read
+- GitHub projects are shown only to the `owner`. Writes to them use the GitHub inbox token
+- Only people in `admin_groups` and the `owner` can edit the additional instructions and add projects. Everyone can open the Settings page. Others see only the "Display" section there, followed by "Only an admin can change the projects and additional instructions."
+- Replies from people not in `trusted_authors` are posted, but they do not count as instructions to the agent. The page says so above the reply field
+- An automatic merge runs under the identity of the person who pressed the button. Restarting the inbox service cancels it, and a toast says so the next time you open the page
+- For each write from the web inbox, the audit log records a `web.action` line with the person who acted
+- To approve from an Android notification's "Approve", open the app and approve on the page
 
-設置の前に、次のことを済ませる。
+Before setting it up, do the following.
 
-1. エージェントの身元をbotにする。botのアカウントかProject Access Tokenを作り、`forges.gitlab.agent_identity` と `token_ref`（またはプロジェクトごとの上書き）に書く。エージェントの身元が `trusted_authors` にあると、設定の誤りになる
-2. GitLabの受信箱のトークン（`forges.gitlab.inbox_token_ref`）を、`read_api` のスコープのものにする。認証を設定すると、このトークンは読み取りにしか使わない。`api` のスコープのままだと、`switchboard doctor` が警告を出す
-3. 返答を指示として扱わせたい人を、`trusted_authors.gitlab` に書く。`owner` も入れる
-4. `switchboard doctor` で、警告が無いことを確かめる
+1. Make the agent's identity a bot. Create a bot account or a Project Access Token, and write it in `forges.gitlab.agent_identity` and `token_ref` (or in the per-project override). Putting the agent's identity in `trusted_authors` is a config error
+2. Make the GitLab inbox token (`forges.gitlab.inbox_token_ref`) one with the `read_api` scope. With login configured, switchboard uses this token only for reads. If it keeps the `api` scope, `switchboard doctor` warns
+3. Put the people whose replies should count as instructions in `trusted_authors.gitlab`. Include the `owner`
+4. Check with `switchboard doctor` that there are no warnings
 
-#### 中継のイベントで一覧をすぐ取り直す
+#### Refreshing the list on relay events
 
-中継（[中継で返答にすぐ着手する](#中継で返答にすぐ着手する)）を置いた端末では、受信箱のサービスも中継につなげられる。webhookのイベントが届くと、`inbox.refresh_interval` を待たずに一覧を取り直す。続けて届いたイベントは、最初のイベントから2秒の間をまとめて1回にする。前回の取り直しから10秒たつまでは取り直さない。webhookの無いプロジェクト（GitHubのプロジェクトなど）の変化は、これまでどおり `inbox.refresh_interval` ごとの問い合わせで画面に出る。中継につないでいても、この間隔は延ばさない。
+On a host with a relay ([Starting runs on replies right away with the relay](#starting-runs-on-replies-right-away-with-the-relay)), the inbox service can connect to the relay too. When a webhook event arrives, it fetches the list again without waiting for `inbox.refresh_interval`. Events that arrive within 2 seconds of the first one are combined into one fetch, and no fetch happens within 10 seconds of the previous one. Changes in projects without webhooks (GitHub projects, for example) still reach the page through the requests every `inbox.refresh_interval`. Connecting to the relay does not lengthen this interval.
 
-受信箱のサービスは、サービスが動いている間ずっと中継につなぐ。画面を開いていないときにイベントが届いたら、一覧のキャッシュを捨て、次に画面を開いたときに取り直す。
+The inbox service stays connected to the relay for as long as it runs. When an event arrives with no page open, it discards the cached list and fetches it the next time a page opens.
 
-1. 受信箱のサービス用のトークンを作る。エージェントとは別のトークンになり、`switchboard/relay-<端末名>-inbox` に置かれる。画面には、`relay.hosts` に足す項目（名前は `<端末名>-inbox`）と、`inbox.relay` に足す項目が出る
+1. Create a token for the inbox service. It is separate from the agent's token and is stored at `switchboard/relay-<host>-inbox`. The screen shows the entry to add to `relay.hosts` (named `<host>-inbox`) and the entry to add to `inbox.relay`
 
    ```bash
-   switchboard relay token add --inbox <端末名>
+   switchboard relay token add --inbox <host>
    ```
 
-2. 表示された項目を、設定ファイルの `relay.hosts` と `inbox:` 節に貼り付ける
+2. Paste the entries shown into `relay.hosts` and the `inbox:` section of the config file
 
    ```yaml
    relay:
      hosts:
-       - name: <端末名>-inbox
-         token_hash: sha256:<16進>
+       - name: <host>-inbox
+         token_hash: sha256:<hex>
    inbox:
      relay:
        url: http://127.0.0.1:8782/events
-       token_ref: switchboard/relay-<端末名>-inbox
+       token_ref: switchboard/relay-<host>-inbox
    ```
 
-3. 中継と受信箱のサービスを置き直す。受信箱のサービスには、このトークンも暗号化したクレデンシャルとして渡る
+3. Reinstall the relay and the inbox service. This token also reaches the inbox service as an encrypted credential
 
    ```bash
    switchboard service install --relay
    switchboard service install --inbox
    ```
 
-ヘッダの自動更新の表示は、中継の状態で次のように変わる。中継につながったときと切れたときは、受信箱のサービスのログ（`journalctl -u switchboard-inbox.service`）にも出る。
+The live-update state in the header changes with the relay's state as follows. Connections to and disconnections from the relay also appear in the inbox service's log (`journalctl -u switchboard-inbox.service`).
 
-| 表示 | 意味 |
+| Shown | Meaning |
 |---|---|
-| 自動更新中（即時） | 中継につながっている。webhookのあるプロジェクトの変化は数秒で出る |
-| 自動更新中（30秒ごと） | 中継が切れている。変化は `inbox.refresh_interval` ごとに出る（数字はその秒数） |
-| 自動更新中 | `inbox.relay` を設定していない |
+| Live updates on (instant) | Connected to the relay. Changes in projects with webhooks show within seconds |
+| Live updates on (every 30s) | Disconnected from the relay. Changes show every `inbox.refresh_interval` (the number is that interval in seconds) |
+| Live updates on | `inbox.relay` is not configured |
 
-#### 画面からプロジェクトを足す
+#### Adding projects from the Settings page
 
-設定の画面の「プロジェクト」の節に、この端末のプロジェクトが並ぶ。それぞれ、クローンの有無と、足りない状態ラベルが出る。`config.yaml` に `inbox.project_root` を書くと、この節からプロジェクトを足せるようになる。
+The "Projects" section of the Settings page lists this host's projects. Each one shows whether it is cloned and which state labels are missing. With `inbox.project_root` in `config.yaml`, you can add projects from this section.
 
 ```yaml
 inbox:
-  project_root: ~/repos               # 足したプロジェクトのクローンを置く親のディレクトリ
+  project_root: ~/repos               # the parent directory for the clones of added projects
 ```
 
-入力するのは、参照（`gh:owner/repo` または `gl:group/project`）と、計画から始めるかどうか（初期値はオン）だけである。受信箱のサービスは、受信箱のトークンでリポジトリを読めることと既定のブランチを確かめ、`config.yaml` の `projects` の最後に1項目を足す。`path` は `<project_root>/<リポジトリ名>`、`host` はこの端末、`base_branch` は既定のブランチになる。コメントとほかの項目はそのまま残り、元のファイルは `config.yaml.bak` に残る。`verify_command` などのほかの項目は、`config.yaml` を手で編集して書く。
+You enter only the reference (`gh:owner/repo` or `gl:group/project`) and a choice under "Starting with agent:ready". Three choices are offered: "Start with a plan if needed", "Always start with a plan", and "Implement right away", which stand for the `auto`, `always`, and `never` of `plan_first`. By default, "Start with a plan if needed" is selected. The inbox service checks with the inbox token that it can read the repository and looks up the default branch. Then it appends one entry to `projects` in `config.yaml`, with `path` set to `<project_root>/<repository name>`, `host` to this host, and `base_branch` to the default branch. Comments and other entries stay as they are, and the original file is kept as `config.yaml.bak`. For other keys such as `verify_command`, edit `config.yaml` by hand.
 
-次の場合は追加を拒む。
+The inbox service refuses to add a project in these cases:
 
-- 同じプロジェクトが既に設定にある
-- この端末のプロジェクトが、まだそのフォージを使っていない。`config.yaml` に手で足して、`switchboard service install` を実行し直す。エージェントにそのフォージのトークンを渡すためである
-- 受信箱のトークンでリポジトリを読めない
-- 別のプロジェクトが、同じ場所にクローンされている
+- The same project is already in the config
+- No project on this host uses that forge yet. Add the project to `config.yaml` by hand and run `switchboard service install` again, so that the agent gets that forge's token
+- The inbox token cannot read the repository
+- Another project is already cloned at the same path
 
-中継を使う端末でGitLabのプロジェクトを足すと、画面が `switchboard relay hook add <ref>` の実行を案内する。webhookを登録するまでは、そのプロジェクトはポーリングで扱われる。GitHubのwebhookは中継に届かないので、GitHubのプロジェクトには案内を出さない。
+When you add a GitLab project on a host that uses the relay, the page tells you to run `switchboard relay hook add <ref>`. Until you register the webhook, switchboard handles the project by polling. GitHub webhooks do not reach the relay, so the page shows no such hint for GitHub projects.
 
-エージェントと受信箱のサービスは、10秒ごとに `config.yaml` を確かめ、`projects`、`agent.max_parallel`、`agent.prefer_plan` だけを読み直す。再起動は要らない。新しいプロジェクトは、エージェントが自分のトークンでcloneし、状態ラベルを作ってから扱い始める。失敗したら、次の照合でやり直す。cloneできないときは、エージェントのトークン（fine-grainedのPATなら、その対象のリポジトリ）を確かめる。それ以外の変更は、今までどおり再起動で反映する。
+The agent and the inbox service check `config.yaml` every 10 seconds and reload only `projects`, `agent.max_parallel`, and `agent.prefer_plan`, with no restart needed. For a new project, the agent clones it with its own token and creates the state labels before it takes up the project's issues. If that fails, it tries again at the next reconciliation. When it cannot clone, check the agent's token (for a fine-grained PAT, the repositories it covers). Other changes still take effect on restart.
 
-### 同時に動かす数と順番待ち
+### Concurrent runs and the queue
 
-同時に動かす実行の数は、端末全体の `agent.max_parallel`（既定は1）と、プロジェクトごとの `max_parallel` で制限する。プロジェクトに書かなければ、全体の上限だけで制限する。実際の上限は2つの値の小さい方になる。上限に達したプロジェクトのissueは順番待ちになり、ほかのプロジェクトのissueは先に実行される。上限を下げても、動いている実行は止まらない。
+The host-wide `agent.max_parallel` (1 by default) and each project's `max_parallel` cap the number of concurrent runs. A project without its own value is capped only by the host-wide limit; otherwise, the smaller of the two values applies. Issues of a project at its limit are queued, and issues of other projects run first. Lowering a limit does not stop the runs already going.
 
-スロットが空くと、エージェントは順番待ちの古いissueから始める。`agent.prefer_plan: true`（既定はfalse）にすると、順番待ちのうち計画の実行（計画を先に立てるモードで、質問か計画を出す実行）を先に始め、実装の実行は後に回す。並べ替えるのは順番待ちから取り出すときだけで、スロットが空いていれば実装もすぐに始まる。エージェントを再起動すると、順番待ちに入った時刻は消え、再評価で入り直した順になる。
+When a slot frees up, the agent starts the oldest queued issue. With `agent.prefer_plan: true` (false by default), it starts queued plan runs first and puts implementation runs after them. A plan run is a run in plan-first mode that posts questions or a plan. The reordering applies only when taking from the queue; if a slot is free, an implementation run starts right away too. When the agent restarts, the times issues entered the queue are lost, and the issues re-enter in the order they are evaluated again.
 
-完了したissueのPR/MRがbaseと衝突したときと、CIが失敗したときの直す実行は、順番待ちより先に始まる。`agent.prefer_plan` がオンでも、計画の実行より先になる。直す実行どうしでは、衝突を先に直す。直す実行は順番待ちのコメントを付けず、スロットを待ち始めたことをログに残すだけにする。
+Fix runs start ahead of the queue: those for a done issue whose PR/MR conflicts with the base, and those for a failed CI. They come before plan runs even with `agent.prefer_plan` on. Among fix runs, conflicts are fixed first. Fix runs post no queued comment; the agent only logs that they started waiting for a slot.
 
 ```yaml
 agent:
   max_parallel: 3
-  prefer_plan: true   # 順番待ちから計画の実行を先に取り出す
+  prefer_plan: true   # take plan runs from the queue first
 projects:
   - ref: gh:YOUR_GITHUB_USER/switchboard
     max_parallel: 1
 ```
 
-順番待ちになったissueには、エージェントが「順番待ちにしました」というコメントを1つ付ける。コメントには、当たった上限が端末かプロジェクトかと、その値だけを書く。ラベルは変えない。順番が来て着手するとき、または始めるラベルが外れたときやcloseされたときに、エージェントはこのコメントを消す。エージェントを再起動したときは、前のプロセスが付けたものを消し、順番待ちのままなら付け直す。ログには、順番待ちに入ったことと、順番待ちから始めたことが1行ずつ出る。
+When an issue is queued, the agent posts one comment on it that starts with "Queued:". Its text gives only whether the limit it hit is the host's or the project's, and the value of that limit. Labels stay as they are. The agent deletes this comment when the issue's turn comes and it starts, or when the start label is removed or the issue is closed. When the agent restarts, it deletes the comments the previous process posted, and posts them again for issues still queued. One log line marks an issue entering the queue, and another marks it starting from the queue.
 
-### Androidのアプリで見て、通知を受ける
+### Android app and notifications
 
-`app/` のAndroidのアプリは、受信箱のWeb表示をWebViewで開く。画面はWeb表示と同じで、Web表示を新しくすればアプリにも反映される。アプリが足すのは次のものである（ADR-047）。
+The Android app in `app/` opens the web inbox in a WebView. Its pages are the web inbox's own, so updating the web inbox updates the app too. On top of the web inbox, the app adds the following (ADR-047).
 
-- ホーム画面から全画面で開ける。Web表示の外のリンク（フォージのページなど）は、既定のブラウザで開く
-- 待ちと完了のプッシュ通知が届く。通知を押すと、そのissueが開く
-- 計画の承認待ちの通知には「承認」のボタンが付き、アプリを開かずに承認の語を返答する。通知を受けた後に計画が出し直されていれば、承認せずにそのことを知らせる
-- 完了の通知には「マージ」のボタンが付き、アプリでマージの確認のダイアログが開く
+- It opens full screen from the home screen. Links outside the web inbox (forge pages, for example) open in the default browser
+- Push notifications arrive for waiting and done issues. Tapping a notification opens that issue
+- A notification of a plan waiting for approval has an "Approve" button, which replies with the approval word without opening the app. If the plan was posted again after the notification arrived, the app does not approve and tells you so
+- A done notification has a "Merge" button, which opens the merge confirmation dialog in the app
 
-通知は受信箱のサービスがFCMで送る。Telegramの通知はエージェントが送るので、両方を設定すれば両方に届く。通知に載るのは、issueの参照、待ちの理由、タイトルだけで、質問の本文は載らない。これらはGoogleのサーバーを通る。家のWi-Fiの外では、通知は届いても、アプリからWeb表示は開けない。
+The inbox service sends the notifications through FCM. Telegram notifications come from the agent, so if you set up both, you get both. A notification carries only the issue reference, the wait reason, and the title, never the text of the question. These pass through Google's servers. Away from your home Wi-Fi, notifications still arrive, but the app cannot open the web inbox.
 
-1. Firebaseのプロジェクトを作り、Androidのアプリを、パッケージ名 `io.github.uskanda.switchboard` で登録する。`google-services.json` を、リポジトリの外に保存する
-2. Firebaseのコンソールの「サービスアカウント」で秘密鍵（JSON）を作り、Secret Serviceに置く。鍵は標準入力から読む
+1. Create a Firebase project and register an Android app in it with the package name `io.github.uskanda.switchboard`. Save `google-services.json` outside the repository
+2. In the Firebase console, under "Service accounts", create a private key (JSON) and store it in the Secret Service. `secret-tool` reads the key from standard input
 
    ```bash
    secret-tool store --label='switchboard fcm' service switchboard/fcm username token < firebase-adminsdk.json
    ```
 
-3. 設定に `inbox.notify.fcm` を足し、`switchboard service install --inbox` で受信箱のサービスを置き直す。鍵も、暗号化したクレデンシャルとしてサービスに渡る。設定があると、受信箱のサービスは画面が無くても `inbox.refresh_interval` ごとに一覧を取り直す
+3. Add `inbox.notify.fcm` to the config and reinstall the inbox service with `switchboard service install --inbox`. The key also reaches the service as an encrypted credential. With this setting, the inbox service fetches the list every `inbox.refresh_interval` even with no page open
 
    ```yaml
    inbox:
      notify:
        fcm:
-         project_id: <Firebaseのプロジェクトのid>
+         project_id: <Firebase project ID>
          credentials_ref: switchboard/fcm
    ```
 
-4. 署名の鍵を作る。鍵とパスワードは、リポジトリの外に置く
+4. Create a signing key. Keep the key and its passwords outside the repository
 
    ```bash
    keytool -genkeypair -v -keystore ~/keys/switchboard-app.keystore -alias switchboard -keyalg RSA -keysize 2048 -validity 10000
    ```
 
-5. APKを作る。JDK 17と、Android SDKのplatform 37（パッケージ名は `platforms;android-37.0`）とbuild-tools 37.0.0、NDK 27.1が要る。足りなければ `sdkmanager "platforms;android-37.0" "build-tools;37.0.0" "ndk;27.1.12297006"` で入れる。`ANDROID_HOME` と `JAVA_HOME` を設定し、鍵と `google-services.json` の場所を環境変数で渡す。足りない変数があれば、Gradleの前で止まる。できたAPKは `bin/switchboard.apk` に置かれる
+5. Build the APK. You need JDK 17, Android SDK platform 37 (package `platforms;android-37.0`), build-tools 37.0.0, and NDK 27.1. Install any that are missing with `sdkmanager "platforms;android-37.0" "build-tools;37.0.0" "ndk;27.1.12297006"`. Set `ANDROID_HOME` and `JAVA_HOME`, and pass the locations of the key and `google-services.json` in environment variables. If a variable is missing, the build stops before Gradle runs. The APK is written to `bin/switchboard.apk`
 
    ```bash
    export SWITCHBOARD_APP_KEYSTORE=~/keys/switchboard-app.keystore SWITCHBOARD_APP_KEY_ALIAS=switchboard
@@ -639,41 +645,60 @@ projects:
    make app-apk
    ```
 
-6. APKをスマホに入れて開き、Web表示のURLを入力する。`web.yaml` の `listen` と同じIPアドレスとポートを、`http://` を付けて入力する（例：`http://192.168.0.82:8783`）。ホスト名で入力すると、`Host` の検査で返答と承認が拒まれる。URLは、画面の上の「接続先」から変えられる
+6. Install the APK on the phone, open it, and enter the URL of the web inbox. Use the IP address and port of `listen` in `web.yaml`, with `http://` in front (for example, `http://192.168.0.82:8783`). If you enter a host name instead, the `Host` check rejects replies and approvals. To change the URL later, tap "Address" at the top of the screen
 
-アプリは、受信箱のWeb表示に、通知のトークンの登録と承認をPOSTで送る。どちらも、返答と同じ `Origin` と `Host` の検査を通る。アプリは、入力したURLを `Origin` として付ける。
+The app sends notification token registrations and approvals to the web inbox with POST. Both go through the same `Origin` and `Host` checks as replies. As the `Origin`, the app sends the URL you entered.
 
-### pushとCIの失敗
+### Display language
 
-エージェントは、PRかMRを作って `agent:done` にした後も、自分がpushしたコミットのCIを `poll_interval` ごとに見張る。中継につながっていても同じ間隔で見る。CIが全部終わって失敗が1つも無ければ、何も書かずに見張りをやめる。結論が `failure` か `timed_out` のものがあれば、issueを `agent:running` に戻し、「CIが失敗したので直します（1/2）」のコメントを付けて直す実行を始める。直す実行には、失敗したjob（最大3つ）のログの末尾200行を、非信頼のデータとして渡す。直した結果は同じPRにpushし、もう一度見張る。
+The web inbox shows Japanese when the browser's language is Japanese, and English otherwise. When a browser has several preferred languages, the web inbox goes down the list and uses the first one that is Japanese or English.
 
-直す回数は、1つのissueで `agent.max_fix_attempts`（既定は2）までである。上限まで直してもCIが失敗したら、issueは理由 `ci` の待ちになる。コメントには、失敗したチェック、各回の要約、ログの末尾が載る。信頼済みの人が返信するか、始めるラベルを付け直すと、回数は0から数え直す。0にすると、自動では直さない。
+Under "Language" in the "Display" section of the Settings page, you can choose "Automatic", "日本語", or "English". "Automatic" follows the browser's language. The page switches to the chosen language without reloading. Each browser keeps its own choice, which is never sent to the server. On the login page, a button switches to the other language.
 
-次のときは、何も書かずに見張りをやめる。
+Everyone can open the Settings page. With `inbox.auth` configured, only people in `admin_groups` and the `owner` see the "Projects" section and the sections of additional instructions.
 
-- PRが閉じられたかマージされたとき
-- 人が同じブランチに別のコミットをpushしたとき
-- pushから10分たっても、CIが1つも現れないとき
-- pushから6時間たっても、CIが終わらないとき
-- トークンがCIを読めないとき
+The Android app shows its own screens, its notification buttons, and the name of its notification channel in the device language. That is Japanese on a device set to Japanese, and English on any other. After you change the device language, the notification buttons switch the next time the app starts. The web inbox inside the app picks its language in the same way as in a browser.
 
-pushが失敗したときは、gitの出力で扱いを分ける。ネットワークなどの一時的な失敗は、同じ実行の中で3回まで試す。リモートのissueのブランチに人のコミットがある（non-fast-forward）ときは、そのブランチを取り込む直す実行を始める。直す実行には `git merge` だけを許し、強制pushはしない。トークンの権限の不足と、ブランチの保護やpre-receive hookなどリモートの規則による拒否は、理由 `push` の待ちにする。コメントには、gitの出力と、人のすべきことを書く。
+The agent's issue comments and the Telegram notifications follow `comments.language` in the config (`en` or `ja`; `en` by default).
 
 ```yaml
-agent:
-  max_fix_attempts: 2   # 0で自動の直しを切る
+comments:
+  language: ja
 ```
 
-### 利用上限とクオータ
+Text that the web inbox posts to an issue is written in the language the page shows at that moment. This covers the answers to plan questions that "Send answers" posts, and the fixed reply that "Run again" posts. The agent reads replies in either language.
 
-実行がAIサービスの利用上限に当たると、エージェントはそのissueを `agent:ready` に戻し、上限で止まったことと再開の時刻を書いた順番待ちのコメントを1つ付ける。待ちにはせず、通知もしない。端末は、その時刻まで新しい実行を始めない。この間に始まるはずだったissueも、再開の時刻を書いた順番待ちのコメントが付く。動いている実行は止めない。時刻を過ぎると、止まったissueを同じ周期のまま再開する。実装の実行なら、前の実行が上限で止まったことをプロンプトに足す。そのうえで、worktreeの変更から続けさせる。サービスが解除時刻を伝えないときは、`agent.limit_wait`（既定は30分）だけ待つ。止めた状態は状態ディレクトリの `pause.json` に残り、エージェントを再起動しても引き継ぐ。CIやpushを直す実行が上限に当たったときは、理由 `error` の待ちになり、自動で直す回数には数えない。
+### Push and CI failures
 
-`claude.auth: api_key` のときは、各実行の費用（claudeが報告する `total_cost_usd`）を `cost.json` に日と月で積み上げる。`quota.daily_usd` か `quota.monthly_usd` に達すると、次の日か次の月の0時（端末の時刻）まで新しい実行を始めず、issueは理由 `quota` の順番待ちになる。確かめるのは実行を始める前だけで、実行の途中では止めない。`subscription` のときは費用を数えない。そのとき `quota` を書くと、`switchboard doctor` で警告が出る。
+After it opens a PR or MR and sets `agent:done`, the agent checks the CI of the commits it pushed every `poll_interval`. The interval stays the same while the agent is connected to the relay. When all CI has finished with no failures, it stops watching without writing anything. If any conclusion is `failure` or `timed_out`, it puts the issue back to `agent:running` and comments "The CI failed, so the agent fixes it (1/2)". Then it starts a fix run. The fix run gets the last 200 lines of the logs of the failed jobs (up to 3 jobs) as untrusted data. After the fix is pushed to the same PR, the agent watches the CI again.
+
+An issue gets at most `agent.max_fix_attempts` fixes (2 by default). If the CI still fails after that many fixes, the issue waits with the reason `ci`. The comment carries the failed checks, a summary of each attempt, and the end of the logs. When a trusted person replies or the start label is put on again, the count starts over from 0. With 0, the agent fixes nothing automatically.
+
+In these cases, the agent stops watching without writing anything:
+
+- The PR is closed or merged
+- Someone pushes other commits to the same branch
+- No CI appears within 10 minutes of the push
+- The CI has not finished 6 hours after the push
+- The token cannot read the CI
+
+When a push fails, git's output decides what happens next. A transient failure, such as a network error, is retried up to 3 times within the same run. If the issue branch on the remote has someone else's commits (non-fast-forward), the agent starts a fix run that merges that branch. Only `git merge` is allowed in that fix run, and the agent never force-pushes. A token without enough permission, or a rejection by a rule of the remote such as branch protection or a pre-receive hook, makes the issue wait with the reason `push`. The comment carries git's output and what a person needs to do.
 
 ```yaml
 agent:
-  limit_wait: 30m       # 解除時刻が分からない上限の後に待つ時間
-quota:                  # claude.auth: api_key のときだけ使う。書かない項目は無効
+  max_fix_attempts: 2   # 0 turns automatic fixes off
+```
+
+### Usage limits and quotas
+
+When a run hits a usage limit of the AI service, the agent puts the issue back to `agent:ready`. It posts one queued comment that says the run stopped at a limit and when it resumes. The issue does not wait, and the agent sends no notification. Until that time, the host starts no new run. Issues that would have started in the meantime also get a queued comment with the resume time. Runs already going are not stopped. Once the time passes, the agent resumes the stopped issues in the same cycle. For an implementation run, it tells the new run in the prompt that the previous run stopped at a limit, and has it continue from the changes in the worktree. If the service does not say when the limit lifts, the agent waits for `agent.limit_wait` (30 minutes by default). The pause is kept in `pause.json` in the state directory and survives an agent restart. When a fix run for CI or a push hits a limit, the issue waits with the reason `error`, and the run does not count toward the automatic fixes.
+
+With `claude.auth: api_key`, the agent adds up the cost of each run (the `total_cost_usd` that claude reports) by day and by month in `cost.json`. Once the total reaches `quota.daily_usd` or `quota.monthly_usd`, the host starts no new run until midnight (host time) of the next day or month. In the meantime, issues are queued with the reason `quota`. The agent checks only before it starts a run and never stops a run partway. With `subscription`, it does not count costs, and if you write `quota` anyway, `switchboard doctor` warns.
+
+```yaml
+agent:
+  limit_wait: 30m       # how long to wait after a limit whose end is unknown
+quota:                  # used only with claude.auth: api_key; a key left out is off
   daily_usd: 20
   monthly_usd: 300
 ```

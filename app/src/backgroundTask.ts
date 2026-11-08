@@ -3,8 +3,9 @@ import * as TaskManager from "expo-task-manager";
 import { loadOrigin } from "./lib/settings";
 import { handleResponse } from "./notifications";
 
-// On Android, a press on a button that does not open the app (承認) runs this task, even when the app is not
-// running. It must be defined at the top level of a module the entry point loads.
+// On Android, a press on a button that does not open the app (Approve) runs this task, even when the app is not
+// running. It must be defined at the top level of a module the entry point loads. handleResponse reads the phone's
+// language itself, so a refusal it posts from here is in the same language as the app's.
 export const TASK = "switchboard-notification-response";
 
 TaskManager.defineTask<Notifications.NotificationTaskPayload>(TASK, async ({ data, error }) => {
@@ -14,5 +15,5 @@ TaskManager.defineTask<Notifications.NotificationTaskPayload>(TASK, async ({ dat
 });
 
 Notifications.registerTaskAsync(TASK).catch(() => {
-  // Without the task, 承認 still works while the app runs.
+  // Without the task, Approve still works while the app runs.
 });

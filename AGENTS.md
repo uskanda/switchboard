@@ -24,6 +24,8 @@
 - 未確認の挙動を前提にしない。ROADMAP.md の「検証項目」に結果を追記してから実装に使う
 - 技術スタックはGo（DECISIONS.mdのADR-010）。CLI、常駐エージェント、フック、中継を1つのバイナリのサブコマンドとして作る
 - 特定の開発ハーネスが無くても動く作りにする（ADR-021）。製品のコードと既定の設定に `uskn` を書かない
+- 利用者向けの文書は日本語と英語の2つの版を持つ（ADR-065）。英語の版は `README.md`、`docs/GUIDE.md`、`docs/SECURITY.md` である。日本語の版は `README.ja.md`、`docs/GUIDE.ja.md`、`docs/SECURITY.ja.md` である。一方の版を変えるときは、もう一方の版も同じ変更で直す。紹介ページは `site/index.html` と `site/ja/index.html` を同じ変更で直す
+- Web表示とAndroidのアプリの文言を足すときは、日本語と英語の両方を書く。Web表示では、部品のファイルの `defineMessages` に両方を書く
 
 ## 用語
 

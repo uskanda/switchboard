@@ -1,32 +1,53 @@
 import { useState, type ReactNode } from "react";
 import { Markdown } from "@/components/Markdown";
 import { Textarea } from "@/components/ui/textarea";
+import { defineMessages, useMessages } from "@/lib/i18n";
 import { defaultAnswers, withoutAnswerHint, type Answer, type Group, type PlanQuestions as Parsed, type Question } from "@/lib/planQuestions";
 
-const NONE = "選ばない（補足で答える）";
+const messages = defineMessages({
+  ja: {
+    /** none is the option of choosing nothing in a group, to answer in the note instead. */
+    none: "選ばない（補足で答える）",
+    options: (n: number) => `Q${n}の選択肢`,
+    /** recommendedMark follows the option the recommendation names. */
+    recommendedMark: "（推奨）",
+    note: (n: number) => `Q${n}の補足`,
+    addNote: (n: number) => `Q${n}に補足を書く`,
+    recommended: "推奨",
+  },
+  en: {
+    none: "None (answer in the note)",
+    options: (n) => `Q${n} options`,
+    recommendedMark: " (recommended)",
+    note: (n) => `Q${n} note`,
+    addNote: (n) => `Add a note to Q${n}`,
+    recommended: "Recommended",
+  },
+});
 
 /** Choices is one group of options as radio buttons; the option the recommendation names is marked in words. */
 function Choices({ q, j, group, choice, recommended, disabled, onChoose }: {
   q: Question; j: number; group: Group; choice: string | null; recommended: string | null; disabled: boolean; onChoose: (label: string | null) => void;
 }) {
+  const t = useMessages(messages);
   const name = `q${q.n}-g${j}`;
   const row = "flex min-h-[44px] cursor-pointer items-start gap-sm py-xs";
   const radio = "mt-[0.3em] size-4 shrink-0 accent-primary";
   return (
     <fieldset className="flex flex-col">
-      <legend className="text-label-md font-medium text-muted">{group.heading ?? `Q${q.n}の選択肢`}</legend>
+      <legend className="text-label-md font-medium text-muted">{group.heading ?? t.options(q.n)}</legend>
       {group.options.map((o) => (
         <label key={o.label} className={row}>
           <input type="radio" name={name} value={o.label} checked={choice === o.label} disabled={disabled} onChange={() => onChoose(o.label)} className={radio} />
           <span className="min-w-0">
             <span className="font-medium">{o.label}</span> <Markdown text={o.text} inline />
-            {o.label === recommended && <span className="text-label-md font-medium text-muted">（推奨）</span>}
+            {o.label === recommended && <span className="text-label-md font-medium text-muted">{t.recommendedMark}</span>}
           </span>
         </label>
       ))}
       <label className={`${row} text-muted`}>
         <input type="radio" name={name} value="" checked={choice === null} disabled={disabled} onChange={() => onChoose(null)} className={radio} />
-        <span>{NONE}</span>
+        <span>{t.none}</span>
       </label>
     </fieldset>
   );
@@ -39,6 +60,7 @@ function Choices({ q, j, group, choice, recommended, disabled, onChoose }: {
  * unchosen, and once something is written in it; pressing the button opens it with the focus in it.
  */
 function OneQuestion({ q, answer, disabled, onChange }: { q: Question; answer: Answer; disabled: boolean; onChange: (a: Answer) => void }) {
+  const t = useMessages(messages);
   const id = `q${q.n}-note`;
   const lastGroup = q.parts.reduce((at, p, i) => (p.kind === "group" ? i : at), -1);
   const recommended = defaultAnswers([q])[0].choices;
@@ -47,7 +69,7 @@ function OneQuestion({ q, answer, disabled, onChange }: { q: Question; answer: A
   const note = open ? (
     <div key="note" className="flex flex-col gap-xs">
       <label htmlFor={id} className="text-label-md font-medium text-muted">
-        Q{q.n}の補足
+        {t.note(q.n)}
       </label>
       <Textarea
         id={id}
@@ -66,7 +88,7 @@ function OneQuestion({ q, answer, disabled, onChange }: { q: Question; answer: A
       onClick={() => setPressed(true)}
       className="inline-flex min-h-11 items-center self-start text-label-md text-muted underline focus-visible:outline-2 focus-visible:outline-primary"
     >
-      Q{q.n}に補足を書く
+      {t.addNote(q.n)}
     </button>
   );
   const body: ReactNode[] = [];
@@ -91,7 +113,7 @@ function OneQuestion({ q, answer, disabled, onChange }: { q: Question; answer: A
       {lastGroup < 0 && note}
       {q.recommendation && (
         <div className="flex flex-col gap-xs">
-          <span className="text-label-md font-medium text-muted">推奨</span>
+          <span className="text-label-md font-medium text-muted">{t.recommended}</span>
           <Markdown text={q.recommendation} />
         </div>
       )}

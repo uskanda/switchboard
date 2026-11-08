@@ -3,8 +3,25 @@ import { IssueRef } from "@/components/IssueRef";
 import { ApiError, getInbox, type Inbox } from "@/lib/api";
 import { loggedOut } from "@/lib/auth";
 import { useAutoMergeResults } from "@/lib/autoMergeResults";
+import { currentLang, defineMessages, errorText, useLang, type Lang } from "@/lib/i18n";
+import { common } from "@/lib/i18n/common";
 import { baseOf, loadMarks, overlay, pendingTimeout, saveMarks, settle, type Draft, type Mark, type PendingKind, type ViewItem } from "@/lib/pending";
 import { toast } from "@/lib/toast";
+
+const messages = defineMessages({
+  ja: {
+    /** unreachable follows the shared sentence that the inbox service does not answer. */
+    unreachable: (lead: string) => `${lead}サービスが動いているかを確かめてください。`,
+    failed: (detail: string) => `一覧を取れませんでした：${detail}`,
+    /** notYet is the toast of a mark that timed out before the list showed its outcome. */
+    notYet: (ref: ReactNode) => <>{ref} の操作はまだ反映されていません</>,
+  },
+  en: {
+    unreachable: (lead) => `${lead} Check that the service is running.`,
+    failed: (detail) => `Could not load the inbox: ${detail}`,
+    notYet: (ref) => <>The list does not show your action on {ref} yet</>,
+  },
+});
 
 /**
  * Live is the state of the automatic updates: connecting until the first listing of the stream, live while it
@@ -15,7 +32,7 @@ export type Live = "connecting" | "live" | "reconnecting" | "off";
 export type InboxState = {
   /** The latest listing, null until the first one arrives. */
   inbox: Inbox | null;
-  /** Why the first listing could not be read, if it could not. */
+  /** Why the first listing could not be read, if it could not, in the language shown. */
   error: string | null;
   live: Live;
   /**
@@ -33,18 +50,28 @@ export type InboxState = {
   markPending: (ref: string, kind: PendingKind, draft?: Draft) => void;
 };
 
-type Feed = { inbox: Inbox | null; error: string | null; live: Live; liveUntil: string | null };
+/**
+ * Failure is why the first listing could not be read, kept apart from its words so that the error is said again in
+ * another language when the viewer changes it: the inbox service did not answer, or the server explained the error.
+ */
+type Failure = { unavailable: true } | { unavailable: false; detail: string };
+
+type Feed = { inbox: Inbox | null; failure: Failure | null; live: Live; liveUntil: string | null };
 
 const InboxContext = createContext<InboxState>({ inbox: null, error: null, live: "off", liveUntil: null, view: null, markPending: () => {} });
 
 /** leave moves the feed to another state of the updates, noting the time when it leaves live. */
 const leave = (s: Feed, live: Live): Feed => ({ ...s, live, liveUntil: s.live === "live" ? new Date().toISOString() : s.liveUntil });
 
-function failure(err: unknown): string {
-  if (err instanceof ApiError && err.code === "unavailable") {
-    return "受信箱のサービス（switchboard inbox serve）に届きません。サービスが動いているかを確かめてください。";
-  }
-  return `一覧を取れませんでした：${err instanceof Error ? err.message : String(err)}`;
+function failure(err: unknown): Failure {
+  if (err instanceof ApiError && err.code === "unavailable") return { unavailable: true };
+  return { unavailable: false, detail: errorText(err) };
+}
+
+/** failureText is the error the list shows for a failure, in the language shown; the server's words stay as they are. */
+function failureText(lang: Lang, f: Failure): string {
+  const t = messages[lang];
+  return f.unavailable ? t.unreachable(common[lang].unreachable) : t.failed(f.detail);
 }
 
 /**
@@ -56,13 +83,13 @@ function failure(err: unknown): string {
  * What this tab asked of the issues is laid over the listing (usePending).
  */
 export function InboxProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<Feed>({ inbox: null, error: null, live: "off", liveUntil: null });
+  const [state, setState] = useState<Feed>({ inbox: null, failure: null, live: "off", liveUntil: null });
 
   useEffect(() => {
     let closed = false;
     getInbox().then(
-      (inbox) => !closed && setState((s) => (s.inbox ? s : { ...s, inbox, error: null })),
-      (err) => !closed && setState((s) => (s.inbox ? s : { ...s, error: failure(err) })),
+      (inbox) => !closed && setState((s) => (s.inbox ? s : { ...s, inbox, failure: null })),
+      (err) => !closed && setState((s) => (s.inbox ? s : { ...s, failure: failure(err) })),
     );
     if (typeof EventSource === "undefined") return () => void (closed = true);
 
@@ -74,7 +101,7 @@ export function InboxProvider({ children }: { children: ReactNode }) {
       setState((s) => leave(s, "connecting"));
       source.addEventListener("inbox", (e) => {
         const inbox = JSON.parse((e as MessageEvent).data) as Inbox;
-        setState((s) => ({ ...s, inbox, error: null, live: "live" }));
+        setState((s) => ({ ...s, inbox, failure: null, live: "live" }));
       });
       source.addEventListener("unavailable", () => setState((s) => leave(s, "reconnecting")));
       // The session ended: the page shows the login instead of reconnecting.
@@ -107,7 +134,11 @@ export function InboxProvider({ children }: { children: ReactNode }) {
 
   const pending = usePending(state.inbox);
   useAutoMergeResults(state.inbox);
-  const value = useMemo(() => ({ ...state, ...pending }), [state, pending]);
+  const lang = useLang();
+  const value = useMemo(() => {
+    const { failure: why, ...feed } = state;
+    return { ...feed, error: why && failureText(lang, why), ...pending };
+  }, [state, pending, lang]);
   return <InboxContext.Provider value={value}>{children}</InboxContext.Provider>;
 }
 
@@ -129,15 +160,12 @@ function usePending(inbox: Inbox | null) {
 
   useEffect(() => {
     if (sorted.settled.length === 0 && sorted.expired.length === 0) return;
+    const t = messages[currentLang()];
     for (const m of sorted.expired) {
       const key = `${m.ref}@${m.at}`;
       if (told.current.has(key)) continue;
       told.current.add(key);
-      toast.warning(
-        <>
-          <IssueRef value={m.ref} /> の操作はまだ反映されていません
-        </>,
-      );
+      toast.warning(t.notYet(<IssueRef value={m.ref} />));
     }
     setMarks(sorted.keep);
   }, [sorted]);

@@ -63,7 +63,7 @@ deploy-check:
 deploy: deploy-check install restart ## Install the current build and restart every service
 
 # The release APK is signed with the user's own key and built with their Firebase app's google-services.json. Both
-# stay outside the repository and are named by these variables (docs/GUIDE.md: Android app); android/ is made anew by expo
+# stay outside the repository and are named by these variables (docs/GUIDE.md: Android app and notifications); android/ is made anew by expo
 # prebuild on each build and never committed.
 APP_ENV := SWITCHBOARD_APP_KEYSTORE SWITCHBOARD_APP_KEYSTORE_PASSWORD SWITCHBOARD_APP_KEY_ALIAS SWITCHBOARD_APP_KEY_PASSWORD SWITCHBOARD_APP_GOOGLE_SERVICES
 

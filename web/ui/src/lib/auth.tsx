@@ -1,6 +1,19 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { currentLang, defineMessages } from "@/lib/i18n";
 import { saveMarks } from "@/lib/pending";
 import { toast } from "@/lib/toast";
+
+/** messages is the text of the toast of a logout the inbox service did not take. */
+const messages = defineMessages({
+  ja: {
+    logoutFailed: "ログアウトできませんでした",
+    logoutHint: "受信箱のサービス（switchboard inbox serve）に届いているか確かめて、もう一度押してください。",
+  },
+  en: {
+    logoutFailed: "Could not log out",
+    logoutHint: "Check that the inbox service (switchboard inbox serve) is reachable, then try again.",
+  },
+});
 
 /** AuthStatus is GET /api/auth: whether people must log in, who is logged in, and the GitLab they log in on. */
 export type AuthStatus = { enabled: boolean; user?: string; gitlab?: string; admin?: boolean };
@@ -72,7 +85,8 @@ export function AuthGate({ login, children }: { login: (status: AuthStatus) => R
   const logout = useCallback(async () => {
     const res = await fetch("/api/logout", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => null);
     if (!res?.ok) {
-      toast.error("ログアウトできませんでした", { description: "受信箱のサービス（switchboard inbox serve）に届いているか確かめて、もう一度押してください。" });
+      const t = messages[currentLang()];
+      toast.error(t.logoutFailed, { description: t.logoutHint });
       return;
     }
     saveMarks([]);

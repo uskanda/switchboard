@@ -1,76 +1,78 @@
+日本語: [README.ja.md](README.ja.md)
+
 # switchboard
 
-GitHubとGitLabのissueを起点に、Claude Codeの自動の実行を複数の端末とリポジトリで動かす個人用ツール。エージェントが質問を残して止まったissueを「待ち」として1つの受信箱に集め、CLI、ブラウザ、Androidのアプリから返答できる。
+switchboard is a personal tool that starts unattended Claude Code runs from GitHub and GitLab issues, across several hosts and repositories. When the agent stops on an issue with a question, the issue goes into one inbox as waiting. You can reply from the CLI, a browser, or the Android app.
 
-紹介ページは <https://uskanda.github.io/switchboard/> にある。
+The project site is at <https://uskanda.github.io/switchboard/>.
 
-## 何を解決するか
+## What it solves
 
-- Claude Codeのセッションが複数の端末とリポジトリに散らばり、どれが自分の返答を待っているか分からない
-- 各プロダクトのissueを巡回して、状況を確かめたくない
-- 返答するために、その端末のターミナルまで行きたくない
+- Claude Code sessions are scattered across hosts and repositories, and you cannot tell which ones are waiting for your reply
+- You do not want to go through each product's issues to check on them
+- You do not want to walk over to a host's terminal to reply
 
-## 動き方
+## How it works
 
-1. issueに `agent:ready`（計画から始めるなら `agent:plan`）を付ける
-2. そのプロジェクトを担当する端末のエージェントが、issueごとのworktreeで `claude -p` を動かす
-3. 実行が質問を残したら、issueに質問のコメントが付き、`agent:waiting` になる。待ちはTelegramとAndroidのアプリに通知される
-4. 受信箱（`switchboard inbox`、Web表示、アプリ）から返答すると、エージェントが同じissueで実行を再開する
-5. 完了すると、検証のコマンドを通したブランチをpushし、draftのPR/MRを作って `agent:done` にする。受信箱からマージできる
+1. Put `agent:ready` on an issue (`agent:plan` to start with a plan)
+2. The agent on the host in charge of the project runs `claude -p` in a worktree of its own for the issue
+3. If a run ends with a question, the agent posts it as an issue comment and the issue becomes `agent:waiting`. Telegram and the Android app notify you of waiting issues
+4. Reply from the inbox (`switchboard inbox`, the web inbox, or the app), and the agent resumes the run on the same issue
+5. Once the work is done, the agent pushes a branch that passed the verify command, opens a draft PR/MR, and sets `agent:done`. You can merge it from the inbox
 
-CIが失敗したとき、pushが拒否されたとき、baseと衝突したときは、エージェントが直す実行を自動で始める。
+When CI fails, a push is rejected, or the branch conflicts with the base, the agent automatically starts a run to fix it.
 
-## 基本方針
+## Principles
 
-| 方針 | 内容 |
+| Principle | What it means |
 |---|---|
-| issue駆動 | 作業の単位、状態、返答の経路は、すべてissueで管理する |
-| ローカルは外向きの通信だけ | 端末に受信ポートを開けない。例外は受信箱のWeb表示で、LANのアドレスに限る（ADR-036） |
-| 中継は呼び鈴だけ | 中継はissueのIDだけを伝える。本文は、ローカルが必ずフォージから取り直す |
-| issueの文字列はデータ | 指示として扱うのは `trusted_authors` のコメントだけである |
-| `claude` に資格情報を渡さない | push、PRの作成、コメントはエージェントが行う。実行はsandboxの中で動き、ネットワークに出られない |
-| 横断の一覧はローカルで集める | 両フォージのラベルの検索の結果をまとめて出す |
+| Issue-driven | Issues hold the unit of work, its state, and the path of every reply |
+| Hosts connect outward only | Hosts open no listening ports. The one exception is the web inbox, and only on LAN addresses (ADR-036) |
+| The relay only rings the bell | The relay passes on only the issue ID. The local agent always fetches the issue text from the forge itself |
+| Issue text is data | Only comments by `trusted_authors` count as instructions |
+| No credentials for `claude` | The agent pushes, opens PRs, and posts comments. A run executes in a sandbox and cannot reach the network |
+| The cross-forge list is built locally | The inbox combines the results of label searches on both forges |
 
-## 主な機能
+## Features
 
-- 計画を先に立てるモード：実装の前に質問と計画をコメントし、`/ok` の返答で承認してから実装する
-- 複数の端末とプロジェクト：プロジェクトごとに担当の端末を決める。2台が同じissueを重ねて実行しない
-- 受信箱：CLI、LAN向けのWeb表示（`switchboard-web`）、Androidのアプリ（`app/`）。Web表示からissueを作り、プロジェクトを足し、PR/MRをマージできる
-- 通知：Telegram（エージェントが送る）と、FCMによるAndroidのプッシュ通知（受信箱のサービスが送る）
-- 中継（`switchboard relay serve`）：GitLabのwebhookを受け、返答から数秒で実行を始める
-- 常駐：systemdのサービスとして置き、トークンは暗号化したsystemdのクレデンシャルで渡す
-- 実行の制御：同時に動かす数の上限、順番待ち、利用上限での一時停止、APIの費用の上限、モデルとeffortの指定、実行への追加の指示と許可
+- Plan first: before implementing, the agent comments its questions and plan. It implements after you approve with a `/ok` reply
+- Several hosts and projects: each project has one host in charge of it. Two hosts never run the same issue at once
+- Inbox: the CLI, the web inbox for your LAN (`switchboard-web`), and the Android app (`app/`). From the web inbox you can create issues, add projects, and merge PRs/MRs
+- Notifications: Telegram (sent by the agent) and Android push notifications through FCM (sent by the inbox service)
+- Relay (`switchboard relay serve`): receives GitLab webhooks and starts a run within seconds of your reply
+- Running as a service: install the agent as a systemd service and pass the tokens as encrypted systemd credentials
+- Run control: cap the number of concurrent runs and queue the rest, pause at the usage limit, and cap the API cost. You can also choose the model and effort, and give runs additional instructions and permissions
 
-## ステータス
+## Status
 
-Phase 1からPhase 5の機能を実装し、作者の端末（Ubuntu 24.04）と、実物のGitHubとGitLab（セルフホストのCE）で動かしている。2台の端末での実物の確認と、いくつかのフォージのAPIの挙動は、まだ確かめていない。未確認の項目は [docs/ROADMAP.md](docs/ROADMAP.md) の検証項目にある。
+The features of Phase 1 through Phase 5 are implemented. They run on the author's host (Ubuntu 24.04) against real GitHub and GitLab (self-hosted CE). Two things are still unchecked: a real setup with two hosts, and the behavior of some forge APIs. The open items are listed under the verification items in [docs/ROADMAP.md](docs/ROADMAP.md) (Japanese).
 
-## 前提と制約
+## Assumptions and limits
 
-作者1人の環境で作り、確かめてきた。ほかの人が使うときは、次の前提に合うかを先に確かめること。
+switchboard was built and tested on its author's own setup. Before you use it, check that your setup fits the points below.
 
-- 利用者は1人である。`trusted_authors` に自分だけを書く。エージェントも、既定では自分のアカウントで投稿する。公開リポジトリも扱えるが、そのときは `include_untrusted` を使えず、指示として採るのは `trusted_authors` の入力だけである（ADR-062）
-- 端末はLinuxで、systemd、Secret Service（GNOME Keyringなど）、`bubblewrap`、`socat` が要る。macOSでは動作を確かめていない
-- 受信箱のWeb表示は利用者を認証しない。LANの中の機器なら誰でも返答し、issueを作れる
-- 中継は `127.0.0.1` で待ち受ける。GitHub.comのwebhookは届かないので、GitHubのプロジェクトはポーリングで扱う
-- GitHubはgithub.comだけを扱う。GitHub Enterprise Serverには対応していない
-- 配布するバイナリとAPKは無い。ソースから作り、Androidのアプリは自分のFirebaseのプロジェクトと署名の鍵で作る
-- Web表示とアプリの文言は日本語だけである。issueに書くコメントは `comments.language` で英語と日本語を選べる
-- サブスクリプションの認証で無人の実行を常駐させてよいかは、switchboardでは確かめていない。Claudeの利用規約に照らして、利用者が判断する
+- It is for one user. Put only yourself in `trusted_authors`. By default, the agent also posts as your own account. Public repositories work too, but then you cannot use `include_untrusted`, and only input from `trusted_authors` counts as instructions (ADR-062)
+- Hosts run Linux and need systemd, Secret Service (GNOME Keyring or similar), `bubblewrap`, and `socat`. switchboard has not been tested on macOS
+- The web inbox does not authenticate users. Anyone on a device inside your LAN can reply and create issues
+- The relay listens on `127.0.0.1`. Webhooks from GitHub.com cannot reach it, so switchboard polls GitHub projects
+- On GitHub, only github.com is supported. GitHub Enterprise Server is not
+- No binaries or APKs are published. You build switchboard from source, and you build the Android app with your own Firebase project and signing key
+- The web inbox shows the first of Japanese and English in the browser's preferred languages, and English when neither is there. In the Display section of the Settings page, you can fix the language to "日本語" or "English". The web inbox keeps this choice in each browser and never sends it to the server. On Android, the app follows the device language. `comments.language` sets the language of the agent's issue comments and Telegram notifications to English or Japanese. When the web inbox posts a reply or a request to run again to an issue, it writes in the language it shows
+- switchboard has not checked whether subscription authentication may be used for unattended runs from a resident service. Read Claude's terms of use and decide for yourself
 
-## 必要なもの
+## Requirements
 
-- Linux（Ubuntu 24.04で確認）とsystemd
-- Go 1.24以上と、git
-- Node.js 24とpnpm 12（Web表示を作るため）
-- Claude Code CLI（`claude`）。`switchboard doctor` が、確かめた版より古いと警告する
-- Secret Serviceと `secret-tool`（Ubuntuでは `libsecret-tools` パッケージ）
-- `bubblewrap` と `socat`（実行のsandbox）
-- GitHubのプロジェクトで完了のスクリーンショットを付けるときは、`gh` v2.99.0以上
+- Linux (tested on Ubuntu 24.04) with systemd
+- Go 1.24 or later, and git
+- Node.js 24 and pnpm 12 (to build the web inbox)
+- Claude Code CLI (`claude`). `switchboard doctor` warns when it is older than the tested version
+- Secret Service and `secret-tool` (the `libsecret-tools` package on Ubuntu)
+- `bubblewrap` and `socat` (for the run sandbox)
+- `gh` v2.99.0 or later, if you attach screenshots of finished work in GitHub projects
 
-## はじめ方
+## Getting started
 
-クローンから作り、`~/.local/bin` に置く。
+Clone the repository, build it, and install it into `~/.local/bin`.
 
 ```bash
 git clone https://github.com/uskanda/switchboard.git && cd switchboard
@@ -80,7 +82,7 @@ git clone https://github.com/uskanda/switchboard.git && cd switchboard
 make install
 ```
 
-フォージのトークンを作ってSecret Serviceに置く。権限の一覧は [docs/GUIDE.md](docs/GUIDE.md#トークンの登録) にある。トークンは標準入力から読む。
+Create the forge tokens and store them in the Secret Service. [docs/GUIDE.md](docs/GUIDE.md#registering-tokens) lists the permissions each token needs. `secret-tool` reads the token from standard input.
 
 ```bash
 secret-tool store --label='switchboard github' service switchboard/github username token
@@ -90,13 +92,13 @@ secret-tool store --label='switchboard github' service switchboard/github userna
 secret-tool store --label='switchboard github inbox' service switchboard/github-inbox username token
 ```
 
-設定の例をコピーし、`YOUR_GITHUB_USER`、端末の名前、プロジェクトのパスを書き換える。
+Copy the example config, then replace `YOUR_GITHUB_USER`, the host name, and the project paths.
 
 ```bash
 mkdir -p ~/.config/switchboard && cp config/switchboard.example.yaml ~/.config/switchboard/config.yaml
 ```
 
-設定、トークン、`claude` の版を確かめてから、対象のリポジトリに状態ラベルを作る。
+Check the config, the tokens, and the `claude` version. Then create the state labels in the target repositories.
 
 ```bash
 switchboard doctor
@@ -106,7 +108,7 @@ switchboard doctor
 switchboard labels sync
 ```
 
-エージェントを動かし、issueに `agent:ready` を付ける。待ちは受信箱で見て返答する。
+Start the agent and put `agent:ready` on an issue. Find waiting issues in the inbox and reply to them.
 
 ```bash
 switchboard agent run
@@ -117,43 +119,43 @@ switchboard inbox
 ```
 
 ```bash
-switchboard reply 1 "Bで進めてください"
+switchboard reply 1 "Go with option B."
 ```
 
-常駐、中継、通知、Web表示、Androidのアプリの設置は [docs/GUIDE.md](docs/GUIDE.md) にある。
+[docs/GUIDE.md](docs/GUIDE.md) covers running the agent as a service and setting up the relay, notifications, the web inbox, and the Android app.
 
-## ドキュメント
+## Documentation
 
-| ファイル | 内容 |
+| File | Contents |
 |---|---|
-| [docs/GUIDE.md](docs/GUIDE.md) | 運用ガイド（トークン、設定、各機能の使い方と設置） |
-| [docs/SPEC.md](docs/SPEC.md) | 想定仕様（要件、状態モデル、CLI） |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 構成、コンポーネント、処理の流れ |
-| [docs/DESIGN.md](docs/DESIGN.md) | システム設計（ADRの案、詳細設計、追加の検証項目） |
-| [docs/SECURITY.md](docs/SECURITY.md) | 脅威モデルと対策 |
-| [docs/DECISIONS.md](docs/DECISIONS.md) | 設計判断の記録（ADR） |
-| [docs/ROADMAP.md](docs/ROADMAP.md) | 段階的な実装計画と検証項目 |
-| [docs/PRIOR_ART.md](docs/PRIOR_ART.md) | 調べた類似の事例とOSS |
-| [docs/examples/](docs/examples/) | 実行への指示の例（OpenSpec、スクリーンショット） |
-| [config/switchboard.example.yaml](config/switchboard.example.yaml) | 設定ファイルの例 |
-| [AGENTS.md](AGENTS.md) | 本リポジトリをClaude Codeで開発するときの指示 |
+| [docs/GUIDE.md](docs/GUIDE.md) | Operations guide (tokens, configuration, how to use and set up each feature) |
+| [docs/SPEC.md](docs/SPEC.md) (Japanese) | Intended specification (requirements, state model, CLI) |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (Japanese) | Structure, components, and the flow of processing |
+| [docs/DESIGN.md](docs/DESIGN.md) (Japanese) | System design (draft ADRs, detailed design, additional verification items) |
+| [docs/SECURITY.md](docs/SECURITY.md) | Threat model and countermeasures |
+| [docs/DECISIONS.md](docs/DECISIONS.md) (Japanese) | Record of design decisions (ADRs) |
+| [docs/ROADMAP.md](docs/ROADMAP.md) (Japanese) | Phased implementation plan and verification items |
+| [docs/PRIOR_ART.md](docs/PRIOR_ART.md) (Japanese) | Similar projects and open source tools we looked at |
+| [docs/examples/](docs/examples/) (Japanese) | Examples of instructions for runs (OpenSpec, screenshots) |
+| [config/switchboard.example.yaml](config/switchboard.example.yaml) | Example configuration file |
+| [AGENTS.md](AGENTS.md) (Japanese) | Instructions for developing this repository with Claude Code |
 
-## 開発
+## Development
 
 ```bash
 make verify
 ```
 
-`make verify` は、Goの検査とテストに加えて、`web/` と `app/` の検査も実行する。AndroidのAPKを作る `make app-apk` だけは、JDKとAndroid SDKも要る。画面の見た目の基準は [DESIGN.md](DESIGN.md)、使う人と目的は [PRODUCT.md](PRODUCT.md) にある。紹介ページは `site/` にあり、mainに入るとGitHub Pagesに公開される。
+`make verify` runs the Go checks and tests, and the checks for `web/` and `app/` as well. Only `make app-apk`, which builds the Android APK, also needs a JDK and the Android SDK. [DESIGN.md](DESIGN.md) (Japanese) sets the visual standard for the screens, and [PRODUCT.md](PRODUCT.md) (Japanese) describes who uses switchboard and why. The project site lives in `site/`, and GitHub Pages publishes it when it reaches main.
 
-実物の `claude` で、着手から質問、返答、完了までを通す確認もある。モデルを呼ぶため、`make verify` とCIでは動かない。
+A separate test drives a real `claude` through a whole cycle: starting work, asking a question, receiving the reply, and finishing. It calls the model, so `make verify` and CI do not run it.
 
 ```bash
 go test -tags realclaude -run RealClaude -v -timeout 30m ./internal/integration/
 ```
 
-Secret Serviceが無い開発環境では、設定に `secrets: {allow_env: true}` を書く。するとSecret Serviceに項目が無いとき、環境変数からトークンを読む。変数の名前は、`token_ref` が `switchboard/github` なら `SWITCHBOARD_TOKEN_SWITCHBOARD_GITHUB` である。
+In a development environment without a Secret Service, add `secrets: {allow_env: true}` to the config. With this setting, switchboard reads a token from an environment variable when the Secret Service has no entry for it. For a `token_ref` of `switchboard/github`, the variable is `SWITCHBOARD_TOKEN_SWITCHBOARD_GITHUB`.
 
-## ライセンス
+## License
 
-MIT。[LICENSE](LICENSE) を参照。
+MIT. See [LICENSE](LICENSE).

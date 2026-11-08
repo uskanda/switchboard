@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { deviceLang, messages } from "./lib/i18n";
 import { parseWebURL } from "./lib/url";
 import { useColors } from "./theme";
 
@@ -11,11 +12,13 @@ import { useColors } from "./theme";
 export function SettingsScreen({ initial, onSaved, onCancel }: { initial: string | null; onSaved: (origin: string) => void; onCancel?: () => void }) {
   const c = useColors();
   const insets = useSafeAreaInsets();
+  const lang = deviceLang();
+  const t = messages[lang].settings;
   const [text, setText] = useState(initial ?? "");
   const [error, setError] = useState<string | null>(null);
 
   function save() {
-    const p = parseWebURL(text);
+    const p = parseWebURL(text, lang);
     if (!p.ok) {
       setError(p.error);
       return;
@@ -26,11 +29,11 @@ export function SettingsScreen({ initial, onSaved, onCancel }: { initial: string
   return (
     <View style={[styles.screen, { backgroundColor: c.surface, paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 }]}>
       <Text accessibilityRole="header" style={[styles.heading, { color: c.text }]}>
-        受信箱のWeb表示の場所
+        {t.heading}
       </Text>
-      <Text style={[styles.body, { color: c.muted }]}>web.yaml の listen と同じIPアドレスとポートを、http:// を付けて入力します。家のWi-Fiの中からだけ届きます。</Text>
+      <Text style={[styles.body, { color: c.muted }]}>{t.help}</Text>
       <TextInput
-        accessibilityLabel="Web表示のURL"
+        accessibilityLabel={t.urlLabel}
         value={text}
         onChangeText={(t) => {
           setText(t);
@@ -52,11 +55,11 @@ export function SettingsScreen({ initial, onSaved, onCancel }: { initial: string
       <View style={styles.buttons}>
         {onCancel && (
           <Pressable accessibilityRole="button" onPress={onCancel} style={[styles.button, { borderColor: c.outline }]}>
-            <Text style={[styles.label, { color: c.text }]}>やめる</Text>
+            <Text style={[styles.label, { color: c.text }]}>{t.cancel}</Text>
           </Pressable>
         )}
         <Pressable accessibilityRole="button" onPress={save} style={[styles.button, { backgroundColor: c.primary, borderColor: c.primary }]}>
-          <Text style={[styles.label, { color: c.onPrimary }]}>保存する</Text>
+          <Text style={[styles.label, { color: c.onPrimary }]}>{t.save}</Text>
         </Pressable>
       </View>
     </View>

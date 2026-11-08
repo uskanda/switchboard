@@ -1,4 +1,4 @@
-import { useCallback, useId, useRef, useState, type FormEvent } from "react";
+import { useCallback, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { IssueRef } from "@/components/IssueRef";
 import { Loading } from "@/components/Loading";
 import { Alert } from "@/components/ui/alert";
@@ -7,46 +7,112 @@ import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { ApiError, createIssue, getIssueTargets, planStartOf, type IssueTargets, type PlanStart, type StartKind } from "@/lib/api";
+import { ApiError, createIssue, getIssueTargets, planStartOf, type IssueTargets, type StartKind } from "@/lib/api";
+import { defineMessages, errorText, useMessages } from "@/lib/i18n";
+import { common } from "@/lib/i18n/common";
 import { useInbox } from "@/lib/inbox";
 import { refText, splitRef } from "@/lib/ref";
 import { toast } from "@/lib/toast";
 
-/** What each kind of start does, before the label it stands for. */
-const startText: Record<StartKind, string> = {
-  ready: "プロジェクトの設定どおりに始める",
-  plan: "計画から始める",
-  go: "計画なしで実装する",
-  none: "ラベルなし（実装開始しない）",
-};
+/** messages is the text of the new issue's button, its dialog, its errors and the toast that tells it was opened. */
+const messages = defineMessages({
+  ja: {
+    newIssue: "新規issue",
+    project: "プロジェクト",
+    /** host follows a project with the machine whose agent takes up its issues. */
+    host: (host: string) => `（担当：${host}）`,
+    title: "タイトル",
+    body: "本文",
+    bodyPlaceholder: "Markdownで書けます（任意）",
+    startLegend: "開始ラベル",
+    /** What each kind of start does, before the label it stands for. */
+    start: {
+      ready: "プロジェクトの設定どおりに始める",
+      plan: "計画から始める",
+      go: "計画なしで実装する",
+      none: "ラベルなし（実装開始しない）",
+    },
+    /** label follows a start with the label it stands for, in its own element. */
+    label: (label: ReactNode): ReactNode => <>（{label}）</>,
+    /** What the ready label does in the chosen project; "plan" is an older inbox service's plan_first, true. */
+    readyNote: {
+      always: "（このプロジェクトは必ず計画から始めます）",
+      auto: "（このプロジェクトは必要なら計画から始めます）",
+      never: "（このプロジェクトはすぐに実装します）",
+      plan: "（このプロジェクトは計画から始めます）",
+    },
+    cancel: common.ja.cancel,
+    create: "作成する",
+    creating: "作成しています",
+    created: (ref: ReactNode): ReactNode => <>{ref} を作りました</>,
+    openOnForge: "フォージで開く",
+    /** error names what went wrong by the inbox service's code; invalid and forge add the server's message. */
+    error: {
+      unknown_project: "このプロジェクトは設定にありません。設定が変わったかもしれません。開き直してください。",
+      invalid: (detail: string) => `入力を確かめてください：${detail}`,
+      too_large: "本文が大きすぎます。1MiBまでにしてください。",
+      forge: (detail: string) => `フォージでissueを作れませんでした：${detail}`,
+    },
+    unreachable: common.ja.unreachable,
+    failed: common.ja.failed,
+  },
+  en: {
+    newIssue: "New issue",
+    project: "Project",
+    host: (host) => ` (host: ${host})`,
+    title: "Title",
+    body: "Description",
+    bodyPlaceholder: "Markdown supported (optional)",
+    startLegend: "Start label",
+    start: {
+      ready: "Follow the project's setting",
+      plan: "Start with a plan",
+      go: "Implement without a plan",
+      none: "No label (do not start)",
+    },
+    label: (label) => <> ({label})</>,
+    readyNote: {
+      always: ": always start with a plan",
+      auto: ": start with a plan if needed",
+      never: ": implement right away",
+      plan: ": start with a plan",
+    },
+    cancel: common.en.cancel,
+    create: "Create",
+    creating: "Creating",
+    created: (ref) => <>Created {ref}</>,
+    openOnForge: "Open on the forge",
+    error: {
+      unknown_project: "This project is not in the config, which may have changed. Open the dialog again.",
+      invalid: (detail) => `Check what you entered: ${detail}`,
+      too_large: "The description is too large. Keep it to 1 MiB or less.",
+      forge: (detail) => `The forge could not create the issue: ${detail}`,
+    },
+    unreachable: common.en.unreachable,
+    failed: common.en.failed,
+  },
+});
 
-/** What the ready label does in the chosen project; "plan" is an older inbox service's plan_first, true. */
-const readyNotes: Record<PlanStart, string> = {
-  always: "（このプロジェクトは必ず計画から始めます）",
-  auto: "（このプロジェクトは必要なら計画から始めます）",
-  never: "（このプロジェクトはすぐに実装します）",
-  plan: "（このプロジェクトは計画から始めます）",
-};
+type Text = (typeof messages)["ja"];
 
 /** The most characters a title may have; the inbox service refuses a longer one. */
 const maxTitle = 256;
 
-function failure(err: unknown): string {
+/** failure is what to say about an error of the inbox service, in the language shown. */
+function failure(t: Text, err: unknown): string {
   if (err instanceof ApiError) {
     switch (err.code) {
       case "unknown_project":
-        return "このプロジェクトは設定にありません。設定が変わったかもしれません。開き直してください。";
-      case "invalid":
-        return `入力を確かめてください：${err.message}`;
       case "too_large":
-        return "本文が大きすぎます。1MiBまでにしてください。";
+        return t.error[err.code];
+      case "invalid":
       case "forge":
-        return `フォージでissueを作れませんでした：${err.message}`;
+        return t.error[err.code](err.message);
       case "unavailable":
-        return "受信箱のサービス（switchboard inbox serve）に届きません。";
+        return t.unreachable;
     }
   }
-  return `失敗しました：${err instanceof Error ? err.message : String(err)}`;
+  return t.failed(errorText(err));
 }
 
 /**
@@ -58,6 +124,7 @@ function failure(err: unknown): string {
  * (lib/pending.ts); one without gets no such row, since the agent does not take it up.
  */
 export function NewIssue() {
+  const t = useMessages(messages);
   const { markPending } = useInbox();
   const dialog = useRef<HTMLDialogElement | null>(null);
   // The list of projects is put into the dialog, which a modal dialog needs (components/ui/select.tsx).
@@ -73,19 +140,20 @@ export function NewIssue() {
   const [body, setBody] = useState("");
   const [start, setStart] = useState<StartKind>("ready");
   const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // The error is kept as it came, so that it is said in the language shown at the time.
+  const [error, setError] = useState<{ cause: unknown } | null>(null);
 
   function open() {
     setError(null);
     dialog.current?.showModal();
     // The projects are read on each opening, so a project added meanwhile can be chosen.
     getIssueTargets().then(
-      (t) => {
-        setTargets(t);
-        setProject((p) => (t.items.some((it) => it.ref === p) ? p : (t.items[0]?.ref ?? "")));
-        setStart((s) => (t.starts.some((st) => st.kind === s) ? s : (t.starts.find((st) => st.kind === "ready") ?? t.starts[0])?.kind ?? "ready"));
+      (got) => {
+        setTargets(got);
+        setProject((p) => (got.items.some((it) => it.ref === p) ? p : (got.items[0]?.ref ?? "")));
+        setStart((s) => (got.starts.some((st) => st.kind === s) ? s : (got.starts.find((st) => st.kind === "ready") ?? got.starts[0])?.kind ?? "ready"));
       },
-      (err) => setError(failure(err)),
+      (err) => setError({ cause: err }),
     );
   }
 
@@ -104,23 +172,18 @@ export function NewIssue() {
           number: hash < 0 ? 0 : Number(out.ref.slice(hash + 1)) || 0,
         });
       }
-      toast.success(
-        <>
-          <IssueRef value={out.ref} /> を作りました
-        </>,
-        {
-          action: (
-            <a href={out.url} target="_blank" rel="noreferrer" className="self-start underline focus-visible:outline-2 focus-visible:outline-primary">
-              フォージで開く
-            </a>
-          ),
-        },
-      );
+      toast.success(t.created(<IssueRef value={out.ref} />), {
+        action: (
+          <a href={out.url} target="_blank" rel="noreferrer" className="self-start underline focus-visible:outline-2 focus-visible:outline-primary">
+            {t.openOnForge}
+          </a>
+        ),
+      });
       setTitle("");
       setBody("");
       dialog.current?.close();
     } catch (err) {
-      setError(failure(err));
+      setError({ cause: err });
     } finally {
       setSending(false);
     }
@@ -129,25 +192,25 @@ export function NewIssue() {
   // What the ready label does in the chosen project; an older inbox service does not say, and nothing is added.
   const target = targets?.items.find((it) => it.ref === project);
   const planStart = target && planStartOf(target);
-  const readyNote = planStart ? readyNotes[planStart] : "";
+  const readyNote = planStart ? t.readyNote[planStart] : "";
   const ready = targets !== null && project !== "" && targets.starts.some((st) => st.kind === start);
   const canSend = ready && title.trim() !== "" && !sending;
 
   return (
     <>
       <Button type="button" variant="secondary" onClick={open}>
-        新規issue
+        {t.newIssue}
       </Button>
       {/* While the issue is being created, Escape leaves the dialog open: a failure is told in it (issue #173). */}
       <Dialog ref={dialogRef} aria-labelledby={`${id}-heading`} onCancel={(e) => sending && e.preventDefault()}>
         <form onSubmit={submit} className="flex flex-col gap-md">
           <h2 id={`${id}-heading`} className="text-headline-md font-semibold">
-            新規issue
+            {t.newIssue}
           </h2>
           {!targets && !error && <Loading />}
           <div className="flex flex-col gap-xs">
             <label id={`${id}-project-label`} htmlFor={`${id}-project`} className="text-label-md font-medium">
-              プロジェクト
+              {t.project}
             </label>
             <Select value={project} onValueChange={setProject} disabled={sending || !targets}>
               <SelectTrigger id={`${id}-project`} aria-labelledby={`${id}-project-label`}>
@@ -155,8 +218,9 @@ export function NewIssue() {
               </SelectTrigger>
               <SelectContent container={dialogEl}>
                 {targets?.items.map((it) => (
-                  <SelectItem key={it.ref} value={it.ref} aria-label={`${refText(it.ref)}（担当：${it.host}）`}>
-                    <IssueRef value={it.ref} />（担当：{it.host}）
+                  <SelectItem key={it.ref} value={it.ref} aria-label={`${refText(it.ref)}${t.host(it.host)}`}>
+                    <IssueRef value={it.ref} />
+                    {t.host(it.host)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -164,18 +228,18 @@ export function NewIssue() {
           </div>
           <div className="flex flex-col gap-xs">
             <label htmlFor={`${id}-title`} className="text-label-md font-medium">
-              タイトル
+              {t.title}
             </label>
             <Input id={`${id}-title`} value={title} onChange={(e) => setTitle(e.target.value)} maxLength={maxTitle} required disabled={sending} />
           </div>
           <div className="flex flex-col gap-xs">
             <label htmlFor={`${id}-body`} className="text-label-md font-medium">
-              本文
+              {t.body}
             </label>
-            <Textarea id={`${id}-body`} value={body} onChange={(e) => setBody(e.target.value)} placeholder="Markdownで書けます（任意）" disabled={sending} />
+            <Textarea id={`${id}-body`} value={body} onChange={(e) => setBody(e.target.value)} placeholder={t.bodyPlaceholder} disabled={sending} />
           </div>
           <fieldset className="flex flex-col">
-            <legend className="text-label-md font-medium">開始ラベル</legend>
+            <legend className="text-label-md font-medium">{t.startLegend}</legend>
             {targets?.starts.map((st) => (
               <label key={st.kind} className="flex min-h-11 items-center gap-sm text-label-md">
                 <input
@@ -188,24 +252,20 @@ export function NewIssue() {
                   className="size-5 accent-primary"
                 />
                 <span>
-                  {startText[st.kind]}
-                  {st.label !== "" && (
-                    <>
-                      （<span className="font-mono text-mono-sm">{st.label}</span>）
-                    </>
-                  )}
+                  {t.start[st.kind]}
+                  {st.label !== "" && t.label(<span className="font-mono text-mono-sm">{st.label}</span>)}
                   {st.kind === "ready" && readyNote && <span className="text-muted">{readyNote}</span>}
                 </span>
               </label>
             ))}
           </fieldset>
-          {error && <Alert>{error}</Alert>}
+          {error && <Alert>{failure(t, error.cause)}</Alert>}
           <div className="flex flex-wrap justify-end gap-sm">
             <Button type="button" variant="secondary" onClick={() => dialog.current?.close()} disabled={sending}>
-              やめる
+              {t.cancel}
             </Button>
             <Button type="submit" disabled={!canSend}>
-              {sending ? "作成しています" : "作成する"}
+              {sending ? t.creating : t.create}
             </Button>
           </div>
         </form>

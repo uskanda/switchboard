@@ -4,6 +4,8 @@
 // so the options are read in the many shapes a run writes them, and a question whose options cannot be read is
 // answered in words alone.
 
+import { defineMessages, type Lang } from "@/lib/i18n";
+
 export type Option = { label: string; text: string };
 
 /** Group is one set of options that a single choice answers, with the heading it had on its line, if any. */
@@ -204,27 +206,47 @@ export function defaultAnswers(questions: Question[]): Answer[] {
 
 const oneLine = (s: string) => s.trim().replace(/\s*\n\s*/g, " ");
 
+/** replyWords is the wording of a reply to a question comment in each language it is posted in. */
+const replyWords = defineMessages({
+  ja: {
+    /** named is the choice of a group that has a heading, among two or more groups. */
+    named: (heading: string, label: string) => `${heading}は${label}`,
+    join: "、",
+    noted: (choice: string, note: string) => `${choice}。補足：${note}`,
+    none: "回答なし",
+    overall: "全体への補足：",
+  },
+  en: {
+    named: (heading, label) => `${heading}: ${label}`,
+    join: "; ",
+    noted: (choice, note) => `${choice}. Note: ${note}`,
+    none: "No answer",
+    overall: "Overall note:",
+  },
+});
+
 /**
- * composeReply writes the reply to a question comment: a line per question with its number, title and answer, then
- * the text of the reply field as a note on the whole. It never starts with the approval word, so it can never be
- * taken for the approval of an earlier plan.
+ * composeReply writes the reply to a question comment in the language lang: a line per question with its number,
+ * title and answer, then the text of the reply field as a note on the whole. It never starts with the approval word,
+ * so it can never be taken for the approval of an earlier plan.
  */
-export function composeReply(questions: Question[], answers: Answer[], overall: string): string {
+export function composeReply(lang: Lang, questions: Question[], answers: Answer[], overall: string): string {
+  const w = replyWords[lang];
   const lines = questions.map((q, i) => {
     const a = answers[i] ?? { choices: [], note: "" };
     const groups = groupsOf(q);
     const chosen = groups.flatMap((g, j) => {
       const label = a.choices[j];
       if (!label) return [];
-      return [groups.length > 1 && g.heading ? `${g.heading}は${label}` : label];
+      return [groups.length > 1 && g.heading ? w.named(g.heading, label) : label];
     });
-    const choice = chosen.join("、");
+    const choice = chosen.join(w.join);
     const note = oneLine(a.note);
-    const answer = choice && note ? `${choice}。補足：${note}` : choice || note || "回答なし";
+    const answer = choice && note ? w.noted(choice, note) : choice || note || w.none;
     return `Q${q.n} ${q.title}: ${answer}`;
   });
   const whole = overall.trim();
-  return whole ? `${lines.join("\n")}\n\n全体への補足：\n${whole}` : lines.join("\n");
+  return whole ? `${lines.join("\n")}\n\n${w.overall}\n${whole}` : lines.join("\n");
 }
 
 // The agent's hint on answering with the approval word, in each of its languages (internal/agent/messages.go). The
