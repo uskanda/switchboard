@@ -5,6 +5,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { defineMessages, useMessages } from "@/lib/i18n";
 import {
   defaultAnswers,
+  groupsOf,
   questionState,
   setNoteOnly,
   splitHead,
@@ -38,6 +39,10 @@ const messages = defineMessages({
     states: { noteOnly: "補足だけ", unanswered: "未回答", changed: "推奨と違う", recommended: "推奨どおり", chosen: "選択済み" } as Record<QuestionState, string>,
     noted: "＋補足",
     chips: "問いの状態",
+    /** checks heads the section of the questions that only confirm the recommended answer. */
+    checks: (n: number) => `推奨どおりで進めるもの（${n}件）`,
+    /** asRecommended is the one chip of the checks left as recommended. */
+    asRecommended: (n: number) => `推奨どおり ${n}件`,
   },
   en: {
     options: (n) => `Q${n} options`,
@@ -54,12 +59,23 @@ const messages = defineMessages({
     states: { noteOnly: "Note only", unanswered: "Unanswered", changed: "Changed", recommended: "As recommended", chosen: "Chosen" },
     noted: " + note",
     chips: "Question status",
+    checks: (n) => `Going ahead as recommended (${n})`,
+    asRecommended: (n) => `As recommended: ${n}`,
   },
 });
 
-/** Ids of a question's card and its title, which the chips scroll to and focus. */
+/**
+ * Ids of a question's card and its title, of the row of a question that only confirms, and of the section of those
+ * rows and its title: the chips scroll to them and focus them.
+ */
 const cardId = (n: number) => `q${n}-card`;
 const titleId = (n: number) => `q${n}-title`;
+const rowId = (n: number) => `q${n}-row`;
+const checksId = "checks";
+const checksTitleId = "checks-title";
+
+// Scrolled to, a card, a row or the section stops just below the pinned heads.
+const SCROLL_MARGIN = "scroll-mt-[calc(var(--header-h,0px)+var(--pane-head-h,0px))] lg:scroll-mt-[var(--pane-head-h,0px)]";
 
 /**
  * Choices is one group of options as radio buttons; the option the recommendation names is marked in words. When
@@ -112,10 +128,11 @@ function Choices({ q, j, group, choice, recommended, reason, disabled, onChoose 
  * the body without groups. The note's field is folded behind a button while every group has an option chosen and
  * nothing is written in it, so a long round keeps the reply's buttons near on a phone (issue #180). It is open for a
  * question without options, for one with a group left unchosen, and once something is written in it; pressing the
- * button opens it with the focus in it. With the field open, a box answers the question in the note alone.
+ * button opens it with the focus in it. With the field open, a box answers the question in the note alone. inner
+ * draws the card's contents alone, without its frame and title, for the row of a question that only confirms.
  */
-function OneQuestion({ q, place, total, answer, disabled, onChange }: {
-  q: Question; place: number; total: number; answer: Answer; disabled: boolean; onChange: (a: Answer) => void;
+function OneQuestion({ q, place, total, answer, disabled, onChange, inner = false }: {
+  q: Question; place: number; total: number; answer: Answer; disabled: boolean; onChange: (a: Answer) => void; inner?: boolean;
 }) {
   const t = useMessages(messages);
   const id = `q${q.n}-note`;
@@ -200,12 +217,16 @@ function OneQuestion({ q, place, total, answer, disabled, onChange }: {
     // The recommendation, when not under its option, and the free text go right under the last group of options.
     if (i === lastGroup) body.push(reason, note);
   });
+  if (inner) {
+    return (
+      <div className="flex flex-col gap-sm">
+        {body}
+        {lastGroup < 0 && [reason, note]}
+      </div>
+    );
+  }
   return (
-    <section
-      id={cardId(q.n)}
-      aria-labelledby={titleId(q.n)}
-      className="flex scroll-mt-[calc(var(--header-h,0px)+var(--pane-head-h,0px))] flex-col gap-sm rounded-md border border-outline p-md lg:scroll-mt-[var(--pane-head-h,0px)]"
-    >
+    <section id={cardId(q.n)} aria-labelledby={titleId(q.n)} className={cn("flex flex-col gap-sm rounded-md border border-outline p-md", SCROLL_MARGIN)}>
       <h3 id={titleId(q.n)} tabIndex={-1} className="font-semibold break-words outline-none focus-visible:outline-2 focus-visible:outline-primary">
         <span className="font-mono text-mono-sm">Q{q.n}</span>{" "}
         <span aria-hidden="true" className="font-mono text-mono-sm font-normal text-muted">
@@ -216,6 +237,51 @@ function OneQuestion({ q, place, total, answer, disabled, onChange }: {
       {body}
       {lastGroup < 0 && [reason, note]}
     </section>
+  );
+}
+
+/** chosenText is what answers question q now, for its row: the label and the words of the option chosen in each group. */
+function chosenText(q: Question, a: Answer, colon: string): string {
+  return groupsOf(q)
+    .flatMap((g, j) => {
+      const option = g.options.find((o) => o.label === a.choices[j]);
+      return option ? [`${option.label}${colon}${option.text}`] : [];
+    })
+    .join(" / ");
+}
+
+/**
+ * CheckRow is a question that only confirms the recommended answer, on one line: its number, its title and the answer
+ * chosen, with its state when that is not the recommendation. Pressing the line opens the question's card under it,
+ * without the title the line already gives. The card stays drawn while closed, so what is chosen in it is kept.
+ */
+function CheckRow({ q, answer, disabled, onChange }: { q: Question; answer: Answer; disabled: boolean; onChange: (a: Answer) => void }) {
+  const t = useMessages(messages);
+  const { state, noted } = questionState(q, answer);
+  const chosen = chosenText(q, answer, t.colon);
+  return (
+    <details id={rowId(q.n)} className={cn("group/row rounded-md border border-outline", SCROLL_MARGIN)}>
+      <summary className="flex min-h-11 cursor-pointer list-none items-start gap-xs rounded-md px-md py-sm focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
+        <span aria-hidden="true" className="transition-transform group-open/row:rotate-90">
+          ▸
+        </span>
+        <span className="min-w-0 flex-1 break-words">
+          <span className="font-mono text-mono-sm">Q{q.n}</span> {q.title}
+          {chosen && ` — ${chosen}`}
+        </span>
+        {/* The space keeps the state apart from the answer when read aloud; between flex items it takes no room. */}
+        {(state !== "recommended" || noted) && " "}
+        {(state !== "recommended" || noted) && (
+          <span className={cn("shrink-0 text-label-md", state === "unanswered" ? "font-medium text-attention" : "text-muted")}>
+            {t.states[state]}
+            {noted ? t.noted : ""}
+          </span>
+        )}
+      </summary>
+      <div className="border-t border-outline p-md">
+        <OneQuestion q={q} place={0} total={0} answer={answer} disabled={disabled} onChange={onChange} inner />
+      </div>
+    </details>
   );
 }
 
@@ -274,23 +340,28 @@ function Head({ head }: { head: string }) {
 export function PlanQuestions({ parsed, answers, decided = [], disabled, onChange }: {
   parsed: Parsed; answers: Answer[]; decided?: Decided[]; disabled: boolean; onChange: (answers: Answer[]) => void;
 }) {
+  const t = useMessages(messages);
   const tail = withoutAnswerHint(parsed.tail);
   const total = parsed.questions.length;
+  const change = (i: number) => (a: Answer) => onChange(answers.map((b, k) => (k === i ? a : b)));
+  const checks = parsed.questions.flatMap((q, i) => (q.check ? [{ q, i }] : []));
   return (
     <div className="flex flex-col gap-lg">
       {decided.length > 0 && <Settled decided={decided} />}
       {parsed.head && <Head head={parsed.head} />}
-      {parsed.questions.map((q, i) => (
-        <OneQuestion
-          key={q.n}
-          q={q}
-          place={i + 1}
-          total={total}
-          answer={answers[i]}
-          disabled={disabled}
-          onChange={(a) => onChange(answers.map((b, k) => (k === i ? a : b)))}
-        />
-      ))}
+      {parsed.questions.map(
+        (q, i) => !q.check && <OneQuestion key={q.n} q={q} place={i + 1} total={total} answer={answers[i]} disabled={disabled} onChange={change(i)} />,
+      )}
+      {checks.length > 0 && (
+        <section id={checksId} aria-labelledby={checksTitleId} className={cn("flex flex-col gap-sm", SCROLL_MARGIN)}>
+          <h3 id={checksTitleId} tabIndex={-1} className="font-semibold outline-none focus-visible:outline-2 focus-visible:outline-primary">
+            {t.checks(checks.length)}
+          </h3>
+          {checks.map(({ q, i }) => (
+            <CheckRow key={q.n} q={q} answer={answers[i]} disabled={disabled} onChange={change(i)} />
+          ))}
+        </section>
+      )}
       {tail && <Markdown text={tail} />}
     </div>
   );
@@ -298,7 +369,9 @@ export function PlanQuestions({ parsed, answers, decided = [], disabled, onChang
 
 /**
  * QuestionChips lists where the answer to every question stands, one button a question, above the reply that is sent.
- * Pressing one scrolls its question's card to just below the pinned head and puts the focus on its title. Only an
+ * Pressing one scrolls its question's card to just below the pinned head and puts the focus on its title; for a
+ * question that only confirms, it opens the question's row and puts the focus there. The questions that only confirm
+ * and are left as recommended, with no note, share one chip, after the others, which moves to their section. Only an
  * unanswered question is in color, as it is the one to look at before sending.
  */
 export function QuestionChips({ questions, answers }: { questions: Question[]; answers: Answer[] }) {
@@ -307,25 +380,43 @@ export function QuestionChips({ questions, answers }: { questions: Question[]; a
     document.getElementById(cardId(n))?.scrollIntoView({ block: "start" });
     document.getElementById(titleId(n))?.focus({ preventScroll: true });
   };
+  const openRow = (n: number) => {
+    const row = document.getElementById(rowId(n));
+    if (!(row instanceof HTMLDetailsElement)) return;
+    row.open = true;
+    row.scrollIntoView({ block: "start" });
+    row.querySelector("summary")?.focus({ preventScroll: true });
+  };
+  const goChecks = () => {
+    document.getElementById(checksId)?.scrollIntoView({ block: "start" });
+    document.getElementById(checksTitleId)?.focus({ preventScroll: true });
+  };
+  const chips = questions.map((q, i) => ({ q, ...questionState(q, answers[i] ?? { choices: [], note: "" }) }));
+  const asRecommended = chips.filter((c) => c.q.check && c.state === "recommended" && !c.noted);
+  const chip = "inline-flex min-h-11 items-center gap-xs rounded-md border border-outline bg-surface-raised px-sm text-label-md focus-visible:outline-2 focus-visible:outline-primary";
   return (
     <ul aria-label={t.chips} className="flex flex-wrap gap-xs">
-      {questions.map((q, i) => {
-        const { state, noted } = questionState(q, answers[i] ?? { choices: [], note: "" });
+      {chips.map(({ q, state, noted }, i) => {
+        if (asRecommended.includes(chips[i])) return null;
         return (
           <li key={q.n}>
             <button
               type="button"
-              onClick={() => go(q.n)}
-              className={cn(
-                "inline-flex min-h-11 items-center gap-xs rounded-md border border-outline bg-surface-raised px-sm text-label-md focus-visible:outline-2 focus-visible:outline-primary",
-                state === "unanswered" ? "font-medium text-attention" : "text-on-surface",
-              )}
+              onClick={() => (q.check ? openRow(q.n) : go(q.n))}
+              className={cn(chip, state === "unanswered" ? "font-medium text-attention" : "text-on-surface")}
             >
               {`Q${q.n} ${t.states[state]}${noted ? t.noted : ""}`}
             </button>
           </li>
         );
       })}
+      {asRecommended.length > 0 && (
+        <li key="checks">
+          <button type="button" onClick={goChecks} className={cn(chip, "text-on-surface")}>
+            {t.asRecommended(asRecommended.length)}
+          </button>
+        </li>
+      )}
     </ul>
   );
 }

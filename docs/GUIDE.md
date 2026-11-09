@@ -147,6 +147,8 @@ Without waiting, it then moves on to the implementation run under the same start
 
 A run in the plan stage changes no files. It may use only the read tools and `git status`, `git diff`, and `git log`. If the worktree has changes after the run ends, the agent discards them. The run neither pushes nor opens a PR. It asks about all the open decisions in one comment, each with a recommended answer. Once nothing is left to decide, it comments the plan. Both end in `agent:waiting`, with the wait reasons `plan-questions` and `plan`.
 
+When the answer to one question changes the options of others, as a question about the scope or the direction does, the run asks that question alone in its round. A question whose recommended answer follows from the issue or the code is a check. The comment puts the checks last, under the heading "Going ahead as recommended". The web inbox shows each check on one line, which opens to the full question so you can choose again. If every question would be a check, the run asks none and comments the plan.
+
 Start your reply with the approval word (`/ok` by default).
 
 - Reply `/ok` to the questions to take the recommended answers and go on to the next round. To change only some questions, add to it, as in `/ok q2 is B`. Question numbers continue across rounds

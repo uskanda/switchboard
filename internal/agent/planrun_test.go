@@ -27,7 +27,7 @@ func questions(qs ...[3]string) string {
 
 // declared is one declared question with the options Keep it and Change it, the first recommended.
 func declared(title, body, reason string) map[string]any {
-	return map[string]any{"title": title, "body": body, "options": []string{"Keep it", "Change it"}, "recommended": "A", "reason": reason}
+	return map[string]any{"title": title, "body": body, "options": []string{"Keep it", "Change it"}, "recommended": "A", "reason": reason, "weight": "decision"}
 }
 
 func planDecl(text string) string {
@@ -361,7 +361,7 @@ func TestPlanQuestionsWriteTheOptionsAndTheRecommendation(t *testing.T) {
 			x := newH(t, "", func(c *config.Config) { c.Comments.Language = tc.lang })
 			x.step(1, result(map[string]any{"status": "questions", "title": "T", "questions": []any{
 				map[string]any{"title": "Loading", "body": "How should the config load?", "options": []string{"Keep it", "Split it"},
-					"recommended": "B", "reason": "It loads faster."},
+					"recommended": "B", "reason": "It loads faster.", "weight": "decision"},
 			}}))
 			p := x.startPlan()
 			want := "How should the config load?\n\nA: Keep it\nB: Split it\n\n" + tc.rec
@@ -377,11 +377,11 @@ func TestPlanRunWithABadOptionOrRecommendationIsAnError(t *testing.T) {
 		name string
 		q    map[string]any
 	}{
-		{"recommended outside the options", map[string]any{"title": "T", "body": "b?", "options": []string{"x", "y", "z"}, "recommended": "D", "reason": "r"}},
-		{"one option", map[string]any{"title": "T", "body": "b?", "options": []string{"x"}, "recommended": "A", "reason": "r"}},
-		{"seven options", map[string]any{"title": "T", "body": "b?", "options": []string{"1", "2", "3", "4", "5", "6", "7"}, "recommended": "A", "reason": "r"}},
-		{"a blank option", map[string]any{"title": "T", "body": "b?", "options": []string{"x", " "}, "recommended": "A", "reason": "r"}},
-		{"no reason", map[string]any{"title": "T", "body": "b?", "options": []string{"x", "y"}, "recommended": "A", "reason": " "}},
+		{"recommended outside the options", map[string]any{"title": "T", "body": "b?", "options": []string{"x", "y", "z"}, "recommended": "D", "reason": "r", "weight": "decision"}},
+		{"one option", map[string]any{"title": "T", "body": "b?", "options": []string{"x"}, "recommended": "A", "reason": "r", "weight": "decision"}},
+		{"seven options", map[string]any{"title": "T", "body": "b?", "options": []string{"1", "2", "3", "4", "5", "6", "7"}, "recommended": "A", "reason": "r", "weight": "decision"}},
+		{"a blank option", map[string]any{"title": "T", "body": "b?", "options": []string{"x", " "}, "recommended": "A", "reason": "r", "weight": "decision"}},
+		{"no reason", map[string]any{"title": "T", "body": "b?", "options": []string{"x", "y"}, "recommended": "A", "reason": " ", "weight": "decision"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			x := newH(t, "", nil)
@@ -390,6 +390,88 @@ func TestPlanRunWithABadOptionOrRecommendationIsAnError(t *testing.T) {
 				t.Fatalf("marker = %+v\n%s", p.Marker, p.Body)
 			}
 		})
+	}
+}
+
+func TestPlanRunWithABadWeightIsAnError(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		weight any
+	}{
+		{"no weight", nil},
+		{"another weight", "maybe"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			x := newH(t, "", nil)
+			q := declared("T", "b?", "r")
+			delete(q, "weight")
+			if tc.weight != nil {
+				q["weight"] = tc.weight
+			}
+			x.step(1, result(map[string]any{"status": "questions", "title": "T", "questions": []any{q}}))
+			if p := x.startPlan(); p.Marker.Reason != "error" {
+				t.Fatalf("marker = %+v\n%s", p.Marker, p.Body)
+			}
+		})
+	}
+}
+
+// weighed is a declared question titled title with the weight w.
+func weighed(title, w string) map[string]any {
+	q := declared(title, "Which one?", "It is simpler.")
+	q["weight"] = w
+	return q
+}
+
+// inOrder reports whether every one of parts appears in s, each after the one before.
+func inOrder(s string, parts ...string) bool {
+	at := 0
+	for _, p := range parts {
+		i := strings.Index(s[at:], p)
+		if i < 0 {
+			return false
+		}
+		at += i + len(p)
+	}
+	return true
+}
+
+func TestPlanQuestionsPutTheChecksLastUnderAHeading(t *testing.T) {
+	for _, tc := range []struct{ name, lang, heading string }{
+		{"English", "", "#### Going ahead as recommended"},
+		{"Japanese", "ja", "#### 推奨どおりで進めるもの"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			x := newH(t, "", func(c *config.Config) { c.Comments.Language = tc.lang })
+			x.step(1, result(map[string]any{"status": "questions", "title": "T", "questions": []any{
+				weighed("P", "check"), weighed("R", "decision"), weighed("S", "check"),
+			}}))
+			p := x.startPlan()
+			if !inOrder(p.Body, "**Q1** - **R**", "\n\n---\n\n"+tc.heading+"\n\n", "**Q2** - **P**", "**Q3** - **S**") {
+				t.Fatalf("the decision is not first and the checks are not under the heading:\n%s", p.Body)
+			}
+			if p.Marker.Q != 3 {
+				t.Fatalf("marker q = %d, want 3", p.Marker.Q)
+			}
+		})
+	}
+}
+
+func TestPlanQuestionsWithoutChecksHaveNoHeading(t *testing.T) {
+	x := newH(t, "", nil)
+	x.step(1, result(map[string]any{"status": "questions", "title": "T", "questions": []any{weighed("R", "decision"), weighed("S", "decision")}}))
+	p := x.startPlan()
+	if strings.Contains(p.Body, "Going ahead as recommended") || !inOrder(p.Body, "**Q1** - **R**", "**Q2** - **S**") {
+		t.Fatalf("a round without checks:\n%s", p.Body)
+	}
+}
+
+func TestPlanQuestionsOfChecksAloneArePostedUnderTheHeading(t *testing.T) {
+	x := newH(t, "", nil)
+	x.step(1, result(map[string]any{"status": "questions", "title": "T", "questions": []any{weighed("P", "check"), weighed("S", "check")}}))
+	p := x.startPlan()
+	if p.Marker.Reason != "plan-questions" || !inOrder(p.Body, "#### Going ahead as recommended\n\n", "**Q1** - **P**", "**Q2** - **S**") {
+		t.Fatalf("marker = %+v; a round of checks alone:\n%s", p.Marker, p.Body)
 	}
 }
 
@@ -421,6 +503,20 @@ func TestPlanQuestionDropsADiagramItDoesNotAllow(t *testing.T) {
 		return f["issue"] == x.ref.String() && f["q"] == 1 && f["run"] == p.Marker.Run && strings.Contains(f["reason"].(string), "pie")
 	}) {
 		t.Fatal("the dropped diagram is not in the audit log with its issue, run, number and reason")
+	}
+}
+
+func TestPlanQuestionDroppedDiagramHasTheNumberItIsPostedWith(t *testing.T) {
+	x := newH(t, "", nil)
+	q := weighed("Share", "check")
+	q["diagram"] = "pie title Share\n  \"a\" : 1\n"
+	x.step(1, result(map[string]any{"status": "questions", "title": "T", "questions": []any{q, weighed("Scope", "decision")}}))
+	p := x.startPlan()
+	if !inOrder(p.Body, "**Q1** - **Scope**", "**Q2** - **Share**") {
+		t.Fatalf("the check is not posted second:\n%s", p.Body)
+	}
+	if !x.audit.has("plan.diagram_dropped", func(f map[string]any) bool { return f["q"] == 2 }) {
+		t.Fatal("the dropped diagram is not logged with Q2, the number the check is posted with")
 	}
 }
 

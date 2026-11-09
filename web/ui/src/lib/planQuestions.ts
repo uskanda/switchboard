@@ -15,7 +15,8 @@ export type Group = { heading?: string; options: Option[] };
 /** Part is a piece of a question's body: text, a group of options, or the Mermaid diagram before the options. */
 export type Part = { kind: "text"; text: string } | { kind: "group"; group: Group } | { kind: "diagram"; source: string };
 
-export type Question = { n: number; title: string; parts: Part[]; recommendation: string };
+/** Question is one question of the comment; check is set on one that only confirms the recommended answer. */
+export type Question = { n: number; title: string; parts: Part[]; recommendation: string; check?: boolean };
 
 /** PlanQuestions is a question comment: what comes before the first question, the questions, and what follows them. */
 export type PlanQuestions = { head: string; questions: Question[]; tail: string };
@@ -30,6 +31,9 @@ export type Answer = { choices: (string | null)[]; note: string; noteOnly?: bool
 const HEADING = /^❓️?\s*\*\*Q(\d+)\*\*\s*[-–—]\s*\*\*(.+?)\*\*\s*(?:[:：]\s*(.*))?$/u;
 const ARROW = /^➡️?\s*/u;
 const SEPARATOR = /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/;
+// The heading before the questions that only confirm the recommended answer, in each language switchboard writes its
+// comments in (internal/agent/messages.go); the language of the screen is another matter.
+const CHECKS = /^#{1,6}\s+(?:推奨どおりで進めるもの|Going ahead as recommended)\s*$/u;
 const FENCE = /^\s*(?:```|~~~)/;
 // The opening line of the code block of a question's diagram (internal/agent/planrun.go writes it).
 const MERMAID = /^\s*```\s*mermaid\s*$/;
@@ -175,26 +179,30 @@ function parseParts(lines: string[]): Part[] {
 
 /**
  * parsePlanQuestions reads a question comment of a plan run. It returns null when the comment has no question
- * heading, so that the comment is drawn as any other.
+ * heading, so that the comment is drawn as any other. The questions after the heading of those that only confirm the
+ * recommended answer are marked check; the heading itself is kept by no part of the result.
  */
 export function parsePlanQuestions(body: string): PlanQuestions | null {
   const lines = body.replace(/\r\n?/g, "\n").split("\n");
   const starts = lines.flatMap((l, i) => (HEADING.test(l.trim()) ? [i] : []));
   if (!starts.length) return null;
+  const checks = lines.findIndex((l) => CHECKS.test(l.trim()));
+  const notChecks = (l: string) => !CHECKS.test(l.trim());
 
-  const head = lines.slice(0, starts[0]).join("\n").trim();
+  const head = lines.slice(0, starts[0]).filter(notChecks).join("\n").trim();
   let tail = "";
-  const questions = starts.map((start, k) => {
+  const questions = starts.map((start, k): Question => {
     const m = HEADING.exec(lines[start].trim())!;
     const last = k === starts.length - 1;
-    let block = lines.slice(start + 1, last ? lines.length : starts[k + 1]);
+    const check = checks >= 0 && start > checks ? { check: true } : {};
+    let block = lines.slice(start + 1, last ? lines.length : starts[k + 1]).filter(notChecks);
     if (m[3]) block = [m[3], ...block];
     // A non-last block ends at its separator; what follows the separator belongs to no question.
     const sep = last ? -1 : block.findIndex((l) => SEPARATOR.test(l));
     if (sep >= 0) block = block.slice(0, sep);
 
     const arrow = block.findIndex((l) => ARROW.test(l.trim()));
-    if (arrow < 0) return { n: Number(m[1]), title: m[2].trim(), parts: parseParts(block), recommendation: "" };
+    if (arrow < 0) return { n: Number(m[1]), title: m[2].trim(), parts: parseParts(block), recommendation: "", ...check };
 
     let rec = [block[arrow].trim().replace(ARROW, ""), ...block.slice(arrow + 1)];
     if (last) {
@@ -205,7 +213,7 @@ export function parsePlanQuestions(body: string): PlanQuestions | null {
         rec = rec.slice(0, end);
       }
     }
-    return { n: Number(m[1]), title: m[2].trim(), parts: parseParts(block.slice(0, arrow)), recommendation: rec.join("\n").trim() };
+    return { n: Number(m[1]), title: m[2].trim(), parts: parseParts(block.slice(0, arrow)), recommendation: rec.join("\n").trim(), ...check };
   });
   return { head, questions, tail };
 }
