@@ -133,6 +133,9 @@ type Agent struct {
 	Effort string   `yaml:"effort"`
 	Plan   RunModel `yaml:"plan"`
 	Fix    RunModel `yaml:"fix"`
+	// Browser is the Chrome or Chromium switchboard shot runs (~/ expanded); empty looks for one on PATH. A plan run
+	// is told about images only when a browser is found (ADR-068).
+	Browser string `yaml:"browser"`
 }
 
 // RunModel is a model and an effort level; an empty field takes the agent's default.
@@ -270,6 +273,9 @@ type Project struct {
 	// AllowToolsExtra are Claude Code permission rules added, after agent.allow_tools_extra, to the allow rules of
 	// this project's runs that write files.
 	AllowToolsExtra []string `yaml:"allow_tools_extra"`
+	// PlanPrototype lets this project's plan runs edit the worktree to try a change out before they take its picture;
+	// the edits are thrown away after the run (ADR-068).
+	PlanPrototype bool `yaml:"plan_prototype"`
 	// MaxParallel caps the runs of this project at once, under agent.max_parallel; nil leaves only that cap.
 	MaxParallel *int `yaml:"max_parallel"`
 	// TokenRef and AgentIdentity, set together, replace the forge's agent token and identity for this project, as
@@ -547,6 +553,7 @@ func (c *Config) applyDefaults(approveWritten bool) {
 	set(&c.Relay.SSEListen, "127.0.0.1:8782")
 	set(&c.Relay.WebhookURL, "http://"+c.Relay.WebhookListen)
 	c.Relay.WebhookURL = strings.TrimRight(c.Relay.WebhookURL, "/")
+	c.Agent.Browser = expandHome(c.Agent.Browser)
 	for i := range c.Projects {
 		set(&c.Projects[i].BaseBranch, "main")
 		c.Projects[i].Path = expandHome(c.Projects[i].Path)
@@ -629,6 +636,11 @@ func (c *Config) validate() error {
 		}
 	}
 	errs = append(errs, checkAllowTools("agent.allow_tools_extra", c.Agent.AllowToolsExtra)...)
+	if b := c.Agent.Browser; b != "" {
+		if fi, err := os.Stat(b); err != nil || fi.IsDir() || fi.Mode()&0o111 == 0 {
+			errs = append(errs, fmt.Errorf("agent.browser must be an executable file, got %q", b))
+		}
+	}
 	for _, f := range []struct{ key, effort string }{
 		{"agent.effort", c.Agent.Effort}, {"agent.plan.effort", c.Agent.Plan.Effort}, {"agent.fix.effort", c.Agent.Fix.Effort},
 	} {

@@ -346,3 +346,48 @@ func TestAContinuedPlanRoundSaysSoFirst(t *testing.T) {
 		t.Fatal("a fresh prompt says it continues")
 	}
 }
+
+func TestWithPlanImagesAddsTheSectionBeforeTheTools(t *testing.T) {
+	sys := PlanSystem("en", "/ok", "")
+	s := WithPlanImages(sys, PlanImages{Shot: "/usr/local/bin/switchboard shot --browser /usr/bin/chromium"})
+	i, j, k := strings.Index(s, "## Diagrams"), strings.Index(s, "## Images"), strings.Index(s, "## Tools")
+	if i < 0 || j < i || k < j {
+		t.Fatalf("the Images section is not between Diagrams and Tools:\n%s", s)
+	}
+	for _, want := range []string{
+		"/usr/local/bin/switchboard shot --browser /usr/bin/chromium --url",
+		".switchboard/plan-images/",
+		"\"image\"", "\"option_images\"",
+		"either a diagram or an image",
+		"in one command",
+		"& /usr/local/bin/switchboard shot --browser /usr/bin/chromium --url ... --out ...; ",
+		"; kill %1\n",
+		"never use $(...), backticks, $!, $?, ( ) subshells, pkill or a VAR=value",
+		"--script FILE",
+		"--settle",
+		"with the Write tool",
+		"--box",
+		"10 images",
+		"A drawn picture",
+		"Drawn pictures: write an HTML page with the Write tool to .switchboard/plan-images/NAME.html",
+		"python3 -m http.server 8790 --bind 127.0.0.1 --directory .switchboard/plan-images > /dev/null 2>&1 & /usr/local/bin/switchboard shot --browser /usr/bin/chromium --url http://127.0.0.1:8790/NAME.html",
+		"adds a short caption",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("the section lacks %q", want)
+		}
+	}
+	if strings.Contains(s, "Edit and Write") {
+		t.Error("a project that does not allow prototypes is told about them")
+	}
+	p := WithPlanImages(sys, PlanImages{Shot: "switchboard shot", Prototype: true})
+	if !strings.Contains(p, "Edit and Write") || !strings.Contains(p, "thrown away") {
+		t.Errorf("the prototype step is missing:\n%s", p)
+	}
+}
+
+func TestPlanSystemWithoutImagesHasNoSection(t *testing.T) {
+	if s := PlanSystem("en", "/ok", ""); strings.Contains(s, "## Images") || strings.Contains(s, "option_images") {
+		t.Fatal("a plan run without images is told about them")
+	}
+}

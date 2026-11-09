@@ -16,7 +16,7 @@ import (
 func TestSettingsNeverAllowRebaseOrPush(t *testing.T) {
 	for name, s := range map[string][]string{
 		"implement": settings("make verify").Deny,
-		"plan":      planSettings().Deny,
+		"plan":      planSettings(false, "", "").Deny,
 	} {
 		for _, d := range []string{"Bash(git rebase)", "Bash(git rebase *)", "Bash(git push)", "Bash(git push *)"} {
 			if !slices.Contains(s, d) {

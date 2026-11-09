@@ -16,17 +16,23 @@ type Avatars interface {
 	ProjectAvatar(ctx context.Context, owner, repo string) ([]byte, error)
 }
 
-// MaxImageBytes bounds an avatar or icon image.
-const MaxImageBytes = 256 << 10
+// MaxImageBytes bounds an avatar or icon image; MaxQuestionImageBytes an image of a plan question (ADR-068).
+const (
+	MaxImageBytes         = 256 << 10
+	MaxQuestionImageBytes = 5 << 20
+)
 
-// ErrBadImage reports an image that is not PNG, JPEG, GIF or WebP, or larger than MaxImageBytes. SVG is refused: it
-// can carry script.
-var ErrBadImage = errors.New("not a PNG, JPEG, GIF or WebP image of at most 256 KiB")
+// ErrBadImage reports an image that is not PNG, JPEG, GIF or WebP, or larger than its bound. SVG is refused: it can
+// carry script.
+var ErrBadImage = errors.New("not a PNG, JPEG, GIF or WebP image within the size limit")
 
 // ImageType tells the content type of data from its first bytes: image/png, image/jpeg, image/gif or image/webp.
 // Anything else, and anything larger than MaxImageBytes, is ErrBadImage.
-func ImageType(data []byte) (string, error) {
-	if len(data) > MaxImageBytes {
+func ImageType(data []byte) (string, error) { return ImageTypeUpTo(data, MaxImageBytes) }
+
+// ImageTypeUpTo is ImageType with max in place of MaxImageBytes.
+func ImageTypeUpTo(data []byte, max int) (string, error) {
+	if len(data) > max {
 		return "", ErrBadImage
 	}
 	switch {
@@ -46,6 +52,11 @@ func ImageType(data []byte) (string, error) {
 // only while the request goes to authHost, the forge's own host: not to another host, nor to one a redirect leads to.
 // A 404 is ErrNotFound.
 func GetImage(ctx context.Context, hc *http.Client, rawURL, authHost string, auth http.Header) ([]byte, error) {
+	return GetImageUpTo(ctx, hc, rawURL, authHost, auth, MaxImageBytes)
+}
+
+// GetImageUpTo is GetImage with max in place of MaxImageBytes.
+func GetImageUpTo(ctx context.Context, hc *http.Client, rawURL, authHost string, auth http.Header, max int) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, err
@@ -79,11 +90,11 @@ func GetImage(ctx context.Context, hc *http.Client, rawURL, authHost string, aut
 	case resp.StatusCode < 200 || resp.StatusCode > 299:
 		return nil, fmt.Errorf("image %s: %s", req.URL.Redacted(), resp.Status)
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, MaxImageBytes+1))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, int64(max)+1))
 	if err != nil {
 		return nil, err
 	}
-	if _, err := ImageType(data); err != nil {
+	if _, err := ImageTypeUpTo(data, max); err != nil {
 		return nil, err
 	}
 	return data, nil

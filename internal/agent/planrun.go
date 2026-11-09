@@ -32,7 +32,8 @@ const (
 		`"title":{"type":"string"},"body":{"type":"string"},` +
 		`"options":{"type":"array","minItems":2,"maxItems":6,"items":{"type":"string"}},` +
 		`"recommended":{"type":"string","pattern":"^[A-F]$"},"reason":{"type":"string"},` +
-		`"weight":{"type":"string","enum":["decision","check"]},"diagram":{"type":"string"}}}}}}`
+		`"weight":{"type":"string","enum":["decision","check"]},"diagram":{"type":"string"},` +
+		`"image":{"type":"string"},"option_images":{"type":"object","additionalProperties":{"type":"string"}}}}}}}`
 )
 
 // planImplement is the status of a plan run that skips the questions and the approval.
@@ -48,6 +49,16 @@ type PlanQuestion struct {
 	Reason      string   `json:"reason"`
 	Weight      string   `json:"weight"`
 	Diagram     string   `json:"diagram,omitempty"`
+	// Image and OptionImages name files of workspace.PlanImageDir: the picture of the question, and those of its
+	// options by label (ADR-068).
+	Image        string            `json:"image,omitempty"`
+	OptionImages map[string]string `json:"option_images,omitempty"`
+
+	// imageMD and optionMD are the Markdown of the images uploaded for the comment; imageDropped tells that an image
+	// the question named could not be attached.
+	imageMD      string
+	optionMD     map[string]string
+	imageDropped bool
 }
 
 // The weights of a question: one that needs the owner's decision, and one that only asks to confirm the recommended
@@ -194,13 +205,53 @@ func diagramOf(src string) (string, string) {
 	return text, ""
 }
 
-// planSettings are what a plan run may do: read, search and look at the history. Nothing that writes. The rules are
-// not the boundary; the check after the run is (workspace.Space.Restore).
-func planSettings() claudecode.Settings {
-	allow := append([]string{"Read", "Glob", "Grep", "WebSearch"}, claudecode.Commands("git status", "git diff", "git log")...)
-	deny := append([]string{"Edit", "Write", "NotebookEdit", "WebFetch"},
-		claudecode.Commands("git add", "git commit", "git push", "git rebase", "make", "gh")...)
+// planBaseAllow are the allow rules every plan run gets: read, search and look at the history.
+var planBaseAllow = append([]string{"Read", "Glob", "Grep", "WebSearch"}, claudecode.Commands("git status", "git diff", "git log")...)
+
+// planSettings are what a plan run may do: read, search and look at the history, and what the user added in extra
+// (agent.allow_tools_extra, then the project's). Nothing that writes, unless prototype (projects[].plan_prototype)
+// lets it edit the worktree to try a change out for a picture. shot, when not empty, is the command line that takes
+// the pictures, and images the absolute path of the place of the pictures, where the run may Write the scripts for
+// them (a heredoc of a script can be refused, V58). The rules are not the boundary; the check after the run is
+// (workspace.Space.Restore), which throws every change away.
+func planSettings(prototype bool, shot, images string, extra ...[]string) claudecode.Settings {
+	allow := slices.Clone(planBaseAllow)
+	if shot != "" {
+		allow = append(allow, "Bash("+shot+" *)")
+	}
+	writeImages := images != "" && !prototype
+	if writeImages {
+		// "//" starts an absolute path in a permission rule; only the place of the images may be written. The Write
+		// tool is checked against the Edit rules: a Write(...) rule lets nothing through, and the Edit tool itself
+		// is not given (V58).
+		allow = append(allow, "Edit(/"+images+"/**)")
+	}
+	if prototype {
+		allow = append(allow, "Edit", "Write")
+	}
+	allow = append(allow, extraAllow(allow, extra...)...)
+	deny := []string{"NotebookEdit", "WebFetch"}
+	if !prototype {
+		deny = append(deny, "Edit")
+	}
+	if !prototype && !writeImages {
+		deny = append(deny, "Write")
+	}
+	deny = append(deny, claudecode.Commands("git add", "git commit", "git push", "git rebase", "make", "gh")...)
 	return claudecode.Settings{Allow: allow, Deny: deny, Unsandboxed: gitUnsandboxed}
+}
+
+// planToolsFor are the tools of a plan run: planTools, Edit and Write when prototype, Write when it takes pictures
+// (images), and those the extra rules name.
+func planToolsFor(prototype, images bool, extra ...[]string) []string {
+	base := slices.Clone(planTools)
+	switch {
+	case prototype:
+		base = append(base, "Edit", "Write")
+	case images:
+		base = append(base, "Write")
+	}
+	return tools(base, extra...)
 }
 
 // planQuestions writes back the questions of a plan round, numbered from first, in the order planDeclaration left
@@ -250,12 +301,22 @@ func (a *Agent) dropDiagrams(ref forge.IssueRef, run string, d *PlanDeclaration,
 // the reason.
 func (o *outcome) questionText(n int, q PlanQuestion) string {
 	parts := []string{fmt.Sprintf("❓ **Q%d** - **%s**", n, strings.TrimSpace(q.Title)), strings.TrimSpace(q.Body)}
-	if q.Diagram != "" {
+	switch {
+	case q.imageMD != "":
+		parts = append(parts, q.imageMD)
+	case q.Diagram != "":
 		parts = append(parts, fence+"mermaid\n"+q.Diagram+"\n"+fence)
+	}
+	if q.imageDropped {
+		parts = append(parts, o.msg.planImageDropped)
 	}
 	var options []string
 	for i, opt := range q.Options {
-		options = append(options, optionLabel(i)+": "+strings.Join(strings.Fields(opt), " "))
+		l := optionLabel(i)
+		options = append(options, l+": "+strings.Join(strings.Fields(opt), " "))
+		if md := q.optionMD[l]; md != "" {
+			options = append(options, md)
+		}
 	}
 	parts = append(parts, strings.Join(options, "\n"))
 	parts = append(parts, "➡️ **"+fmt.Sprintf(o.msg.planRecommended, q.Recommended)+"** "+strings.TrimSpace(q.Reason))

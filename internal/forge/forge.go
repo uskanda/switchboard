@@ -22,6 +22,20 @@ type Attacher interface {
 	AttachComment(ctx context.Context, ref IssueRef, body string, files []string) (*Comment, error)
 }
 
+// Uploader is a forge client that can upload one image file to a project and return the Markdown that shows it, to
+// be put anywhere in a comment (ADR-068). Only the GitLab client is one: GitHub has no API for it.
+type Uploader interface {
+	Upload(ctx context.Context, ref IssueRef, path string) (string, error)
+}
+
+// UploadReader reads back an image uploaded to a project (ADR-068): the inbox service shows the images of a plan
+// question with it, through the inbox token, since a private project's uploads need one. Only GitLab has it.
+type UploadReader interface {
+	// ReadUpload returns the image uploaded to owner/repo as secret/name, checked by ImageTypeUpTo with
+	// MaxQuestionImageBytes; ErrNotFound when there is none.
+	ReadUpload(ctx context.Context, owner, repo, secret, name string) ([]byte, error)
+}
+
 // SplitLastLine returns body without its last non-blank line, and that line, so that an Attacher can put the
 // attachments before it.
 func SplitLastLine(body string) (head, last string) {

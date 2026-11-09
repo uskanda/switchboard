@@ -65,6 +65,8 @@ type Server struct {
 	// Merges, when set, serves /v1/merge: it merges change requests with each forge's inbox token, by forge kind
 	// (ADR-043). The Inbox must be a Merger.
 	Merges map[string]forge.Merges
+	// IssueImages, when set, serves /v1/issue-image.
+	IssueImages *IssueImages
 	// Icons, when set, serves /v1/project-icon and /v1/project-icons.
 	Icons *Icons
 	// CI, when set, serves /v1/merge-status: it reads the change requests and the CI of done issues with each forge's
@@ -148,6 +150,9 @@ func (s *Server) Reload(cfg *config.Config, b Inbox) {
 	if s.Icons != nil {
 		s.Icons.Config = cfg
 	}
+	if s.IssueImages != nil {
+		s.IssueImages.Config = cfg
+	}
 	s.vmu.Unlock()
 	s.mu.Lock()
 	s.cached = nil
@@ -206,6 +211,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if s.AutoMerge != nil {
 			routes["/v1/automerge/cancel"] = route{http.MethodPost, s.cancelAutoMerge}
 		}
+	}
+	if s.IssueImages != nil {
+		routes["/v1/issue-image"] = route{http.MethodGet, s.issueImage}
 	}
 	if s.Icons != nil {
 		routes["/v1/project-icon"] = route{http.MethodGet, s.projectIcon}

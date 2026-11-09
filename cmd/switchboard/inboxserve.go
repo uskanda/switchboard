@@ -61,6 +61,7 @@ func inboxAPI(cfg *config.Config, forges map[string]forge.Forge, store instructi
 	issues := map[string]forge.Issues{}
 	merges := map[string]forge.Merges{}
 	avatars := map[string]forge.Avatars{}
+	uploads := map[string]forge.UploadReader{}
 	ci := map[string]forge.CI{}
 	for kind, f := range forges {
 		if r, ok := f.(forge.Repos); ok {
@@ -75,6 +76,9 @@ func inboxAPI(cfg *config.Config, forges map[string]forge.Forge, store instructi
 		if a, ok := f.(forge.Avatars); ok {
 			avatars[kind] = a
 		}
+		if u, ok := f.(forge.UploadReader); ok {
+			uploads[kind] = u
+		}
 		if c, ok := f.(forge.CI); ok {
 			ci[kind] = c
 		}
@@ -85,6 +89,7 @@ func inboxAPI(cfg *config.Config, forges map[string]forge.Forge, store instructi
 		NewIssues:    &inboxserve.NewIssues{Config: cfg, Issues: issues},
 		Merges:       merges,
 		Icons:        &inboxserve.Icons{Config: cfg, Avatars: avatars},
+		IssueImages:  &inboxserve.IssueImages{Config: cfg, Uploads: uploads},
 		CI:           ci,
 	}
 	reload = func(ps []config.Project) {
@@ -221,6 +226,7 @@ func inboxServe(args []string, stdout, stderr io.Writer) int {
 	}
 	api, reload := inboxAPI(cfg, forges, instructions.For(cfg.Path, d.Audit()))
 	api.Icons.Dir = filepath.Join(d.Path, "project-icons")
+	api.IssueImages.Dir = filepath.Join(d.Path, "issue-images")
 	// The merges refused for a conflict are kept in the state directory and made once the agent fixed them (ADR-048),
 	// whether or not a page listens.
 	if api.AutoMerge, err = automerge.Open(d); err != nil {

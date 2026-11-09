@@ -167,6 +167,30 @@ func (c *Client) ProjectIcon(ctx context.Context, ref string) (*Icon, error) {
 	return &Icon{Data: data, ContentType: resp.Header.Get("Content-Type")}, nil
 }
 
+// IssueImage returns an image of an issue's comments, named by the issue (gl:group/project#n) and its address as the
+// comment has it (ADR-068). Only the uploads of the issue's GitLab project are served; anything else is ErrNotFound.
+func (c *Client) IssueImage(ctx context.Context, issue, src string) (*Icon, error) {
+	q := url.Values{"issue": {issue}, "src": {src}}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://inbox/v1/issue-image?"+q.Encode(), nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.client().Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrUnavailable, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return nil, answerError(resp)
+	}
+	// The service sends images of at most 5 MiB; the bound only keeps a broken answer from filling memory.
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 6<<20))
+	if err != nil {
+		return nil, err
+	}
+	return &Icon{Data: data, ContentType: resp.Header.Get("Content-Type")}, nil
+}
+
 // Events follows GET /v1/events: it calls fn with the listing the inbox service sends first, then with each listing
 // that differs from the one before, until ctx ends (ctx.Err()) or the stream breaks (ErrUnavailable). Reconnecting
 // is the caller's.

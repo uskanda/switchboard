@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Diagram } from "@/components/Diagram";
 import { Markdown } from "@/components/Markdown";
+import { QuestionImage } from "@/components/QuestionImage";
 import { Textarea } from "@/components/ui/textarea";
 import { defineMessages, useMessages } from "@/lib/i18n";
 import {
@@ -43,6 +44,9 @@ const messages = defineMessages({
     checks: (n: number) => `推奨どおりで進めるもの（${n}件）`,
     /** asRecommended is the one chip of the checks left as recommended. */
     asRecommended: (n: number) => `推奨どおり ${n}件`,
+    /** questionImage and optionImage name a picture that has no alt text. */
+    questionImage: (n: number) => `Q${n}`,
+    optionImage: (n: number, label: string) => `Q${n}の${label}`,
   },
   en: {
     options: (n) => `Q${n} options`,
@@ -61,6 +65,8 @@ const messages = defineMessages({
     chips: "Question status",
     checks: (n) => `Going ahead as recommended (${n})`,
     asRecommended: (n) => `As recommended: ${n}`,
+    questionImage: (n) => `Q${n}`,
+    optionImage: (n, label) => `Q${n} option ${label}`,
   },
 });
 
@@ -110,6 +116,11 @@ function Choices({ q, j, group, choice, recommended, reason, disabled, onChoose 
               {o.label === recommended && <span className="text-label-md font-medium text-muted">{t.recommendedMark}</span>}
             </span>
           </label>
+          {o.image && (
+            <div className="pb-sm pl-[calc(1rem+var(--spacing-sm))]">
+              <QuestionImage image={o.image} name={t.optionImage(q.n, o.label)} />
+            </div>
+          )}
           {reason && o.label === recommended && (
             <div id={reasonId} className="pb-sm pl-[calc(1rem+var(--spacing-sm))] text-muted">
               <Markdown text={reason} />
@@ -197,6 +208,10 @@ function OneQuestion({ q, place, total, answer, disabled, onChange, inner = fals
     }
     if (p.kind === "diagram") {
       body.push(<Diagram key={i} n={q.n} source={p.source} />);
+      return;
+    }
+    if (p.kind === "image") {
+      body.push(<QuestionImage key={i} image={p} name={t.questionImage(q.n)} />);
       return;
     }
     const g = k++;

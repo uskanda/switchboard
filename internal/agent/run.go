@@ -377,15 +377,33 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) (o *outcome) {
 	req.Model, req.Effort = m.Model, m.Effort
 	head := ""
 	var used, impl instructions.Loaded
+	var images prompt.PlanImages
+	imagesOn := false
 	switch pl.kind {
 	case planRun:
 		in.Task = prompt.PlanTask
-		used, added = a.loadInstructions(instructions.Plan, p), []string{}
-		req.SystemPrompt, req.Settings, req.Schema = prompt.PlanSystem(lang, word, used.Text), planSettings(), PlanSchema
+		used = a.loadInstructions(instructions.Plan, p)
+		images, imagesOn = a.planImagesOf(is.Ref, p.PlanPrototype)
+		shotCmd, imageDir := "", ""
+		if imagesOn {
+			shotCmd, imageDir = images.Shot, filepath.Join(dir, workspace.PlanImageDir)
+		}
+		extra := [][]string{a.Config.Agent.AllowToolsExtra, p.AllowToolsExtra}
+		added = extraAllow(planSettings(p.PlanPrototype, shotCmd, imageDir).Allow, extra...)
+		req.SystemPrompt, req.Settings, req.Schema = prompt.PlanSystem(lang, word, used.Text), planSettings(p.PlanPrototype, shotCmd, imageDir, extra...), PlanSchema
 		if pl.skippable {
 			req.SystemPrompt, req.Schema = prompt.PlanSkipSystem(lang, word, used.Text), PlanSkipSchema
 		}
-		req.Tools = planTools
+		req.Tools = planToolsFor(p.PlanPrototype, imagesOn, extra...)
+		if imagesOn {
+			req.SystemPrompt = prompt.WithPlanImages(req.SystemPrompt, images)
+			if err := sp.PreparePlanImages(ctx); err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
+				return o.fail(fmt.Sprintf(a.msg.prepare, err))
+			}
+		}
 		if head, err = sp.Head(ctx); err != nil {
 			return o.fail(fmt.Sprintf(a.msg.prepare, err))
 		}
@@ -445,6 +463,13 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) (o *outcome) {
 		stopProgress()
 		a.addCost(res)
 	}
+	if imagesOn {
+		// The pictures are taken out before the worktree is put back, which would not remove them (they are
+		// excluded), but would leave them for the next run.
+		if _, cerr := sp.CollectPlanImages(filepath.Join(a.runDir(rec.Run), "plan-images")); cerr != nil {
+			a.logf("%s: collect the images of plan run %s: %v", is.Ref, rec.Run, cerr)
+		}
+	}
 	discarded := false
 	if head != "" {
 		// A plan run changes nothing; whatever it changed anyway is thrown away, also when it failed.
@@ -452,6 +477,8 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) (o *outcome) {
 		if discarded, rerr = sp.Restore(a.ctx, head); rerr != nil {
 			return o.fail(fmt.Sprintf(a.msg.prepare, rerr))
 		}
+		// A project that lets its plan runs try changes out expects them thrown away: that is no news.
+		discarded = discarded && !p.PlanPrototype
 	}
 	switch {
 	case err != nil:
@@ -475,7 +502,7 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) (o *outcome) {
 		return o.limited(a.Config.Host.Name, until)
 	}
 	if pl.kind == planRun {
-		return a.planOutcome(res, pl, o, discarded)
+		return a.planOutcome(ctx, res, pl, o, discarded, imagesOn)
 	}
 	d, problem := declaration(res)
 	switch {
@@ -639,7 +666,7 @@ func tail(s string) string {
 
 // planOutcome writes back the end of a plan run: its questions or its plan, never a push. A plan run that skips the
 // questions and the approval hands the issue to the run that implements its plan instead.
-func (a *Agent) planOutcome(res *claudecode.Result, pl *plan, o *outcome, discarded bool) *outcome {
+func (a *Agent) planOutcome(ctx context.Context, res *claudecode.Result, pl *plan, o *outcome, discarded, imagesOn bool) *outcome {
 	d, problem := planDeclaration(res, pl.skippable)
 	word := a.Config.Plan.ApproveWord
 	switch {
@@ -651,6 +678,11 @@ func (a *Agent) planOutcome(res *claudecode.Result, pl *plan, o *outcome, discar
 		return o.fail(fmt.Sprintf(a.msg.noDeclaration, problem))
 	case d.Status == "questions":
 		a.dropDiagrams(pl.issue.Ref, o.Run, d, pl.qNext)
+		var up forge.Uploader
+		if imagesOn {
+			up, _ = a.forgeOf(pl.issue.Ref).(forge.Uploader)
+		}
+		a.attachPlanImages(ctx, pl.issue.Ref, o.Run, d, pl.qNext, filepath.Join(a.runDir(o.Run), "plan-images"), up)
 		return o.planQuestions(d, pl.qNext, res.Denials, discarded, word)
 	case d.Status == planImplement:
 		return o.planSkip(d, res.Denials, discarded)

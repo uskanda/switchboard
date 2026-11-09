@@ -80,13 +80,14 @@ func TestAnImplementingRunGetsTheExtraAllows(t *testing.T) {
 	}
 }
 
-func TestThePlanRunLacksTheExtraAllowsAndTheApprovedRunHasThem(t *testing.T) {
+// Since ADR-068 the plan run gets the extra allows too, so that it can start the app for its pictures.
+func TestThePlanRunAndTheApprovedRunGetTheExtraAllows(t *testing.T) {
 	x := newH(t, "", extraAllows)
 	x.step(1, planDecl("The plan."))
 	x.step(2, commit("a.txt", "a")+done("Done."))
 	x.startPlan()
-	if allow := x.allowOf(1); slices.Contains(allow, "Skill") || slices.Contains(allow, "Bash(openspec *)") {
-		t.Fatalf("the plan run's allow = %v, want no extra allows", allow)
+	if allow := x.allowOf(1); !hasExtraAllows(allow) {
+		t.Fatalf("the plan run's allow = %v, want Skill and Bash(openspec *)", allow)
 	}
 	x.replyAndRun("/ok")
 	if allow := x.allowOf(2); !hasExtraAllows(allow) {

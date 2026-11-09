@@ -32,7 +32,7 @@ func TestToolsAddTheToolNamesOfTheExtraAllowsOnce(t *testing.T) {
 }
 
 func TestEveryRunMayUseWebSearch(t *testing.T) {
-	if !slices.Contains(settings("make verify").Allow, "WebSearch") || !slices.Contains(planSettings().Allow, "WebSearch") {
+	if !slices.Contains(settings("make verify").Allow, "WebSearch") || !slices.Contains(planSettings(false, "", "").Allow, "WebSearch") {
 		t.Fatal("WebSearch is not allowed in every run")
 	}
 	if !slices.Contains(runTools, "WebSearch") || !slices.Contains(planTools, "WebSearch") {
@@ -61,7 +61,7 @@ func TestThePlanRunGetsReadOnlyToolsAndItsModel(t *testing.T) {
 	x.step(2, commit("a.txt", "a")+done("Done."))
 	x.startPlan()
 	argv := x.argvOf(1)
-	if got, want := flag(argv, "--tools"), "Bash,Read,Glob,Grep,WebSearch"; got != want {
+	if got, want := flag(argv, "--tools"), "Bash,Read,Glob,Grep,WebSearch,Skill"; got != want {
 		t.Errorf("the plan run's --tools = %q, want %q", got, want)
 	}
 	if flag(argv, "--model") != "sonnet" || flag(argv, "--effort") != "high" {

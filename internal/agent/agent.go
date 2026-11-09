@@ -67,6 +67,11 @@ type Agent struct {
 	// CheckSandbox reports whether the sandbox of a run can work; it is called before every start of claude, and a
 	// run whose check fails ends in an error. claudecode.CheckSandbox with bwrap from PATH when nil.
 	CheckSandbox func(context.Context) error
+	// FindBrowser finds the browser switchboard shot runs for a plan run's pictures; shot.FindBrowser with
+	// agent.browser when nil. A plan run is told about pictures only when it finds one (ADR-068).
+	FindBrowser func() (string, error)
+	// Executable is the switchboard binary a plan run calls for its pictures; os.Executable when empty.
+	Executable string
 
 	ctx    context.Context // runs end when it does
 	unlock func()

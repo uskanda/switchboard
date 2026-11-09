@@ -154,3 +154,65 @@ func TestCheckOutputRefusesACommittedScreenshot(t *testing.T) {
 		t.Fatalf("problems = %v", problems)
 	}
 }
+
+func planImage(t *testing.T, dir, name string, size int) {
+	t.Helper()
+	p := filepath.Join(dir, PlanImageDir, name)
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, make([]byte, size), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPreparePlanImagesExcludesAndEmpties(t *testing.T) {
+	s, _ := space(t)
+	dir, err := s.Prepare(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	planImage(t, dir, "old.png", 10)
+	if err := s.PreparePlanImages(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, PlanImageDir, "old.png")); !os.IsNotExist(err) {
+		t.Fatalf("the earlier run's image is still there: %v", err)
+	}
+	planImage(t, dir, "now.png", 10)
+	if st := git(t, dir, "status", "--porcelain", "--untracked-files=all"); st != "" {
+		t.Fatalf("git sees the place: %q", st)
+	}
+}
+
+func TestCollectPlanImages(t *testing.T) {
+	s, _ := space(t)
+	dir, err := s.Prepare(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PreparePlanImages(ctx); err != nil {
+		t.Fatal(err)
+	}
+	planImage(t, dir, "a.png", 10)
+	planImage(t, dir, "layout.svg", 10)
+	planImage(t, dir, "huge.png", MaxScreenshotSize+1)
+	if err := os.Symlink("/etc/passwd", filepath.Join(dir, PlanImageDir, "link.png")); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(t.TempDir(), "plan-images")
+	names, err := s.CollectPlanImages(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(names)
+	if want := []string{"a.png", "layout.svg"}; !slices.Equal(names, want) {
+		t.Fatalf("moved %v, want %v", names, want)
+	}
+	if _, err := os.Stat(filepath.Join(dir, PlanImageDir)); !os.IsNotExist(err) {
+		t.Fatalf("the place is still there: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "a.png")); err != nil {
+		t.Fatal(err)
+	}
+}
