@@ -28,24 +28,47 @@ const (
 		`"properties":{"status":{"type":"string",`
 	planSchemaTail = `},"title":{"type":"string"},"summary":{"type":"string"},` +
 		`"plan":{"type":"string"},"questions":{"type":"array","minItems":1,"items":{"type":"object",` +
-		`"additionalProperties":false,"required":["title","body","options","recommended","reason"],"properties":{` +
+		`"additionalProperties":false,"required":["title","body","options","recommended","reason","weight"],"properties":{` +
 		`"title":{"type":"string"},"body":{"type":"string"},` +
 		`"options":{"type":"array","minItems":2,"maxItems":6,"items":{"type":"string"}},` +
-		`"recommended":{"type":"string","pattern":"^[A-F]$"},"reason":{"type":"string"},"diagram":{"type":"string"}}}}}}`
+		`"recommended":{"type":"string","pattern":"^[A-F]$"},"reason":{"type":"string"},` +
+		`"weight":{"type":"string","enum":["decision","check"]},"diagram":{"type":"string"}}}}}}`
 )
 
 // planImplement is the status of a plan run that skips the questions and the approval.
 const planImplement = "implement"
 
 // PlanQuestion is one question of a plan round: its options, which switchboard labels A, B, C… in order, the label of
-// the option the run recommends and why, and a Mermaid diagram of what it asks, if any.
+// the option the run recommends and why, its weight, and a Mermaid diagram of what it asks, if any.
 type PlanQuestion struct {
 	Title       string   `json:"title"`
 	Body        string   `json:"body"`
 	Options     []string `json:"options"`
 	Recommended string   `json:"recommended"`
 	Reason      string   `json:"reason"`
+	Weight      string   `json:"weight"`
 	Diagram     string   `json:"diagram,omitempty"`
+}
+
+// The weights of a question: one that needs the owner's decision, and one that only asks to confirm the recommended
+// answer, which the question comment puts last, under a heading of its own.
+const (
+	weightDecision = "decision"
+	weightCheck    = "check"
+)
+
+// weighedOrder is qs with the questions that need a decision first and those that only confirm after them, each in
+// the order declared: the order they are numbered and posted in.
+func weighedOrder(qs []PlanQuestion) []PlanQuestion {
+	out := make([]PlanQuestion, 0, len(qs))
+	for _, w := range []string{weightDecision, weightCheck} {
+		for _, q := range qs {
+			if q.Weight == w {
+				out = append(out, q)
+			}
+		}
+	}
+	return out
 }
 
 // Options of a question: at least two, at most six, labeled A to F.
@@ -97,6 +120,7 @@ func planDeclaration(res *claudecode.Result, skippable bool) (*PlanDeclaration, 
 				return nil, fmt.Sprintf("question %d %s", i+1, problem)
 			}
 		}
+		d.Questions = weighedOrder(d.Questions)
 	default: // plan, implement
 		if strings.TrimSpace(d.Plan) == "" {
 			return nil, "the structured output has no plan"
@@ -106,10 +130,14 @@ func planDeclaration(res *claudecode.Result, skippable bool) (*PlanDeclaration, 
 }
 
 // questionProblem says what is wrong with a declared question, or "" when nothing is: a blank title, body or reason,
-// too few or too many options, a blank option, or a recommended label that is not one of the options'.
+// a weight that is neither decision nor check, too few or too many options, a blank option, or a recommended label
+// that is not one of the options'.
 func questionProblem(q PlanQuestion) string {
 	if strings.TrimSpace(q.Title) == "" || strings.TrimSpace(q.Body) == "" || strings.TrimSpace(q.Reason) == "" {
 		return "lacks a title, a body or a reason"
+	}
+	if q.Weight != weightDecision && q.Weight != weightCheck {
+		return fmt.Sprintf("has the weight %q, not %q or %q", q.Weight, weightDecision, weightCheck)
 	}
 	if len(q.Options) < minOptions || len(q.Options) > maxOptions {
 		return fmt.Sprintf("has %d options, not %d to %d", len(q.Options), minOptions, maxOptions)
@@ -175,15 +203,22 @@ func planSettings() claudecode.Settings {
 	return claudecode.Settings{Allow: allow, Deny: deny, Unsandboxed: gitUnsandboxed}
 }
 
-// planQuestions writes back the questions of a plan round, numbered from first.
+// planQuestions writes back the questions of a plan round, numbered from first, in the order planDeclaration left
+// them: the first question that only confirms the recommended answer starts under a heading of its own.
 func (o *outcome) planQuestions(d *PlanDeclaration, first int, denials []claudecode.Denial, discarded bool, word string) *outcome {
 	parts := []string{o.planTitleLine(d)}
 	if s := strings.TrimSpace(d.Summary); s != "" {
 		parts = append(parts, s)
 	}
 	var qs []string
+	headed := false
 	for i, q := range d.Questions {
-		qs = append(qs, o.questionText(first+i, q))
+		text := o.questionText(first+i, q)
+		if q.Weight == weightCheck && !headed {
+			headed = true
+			text = "#### " + o.msg.planChecks + "\n\n" + text
+		}
+		qs = append(qs, text)
 	}
 	parts = append(parts, strings.Join(qs, "\n\n---\n\n"))
 	parts = append(parts, o.planTail(denials, discarded, fmt.Sprintf(o.msg.planQuestionsHint, word, word))...)

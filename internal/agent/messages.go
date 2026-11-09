@@ -37,8 +37,9 @@ type texts struct {
 	limitTitle, limitQueued, limitFix string
 
 	// The comments of the plan stage: the titles, the hints on how to answer, the note on discarded changes, the
-	// label of the plan's title, and the bold start of a question's recommendation (with its label).
-	planQuestionsTitle, planTitle, planQuestionsHint, planHint, planDiscarded, planLabel, planRecommended string
+	// label of the plan's title, the bold start of a question's recommendation (with its label), and the heading of
+	// the questions that only confirm the recommended answer. The web inbox reads that heading in both languages.
+	planQuestionsTitle, planTitle, planQuestionsHint, planHint, planDiscarded, planLabel, planRecommended, planChecks string
 	// The comment of a plan run that skipped the questions and the approval: its title and its first line; and the
 	// error when the run that implements the plan could not be started (the cause).
 	planSkippedTitle, planSkipped, planSkipFailed string
@@ -101,6 +102,7 @@ var english = texts{
 	planDiscarded:      "The run changed the worktree although the plan stage changes nothing; those changes were discarded.",
 	planLabel:          "Plan:",
 	planRecommended:    "Recommended: %s",
+	planChecks:         "Going ahead as recommended",
 	planSkippedTitle:   "Implementing the plan without questions",
 	planSkipped:        "The requirements are clear, so the agent skips the questions and the approval and implements this plan now.",
 	planSkipFailed:     "The plan run found nothing to ask, but the run that implements the plan could not be started: %s",
@@ -201,6 +203,7 @@ var japanese = texts{
 	planDiscarded:      "計画の段階では何も変えないはずの実行がworktreeを変えたため、その変更を捨てました。",
 	planLabel:          "計画：",
 	planRecommended:    "推奨：%s",
+	planChecks:         "推奨どおりで進めるもの",
 	planSkippedTitle:   "質問と承認を省いて実装します",
 	planSkipped:        "要件が明確なので、質問と承認を省いて実装します。",
 	planSkipFailed:     "計画の実行は質問を省けると判断しましたが、計画を実装する実行を始められませんでした：%s",

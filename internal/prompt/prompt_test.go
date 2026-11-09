@@ -161,6 +161,34 @@ func TestPlanSystemPromptLeavesTheLabelsOfTheOptionsToSwitchboard(t *testing.T) 
 	}
 }
 
+func TestPlanSystemPromptWeighsAndShapesTheQuestions(t *testing.T) {
+	s := PlanSystem("en", "/ok", "")
+	for _, want := range []string{
+		"changes the options of other questions", "ask only that question in this round",
+		`"weight"`, `"decision"`, `"check"`, "follows from the issue, the code or the existing conventions",
+		"no reason to choose another option", "If every question you would ask is a check, ask none", "the decisions it rests on",
+		"the question in one sentence", "at most 3 short bullet points", "Explain a code name", "where you found the facts",
+		"what is in and what is out",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("the plan system prompt lacks %q", want)
+		}
+	}
+	if strings.Contains(s, "one or two sentences") {
+		t.Error(`the plan system prompt still limits "summary" to one or two sentences`)
+	}
+}
+
+func TestPlanSkipSystemPromptDoesNotSkipForChecksAlone(t *testing.T) {
+	want := "Checks alone are no reason to skip"
+	if s := PlanSkipSystem("en", "/ok", ""); !strings.Contains(s, want) {
+		t.Errorf("the plan system prompt that may skip lacks %q:\n%s", want, s)
+	}
+	if s := PlanSystem("en", "/ok", ""); strings.Contains(s, want) {
+		t.Errorf("a plan run that may not skip is told about skipping:\n%s", s)
+	}
+}
+
 func TestPlanSystemPromptAddsTheUsersInstructionsLast(t *testing.T) {
 	s := PlanSystem("en", "/ok", "Always ask about the API names.")
 	at := strings.Index(s, "Always ask about the API names.")
