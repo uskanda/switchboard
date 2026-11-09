@@ -40,7 +40,7 @@ const messages = defineMessages({
     noted: "＋補足",
     chips: "問いの状態",
     /** checks heads the section of the questions that only confirm the recommended answer. */
-    checks: (n: number) => `推奨どおりで進めるもの（${n}件）`,
+    checks: (n: number) => `推奨でよいか確認してほしい問い（${n}件）`,
     /** asRecommended is the one chip of the checks left as recommended. */
     asRecommended: (n: number) => `推奨どおり ${n}件`,
   },
@@ -59,7 +59,7 @@ const messages = defineMessages({
     states: { noteOnly: "Note only", unanswered: "Unanswered", changed: "Changed", recommended: "As recommended", chosen: "Chosen" },
     noted: " + note",
     chips: "Question status",
-    checks: (n) => `Going ahead as recommended (${n})`,
+    checks: (n) => `Please check the recommended answers (${n})`,
     asRecommended: (n) => `As recommended: ${n}`,
   },
 });
