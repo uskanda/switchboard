@@ -370,27 +370,34 @@ describe("the questions that only confirm the recommended answer", () => {
     "\n\n推奨どおりでよければ `/ok`、変えたい問いがあれば `/ok q2はB` のように返答してください。\n";
 
   it("are the questions after the heading, which no question keeps", () => {
-    const p = parsePlanQuestions(round([[5, "範囲"], [6, "名前"], [7, "ログ"], [8, "既定値"]], "#### 推奨どおりで進めるもの", 2))!;
+    const p = parsePlanQuestions(round([[5, "範囲"], [6, "名前"], [7, "ログ"], [8, "既定値"]], "#### 推奨でよいか確認してほしい問い", 2))!;
     expect(p.questions.map((q) => [q.n, !!q.check])).toEqual([[5, false], [6, false], [7, true], [8, true]]);
     expect(p.questions.map((q) => q.recommendation)).toEqual(Array(4).fill("**推奨：A** 速い"));
-    expect(JSON.stringify(p.questions)).not.toMatch(/推奨どおりで進めるもの/);
+    expect(JSON.stringify(p.questions)).not.toMatch(/推奨でよいか確認してほしい問い/);
     expect(p.tail).toMatch(/^推奨どおりでよければ/);
   });
 
   it("are every question when the heading comes before the first, and the head does not keep it", () => {
-    const p = parsePlanQuestions(round([[1, "ログ"], [2, "既定値"]], "#### 推奨どおりで進めるもの", 0))!;
+    const p = parsePlanQuestions(round([[1, "ログ"], [2, "既定値"]], "#### 推奨でよいか確認してほしい問い", 0))!;
     expect(p.questions.map((q) => !!q.check)).toEqual([true, true]);
-    expect(p.head).not.toMatch(/推奨どおりで進めるもの/);
+    expect(p.head).not.toMatch(/推奨でよいか確認してほしい問い/);
     expect(p.head).toMatch(/\*\*計画：\*\* 流れを分ける$/);
   });
 
   it("are read under the English heading too", () => {
-    const p = parsePlanQuestions(round([[1, "Scope"], [2, "Logs"]], "#### Going ahead as recommended", 1))!;
+    const p = parsePlanQuestions(round([[1, "Scope"], [2, "Logs"]], "#### Please check the recommended answers", 1))!;
     expect(p.questions.map((q) => !!q.check)).toEqual([false, true]);
   });
 
   it("are none in a comment without the heading", () => {
     const p = parsePlanQuestions(round([[1, "範囲"], [2, "ログ"]], "", -1))!;
     expect(p.questions.map((q) => !!q.check)).toEqual([false, false]);
+  });
+
+  it("are none under the older headings, which are no longer read", () => {
+    for (const heading of ["#### 推奨どおりで進めるもの", "#### Going ahead as recommended"]) {
+      const p = parsePlanQuestions(round([[1, "範囲"], [2, "ログ"]], heading, 1))!;
+      expect(p.questions.map((q) => !!q.check)).toEqual([false, false]);
+    }
   });
 });

@@ -24,7 +24,7 @@ const q = (n: number, title: string, options = ["今のまま残す", "変える
   `❓ **Q${n}** - **${title}**\n\n${title}をどうしますか。\n\n${options.map((o, i) => `${String.fromCharCode(65 + i)}: ${o}`).join("\n")}\n\n➡️ **推奨：${rec}** 理由`;
 
 /** round is a question comment: the questions that need a decision, then those under the heading of the checks. */
-const round = (decisions: string[], checks: string[], heading = "#### 推奨どおりで進めるもの") =>
+const round = (decisions: string[], checks: string[], heading = "#### 推奨でよいか確認してほしい問い") =>
   "### 計画についての質問\n\n**計画：** 流れを分ける\n\n" +
   [...decisions, ...checks.map((c, i) => (i === 0 ? `${heading}\n\n${c}` : c))].join("\n\n---\n\n") +
   "\n\n推奨どおりでよければ `/ok`、変えたい問いがあれば `/ok q2はB` のように返答してください。\n";
@@ -54,7 +54,7 @@ const open = async () => {
 beforeEach(() => vi.stubGlobal("EventSource", FakeEventSource));
 afterEach(() => vi.unstubAllGlobals());
 
-const section = (name = "推奨どおりで進めるもの（3件）") => screen.getByRole("region", { name });
+const section = (name = "推奨でよいか確認してほしい問い（3件）") => screen.getByRole("region", { name });
 /** words is what a row says, without the arrow before it, which is hidden from screen readers. */
 const words = (s: Element) => s.textContent!.replace(/^▸/, "");
 const rows = (name?: string) => [...section(name).querySelectorAll("summary")].map(words);
@@ -105,7 +105,7 @@ describe("the questions that only confirm the recommended answer", () => {
     serve([asked(round([], [q(1, "ログの形式"), q(2, "順番")]))]);
     await open();
     expect(screen.queryByRole("heading", { name: /^Q1 / })).toBeNull();
-    expect(screen.getByRole("region", { name: "推奨どおりで進めるもの（2件）" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "推奨でよいか確認してほしい問い（2件）" })).toBeInTheDocument();
     expect(chips()).toEqual(["推奨どおり 2件"]);
   });
 
@@ -152,7 +152,7 @@ describe("the chips with checks", () => {
     serve([asked(usual)]);
     await open();
     await userEvent.click(screen.getByRole("button", { name: "推奨どおり 3件" }));
-    expect(screen.getByRole("heading", { name: "推奨どおりで進めるもの（3件）" })).toHaveFocus();
+    expect(screen.getByRole("heading", { name: "推奨でよいか確認してほしい問い（3件）" })).toHaveFocus();
     expect(scrolled.at(-1)).toBe(section());
   });
 
@@ -172,14 +172,14 @@ describe("the chips with checks", () => {
 describe("the checks on an English screen", () => {
   it("name the section and the chip in English", async () => {
     setLanguageChoice("en");
-    serve([asked(round([q(1, "Scope")], [q(2, "Logs"), q(3, "Order")], "#### Going ahead as recommended"))]);
+    serve([asked(round([q(1, "Scope")], [q(2, "Logs"), q(3, "Order")], "#### Please check the recommended answers"))]);
     await open();
-    expect(screen.getByRole("region", { name: "Going ahead as recommended (2)" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Please check the recommended answers (2)" })).toBeInTheDocument();
     expect(within(screen.getByRole("list", { name: "Question status" })).getAllByRole("button").map((b) => b.textContent)).toEqual([
       "Q1 As recommended",
       "As recommended: 2",
     ]);
-    expect(rows("Going ahead as recommended (2)")[0]).toBe("Q2 Logs — A: 今のまま残す");
+    expect(rows("Please check the recommended answers (2)")[0]).toBe("Q2 Logs — A: 今のまま残す");
     setLanguageChoice("auto");
   });
 });

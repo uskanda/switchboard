@@ -33,7 +33,7 @@ const ARROW = /^➡️?\s*/u;
 const SEPARATOR = /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/;
 // The heading before the questions that only confirm the recommended answer, in each language switchboard writes its
 // comments in (internal/agent/messages.go); the language of the screen is another matter.
-const CHECKS = /^#{1,6}\s+(?:推奨どおりで進めるもの|Going ahead as recommended)\s*$/u;
+const CHECKS = /^#{1,6}\s+(?:推奨でよいか確認してほしい問い|Please check the recommended answers)\s*$/u;
 const FENCE = /^\s*(?:```|~~~)/;
 // The opening line of the code block of a question's diagram (internal/agent/planrun.go writes it).
 const MERMAID = /^\s*```\s*mermaid\s*$/;
