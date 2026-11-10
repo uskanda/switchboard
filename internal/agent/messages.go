@@ -40,7 +40,7 @@ type texts struct {
 	// label of the plan's title, the bold start of a question's recommendation (with its label), and the heading of
 	// the questions that only confirm the recommended answer. The web inbox reads that heading in both languages.
 	planQuestionsTitle, planTitle, planQuestionsHint, planHint, planDiscarded, planLabel, planRecommended, planChecks string
-	// planImageDropped is the line of a question whose images, or some of them, could not be attached (ADR-068).
+	// planImageDropped is the line of a question whose images, or some of them, could not be attached (ADR-069).
 	planImageDropped string
 	// The comment of a plan run that skipped the questions and the approval: its title and its first line; and the
 	// error when the run that implements the plan could not be started (the cause).
@@ -104,7 +104,7 @@ var english = texts{
 	planDiscarded:      "The run changed the worktree although the plan stage changes nothing; those changes were discarded.",
 	planLabel:          "Plan:",
 	planRecommended:    "Recommended: %s",
-	planChecks:         "Going ahead as recommended",
+	planChecks:         "Please check the recommended answers",
 	planImageDropped:   "_Some images of this question could not be attached._",
 	planSkippedTitle:   "Implementing the plan without questions",
 	planSkipped:        "The requirements are clear, so the agent skips the questions and the approval and implements this plan now.",
@@ -206,7 +206,7 @@ var japanese = texts{
 	planDiscarded:      "計画の段階では何も変えないはずの実行がworktreeを変えたため、その変更を捨てました。",
 	planLabel:          "計画：",
 	planRecommended:    "推奨：%s",
-	planChecks:         "推奨どおりで進めるもの",
+	planChecks:         "推奨でよいか確認してほしい問い",
 	planImageDropped:   "_この問いの画像の一部を付けられませんでした。_",
 	planSkippedTitle:   "質問と承認を省いて実装します",
 	planSkipped:        "要件が明確なので、質問と承認を省いて実装します。",

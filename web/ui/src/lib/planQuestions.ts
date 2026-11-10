@@ -10,14 +10,14 @@ import { defineMessages, type Lang } from "@/lib/i18n";
 /** Image is a picture in a question comment: its address as the comment has it, and its alt text. */
 export type Image = { src: string; alt: string };
 
-/** Option is one option; image is the picture of the screen once it is chosen, on the line right after it (ADR-068). */
+/** Option is one option; image is the picture of the screen once it is chosen, on the line right after it (ADR-069). */
 export type Option = { label: string; text: string; image?: Image };
 
 /** Group is one set of options that a single choice answers, with the heading it had on its line, if any. */
 export type Group = { heading?: string; options: Option[] };
 
 /**
- * Part is a piece of a question's body: text, a group of options, or the Mermaid diagram or the picture (ADR-068)
+ * Part is a piece of a question's body: text, a group of options, or the Mermaid diagram or the picture (ADR-069)
  * before the options.
  */
 export type Part =
@@ -44,7 +44,7 @@ const ARROW = /^➡️?\s*/u;
 const SEPARATOR = /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/;
 // The heading before the questions that only confirm the recommended answer, in each language switchboard writes its
 // comments in (internal/agent/messages.go); the language of the screen is another matter.
-const CHECKS = /^#{1,6}\s+(?:推奨どおりで進めるもの|Going ahead as recommended)\s*$/u;
+const CHECKS = /^#{1,6}\s+(?:推奨でよいか確認してほしい問い|Please check the recommended answers)\s*$/u;
 const FENCE = /^\s*(?:```|~~~)/;
 // The opening line of the code block of a question's diagram (internal/agent/planrun.go writes it).
 const MERMAID = /^\s*```\s*mermaid\s*$/;

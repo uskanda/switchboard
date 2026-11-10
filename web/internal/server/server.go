@@ -302,7 +302,7 @@ func (s *Server) projectIcon(w http.ResponseWriter, r *http.Request) {
 }
 
 // issueImage passes an image of a plan question on from the inbox service, which reads it with the inbox token
-// (ADR-068). The page shows it from this origin, so the CSP stays img-src 'self'.
+// (ADR-069). The page shows it from this origin, so the CSP stays img-src 'self'.
 func (s *Server) issueImage(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	img, err := s.Inbox.IssueImage(r.Context(), q.Get("issue"), q.Get("src"))

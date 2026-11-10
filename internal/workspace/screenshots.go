@@ -14,7 +14,7 @@ import (
 // worktree (ADR-051). git ignores it through info/exclude; a commit of a file under it blocks the push.
 const ScreenshotDir = ".switchboard/screenshots"
 
-// PlanImageDir is where a plan run puts the images of its questions, relative to the worktree (ADR-068). It is
+// PlanImageDir is where a plan run puts the images of its questions, relative to the worktree (ADR-069). It is
 // excluded like ScreenshotDir, and its files are moved out before the check that throws a plan run's changes away.
 const PlanImageDir = ".switchboard/plan-images"
 

@@ -80,7 +80,7 @@ func TestAnImplementingRunGetsTheExtraAllows(t *testing.T) {
 	}
 }
 
-// Since ADR-068 the plan run gets the extra allows too, so that it can start the app for its pictures.
+// Since ADR-069 the plan run gets the extra allows too, so that it can start the app for its pictures.
 func TestThePlanRunAndTheApprovedRunGetTheExtraAllows(t *testing.T) {
 	x := newH(t, "", extraAllows)
 	x.step(1, planDecl("The plan."))

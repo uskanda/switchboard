@@ -134,7 +134,7 @@ type Agent struct {
 	Plan   RunModel `yaml:"plan"`
 	Fix    RunModel `yaml:"fix"`
 	// Browser is the Chrome or Chromium switchboard shot runs (~/ expanded); empty looks for one on PATH. A plan run
-	// is told about images only when a browser is found (ADR-068).
+	// is told about images only when a browser is found (ADR-069).
 	Browser string `yaml:"browser"`
 }
 
@@ -274,7 +274,7 @@ type Project struct {
 	// this project's runs that write files.
 	AllowToolsExtra []string `yaml:"allow_tools_extra"`
 	// PlanPrototype lets this project's plan runs edit the worktree to try a change out before they take its picture;
-	// the edits are thrown away after the run (ADR-068).
+	// the edits are thrown away after the run (ADR-069).
 	PlanPrototype bool `yaml:"plan_prototype"`
 	// MaxParallel caps the runs of this project at once, under agent.max_parallel; nil leaves only that cap.
 	MaxParallel *int `yaml:"max_parallel"`

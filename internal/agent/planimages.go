@@ -13,7 +13,7 @@ import (
 	"github.com/uskanda/switchboard/internal/workspace"
 )
 
-// planImagesOf says whether the plan runs of ref may show pictures (ADR-068), and how they take one: only a GitLab
+// planImagesOf says whether the plan runs of ref may show pictures (ADR-069), and how they take one: only a GitLab
 // project's, and only when a browser is found. GitHub has no API that puts an image anywhere in a comment.
 func (a *Agent) planImagesOf(ref forge.IssueRef, prototype bool) (prompt.PlanImages, bool) {
 	if ref.Kind() != forge.GitLab {

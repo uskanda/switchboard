@@ -1,5 +1,5 @@
 // Package shot takes a screenshot of a page served on this host with a local Chrome or Chromium, for the images of a
-// plan question (ADR-068). It opens loopback pages only, and sends every other request of the page to a proxy that
+// plan question (ADR-069). It opens loopback pages only, and sends every other request of the page to a proxy that
 // does not exist, so that a page, or the script a run gives it, cannot reach past this host.
 package shot
 

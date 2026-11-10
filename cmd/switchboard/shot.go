@@ -30,7 +30,7 @@ Options:
 `
 
 // runShot is switchboard shot: one picture of a loopback page, with an optional script run first and notes drawn over
-// it (ADR-068).
+// it (ADR-069).
 func runShot(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("switchboard shot", flag.ContinueOnError)
 	fs.SetOutput(stderr)

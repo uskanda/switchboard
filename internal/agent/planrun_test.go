@@ -462,8 +462,8 @@ func inOrder(s string, parts ...string) bool {
 
 func TestPlanQuestionsPutTheChecksLastUnderAHeading(t *testing.T) {
 	for _, tc := range []struct{ name, lang, heading string }{
-		{"English", "", "#### Going ahead as recommended"},
-		{"Japanese", "ja", "#### 推奨どおりで進めるもの"},
+		{"English", "", "#### Please check the recommended answers"},
+		{"Japanese", "ja", "#### 推奨でよいか確認してほしい問い"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			x := newH(t, "", func(c *config.Config) { c.Comments.Language = tc.lang })
@@ -485,7 +485,7 @@ func TestPlanQuestionsWithoutChecksHaveNoHeading(t *testing.T) {
 	x := newH(t, "", nil)
 	x.step(1, result(map[string]any{"status": "questions", "title": "T", "questions": []any{weighed("R", "decision"), weighed("S", "decision")}}))
 	p := x.startPlan()
-	if strings.Contains(p.Body, "Going ahead as recommended") || !inOrder(p.Body, "**Q1** - **R**", "**Q2** - **S**") {
+	if strings.Contains(p.Body, "Please check the recommended answers") || !inOrder(p.Body, "**Q1** - **R**", "**Q2** - **S**") {
 		t.Fatalf("a round without checks:\n%s", p.Body)
 	}
 }
@@ -494,7 +494,7 @@ func TestPlanQuestionsOfChecksAloneArePostedUnderTheHeading(t *testing.T) {
 	x := newH(t, "", nil)
 	x.step(1, result(map[string]any{"status": "questions", "title": "T", "questions": []any{weighed("P", "check"), weighed("S", "check")}}))
 	p := x.startPlan()
-	if p.Marker.Reason != "plan-questions" || !inOrder(p.Body, "#### Going ahead as recommended\n\n", "**Q1** - **P**", "**Q2** - **S**") {
+	if p.Marker.Reason != "plan-questions" || !inOrder(p.Body, "#### Please check the recommended answers\n\n", "**Q1** - **P**", "**Q2** - **S**") {
 		t.Fatalf("marker = %+v; a round of checks alone:\n%s", p.Marker, p.Body)
 	}
 }

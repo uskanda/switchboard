@@ -18,7 +18,7 @@ import (
 )
 
 // IssueImages serves /v1/issue-image: an image uploaded to a GitLab project, as the question comments of plan runs
-// hold them (ADR-068), read with the inbox token. An upload never changes, so the image read is kept in Dir for good.
+// hold them (ADR-069), read with the inbox token. An upload never changes, so the image read is kept in Dir for good.
 type IssueImages struct {
 	// Config is the configuration in use; Server.Reload replaces it.
 	Config *config.Config

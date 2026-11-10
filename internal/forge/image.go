@@ -16,7 +16,7 @@ type Avatars interface {
 	ProjectAvatar(ctx context.Context, owner, repo string) ([]byte, error)
 }
 
-// MaxImageBytes bounds an avatar or icon image; MaxQuestionImageBytes an image of a plan question (ADR-068).
+// MaxImageBytes bounds an avatar or icon image; MaxQuestionImageBytes an image of a plan question (ADR-069).
 const (
 	MaxImageBytes         = 256 << 10
 	MaxQuestionImageBytes = 5 << 20

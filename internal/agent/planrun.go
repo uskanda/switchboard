@@ -50,7 +50,7 @@ type PlanQuestion struct {
 	Weight      string   `json:"weight"`
 	Diagram     string   `json:"diagram,omitempty"`
 	// Image and OptionImages name files of workspace.PlanImageDir: the picture of the question, and those of its
-	// options by label (ADR-068).
+	// options by label (ADR-069).
 	Image        string            `json:"image,omitempty"`
 	OptionImages map[string]string `json:"option_images,omitempty"`
 

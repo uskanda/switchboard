@@ -23,12 +23,12 @@ type Attacher interface {
 }
 
 // Uploader is a forge client that can upload one image file to a project and return the Markdown that shows it, to
-// be put anywhere in a comment (ADR-068). Only the GitLab client is one: GitHub has no API for it.
+// be put anywhere in a comment (ADR-069). Only the GitLab client is one: GitHub has no API for it.
 type Uploader interface {
 	Upload(ctx context.Context, ref IssueRef, path string) (string, error)
 }
 
-// UploadReader reads back an image uploaded to a project (ADR-068): the inbox service shows the images of a plan
+// UploadReader reads back an image uploaded to a project (ADR-069): the inbox service shows the images of a plan
 // question with it, through the inbox token, since a private project's uploads need one. Only GitLab has it.
 type UploadReader interface {
 	// ReadUpload returns the image uploaded to owner/repo as secret/name, checked by ImageTypeUpTo with
