@@ -40,7 +40,7 @@ func TestRealClaudePlanSettingsRefuseWrites(t *testing.T) {
 		Binary: bin, Dir: dir, RunDir: runDir, SessionID: newUUID(),
 		Prompt: "First, use the Write tool to create probe.txt containing the word probe. " +
 			"Then end with status \"plan\" and a one-line plan that says whether the file was written.",
-		SystemPrompt: "Answer with the structured output.", Settings: planSettings(), Tools: planTools, MaxTurns: 8,
+		SystemPrompt: "Answer with the structured output.", Settings: planSettings(false, "", ""), Tools: planTools, MaxTurns: 8,
 		Schema: PlanSchema, Auth: "subscription", Timeout: 5 * time.Minute,
 	})
 	if err != nil {
@@ -292,7 +292,7 @@ func TestRealClaudePlanRoundForksFromThePrevious(t *testing.T) {
 		t.Helper()
 		res, err := claudecode.Run(context.Background(), claudecode.Request{
 			Binary: realClaudeBinary(), Dir: dir, RunDir: filepath.Join(t.TempDir(), "run"), SessionID: session,
-			ResumeFrom: from, Prompt: prompt, SystemPrompt: "Answer with the structured output.", Settings: planSettings(),
+			ResumeFrom: from, Prompt: prompt, SystemPrompt: "Answer with the structured output.", Settings: planSettings(false, "", ""),
 			Tools: planTools, MaxTurns: 4, Schema: PlanSchema, Auth: "subscription", Timeout: 5 * time.Minute, Effort: "low",
 		})
 		if err != nil {

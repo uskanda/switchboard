@@ -182,7 +182,7 @@ Linuxの端末には、`bubblewrap` と `socat` が要る。エージェント�
 
 ### 実装の実行に足す許可と指示
 
-ファイルを書く実行（直接の実装、承認のあとの実装、CIとpushの失敗を直す実行、baseとの衝突を直す実行）には、許可するツールと利用者の追加の指示を足せる。手作業で使っているスキルやCLIを、自動の実行でも使わせるためのものである。計画の実行には、どちらも足さない。
+ファイルを書く実行（直接の実装、承認のあとの実装、CIとpushの失敗を直す実行、baseとの衝突を直す実行）には、許可するツールと利用者の追加の指示を足せる。手作業で使っているスキルやCLIを、自動の実行でも使わせるためのものである。計画の実行にも、許可するツールは足す。質問の画像のためにアプリを起動できるようにするためである（ADR-069）。計画の実行への指示は `plan.md` に書く。
 
 許可は、設定ファイルにClaude Codeの権限の規則の形で書く。`allowed-tools` を持つスキル（多くのハーネスのスキル）は、`Skill` を許可しないと呼べない。全体の `agent.allow_tools_extra` と、プロジェクトごとの `allow_tools_extra` をつなげて使う。
 
@@ -194,7 +194,7 @@ projects:
     allow_tools_extra: ["Bash(openspec *)"]
 ```
 
-sandboxの中のコマンドは規則なしで動くので、`Bash(openspec *)` のような `Bash` の項目は、ほとんどの場合要らない。ネットワークやsandboxの外の書き込みが要るコマンドは、項目を足しても動かない。`allow_tools_extra` の各項目のツール名（`Skill`、`Bash(openspec *)` なら `Bash`）は、実行に渡すツールにも足される。実行に渡すツールは、ファイルを書く実行では `Bash`、`Read`、`Edit`、`Write`、`Glob`、`Grep`、`WebSearch` だけである。計画の実行には、`Bash`、`Read`、`Glob`、`Grep`、`WebSearch` を渡す。
+sandboxの中のコマンドは規則なしで動くので、`Bash(openspec *)` のような `Bash` の項目は、ほとんどの場合要らない。ネットワークやsandboxの外の書き込みが要るコマンドは、項目を足しても動かない。`allow_tools_extra` の各項目のツール名（`Skill`、`Bash(openspec *)` なら `Bash`）は、実行に渡すツールにも足される。実行に渡すツールは、ファイルを書く実行では `Bash`、`Read`、`Edit`、`Write`、`Glob`、`Grep`、`WebSearch` だけである。計画の実行には、`Bash`、`Read`、`Glob`、`Grep`、`WebSearch` を渡し、`plan_prototype` を有効にしたプロジェクトでは `Edit` と `Write` も渡す。`plan_prototype` が無いと、`allow_tools_extra` に `Write` があっても、計画の実行では拒否したままである。
 
 設定を読むときに、空の項目、制限の無い `Bash` と `Bash(*)`、どの実行でも拒否する操作（`git push`、`git rebase`、`gh`、`WebFetch`）を名指しする項目は誤りになる。`Bash(git *)` のような広い項目は通るが、拒否する操作は拒否されたままである。プロジェクトの `allow_tools_extra` は再起動せずに反映され、`agent.allow_tools_extra` は再起動で反映される。許可は設定ファイルにだけ書け、受信箱のWeb表示からは変えられない。
 
@@ -253,6 +253,35 @@ switchboard instructions edit --implement gh:o/switchboard
 GitHubでは、端末の `gh`（v2.99.0以上）の `gh issue comment --attach` で付ける。`gh` にはエージェントのトークンだけを渡し、利用者の `gh` のログインは使わない。GitLabでは、uploads APIで上げてノートに並べる。付けられなかったときは、理由だけを書いたコメントを付け、doneはそのままにする。たとえば `gh` が無いときや古いとき、権限が無いときである。`switchboard doctor` は、GitHubのプロジェクトがあるときに `gh` の版を確かめる。
 
 撮影の手順と、それに要るコマンドの許可（`allow_tools_extra`）は、利用者が書く。例は [examples/screenshots.md](examples/screenshots.md) にある。
+
+### 計画の質問の画像（GitLab）
+
+GitLabのプロジェクトでは、計画の実行が、質問に画面の画像を付けられる。問いには今の画面を1枚、選択肢ごとにはその案を選んだあとの画面を1枚付ける。1つの問いに付けるのは、画像かMermaidの図のどちらか1つである。実行は、画面の見た目や変化を問うときに画像を、流れや状態を問うときに図を選ぶ。GitHubのプロジェクトは、今までどおり図だけである。GitHubには、画像をコメントの好きな位置に置くAPIが無いためである。
+
+実行は、`switchboard shot` で画像を撮る。`switchboard shot` は、端末のChromeのヘッドレスシェルを動かす。完全なChromeとChromiumは、起動のときにunixソケットを作る。実行のsandboxはそれを拒むので、そこでは起動できない（V58）。ブラウザは `agent.browser` で指定するか、PATHに `chrome-headless-shell` を置く。ブラウザが無ければ、計画の実行に画像のことは伝えない。Playwrightが入れるヘッドレスシェルも使える。
+
+```yaml
+agent:
+  browser: ~/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell
+```
+
+`switchboard shot` が開くのは、`localhost`、`127.0.0.1`、`[::1]` のページだけで、ページはほかの場所から何も読み込めない。ページが応答するまで、30秒まで待つ。実行のコマンドは1つずつ別のネットワークで動く。そのため実行は、アプリの起動、撮影、停止を1回のコマンドで行う。形は `アプリ > /dev/null 2>&1 & switchboard shot ...; kill %1` である。計画の実行は許可を求められない。そのため、`$(...)`、バッククォート、`$!`、前置きの `変数=値`、括弧と `>` を含むJSのどれかがコマンドの行にあると、Claude Codeが拒否する。JSは、実行が `Write` のツールで `.switchboard/plan-images/` のファイルに書き、`--script` で渡す。計画の実行が書けるのは、この場所だけである（V58）。アプリの起動のしかたと使うポートを、この形で `plan.md` に書いておく。
+
+```markdown
+画像を撮るときは、`pnpm --dir web/ui exec vite --port 5199 > /dev/null 2>&1 & <shot> --url http://localhost:5199/ ...; kill %1` の形で撮る。
+```
+
+手でも試せる。
+
+```bash
+switchboard shot --url http://localhost:5199/ --out shot.png --width 390 --box "#save|ここに移す"
+```
+
+選択肢を選んだあとの画面は、次の順に試し、足りたところで止めるよう実行に伝える。1つめは、今の画面に印を付ける（`--box`、`--arrow`）。2つめは、撮る前にJSでページを書き換える（`--script`）。3つめは、`plan_prototype: true` のプロジェクトだけで、worktreeのソースを書き換えて試作する。計画の実行が変えたものは、実行のあとにすべて捨てる。`plan_prototype` があれば、捨てたことはコメントに書かない。
+
+画像は、アプリのスクリーンショットに限らない。配置、並べた比較、前後の比較のように、Mermaidの図では描きにくい説明は、実行がHTMLで描いてもよい。HTMLは `.switchboard/plan-images/` に書き、`python3 -m http.server` でループバックに配って、同じ方法で撮る。スクリーンショットへの説明は、`--box` と `--arrow` のラベルか、`--script` でページに足す短い説明で書く。
+
+上げる画像は、1回の質問で10枚までで、PNG、JPEG、WebPの1枚5MBまでである。付けられなかった画像は、その問いの下に1行書き、監査ログに `plan.image_dropped` を残す。Web表示は、最新の質問の画像を受信箱のトークンで読み、問いのカードの中に描く。ほかの画像はリンクのままである。
 
 ### 常駐させる
 

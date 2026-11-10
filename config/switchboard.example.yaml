@@ -73,6 +73,7 @@ agent:
   # effort: medium                    # low | medium | high | xhigh | max; empty leaves it to the CLI
   # plan: { model: "", effort: "" }   # overrides for the plan runs
   # fix: { model: "", effort: "" }    # overrides for the fix runs (CI, rejected pushes, conflicts)
+  # browser: ~/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell   # for switchboard shot; a full Chrome cannot start in a run's sandbox. Empty looks for chrome-headless-shell, chromium, chromium-browser, google-chrome on PATH
 
 # quota:                              # API cost caps of this host, in USD; used only with claude.auth: api_key
 #   daily_usd: 20                     # local day; no run starts after the day's costs reach it, until midnight
@@ -94,3 +95,4 @@ projects:
   #   host: ubuntu-a
   #   token_ref: switchboard/gitlab-sandbox-bot   # optional, with agent_identity: the agent of this project only
   #   agent_identity: project_N_bot_XXXX          # posts as a project access token's bot; the inbox does not change
+  #   plan_prototype: false                       # let plan runs edit the worktree to try a screen out before taking its picture; the edits are thrown away

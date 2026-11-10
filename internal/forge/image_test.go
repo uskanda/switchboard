@@ -96,3 +96,16 @@ func TestGetImageRefusals(t *testing.T) {
 		t.Fatalf("too large: err = %v", err)
 	}
 }
+
+func TestImageTypeUpTo(t *testing.T) {
+	png := append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, MaxImageBytes)...)
+	if _, err := ImageType(png); err != ErrBadImage {
+		t.Fatalf("an image past MaxImageBytes passes ImageType: %v", err)
+	}
+	if ct, err := ImageTypeUpTo(png, MaxQuestionImageBytes); err != nil || ct != "image/png" {
+		t.Fatalf("ImageTypeUpTo = %q, %v", ct, err)
+	}
+	if _, err := ImageTypeUpTo([]byte("<svg xmlns='http://www.w3.org/2000/svg'/>"), MaxQuestionImageBytes); err != ErrBadImage {
+		t.Fatalf("an SVG passes: %v", err)
+	}
+}

@@ -14,6 +14,10 @@ import (
 // worktree (ADR-051). git ignores it through info/exclude; a commit of a file under it blocks the push.
 const ScreenshotDir = ".switchboard/screenshots"
 
+// PlanImageDir is where a plan run puts the images of its questions, relative to the worktree (ADR-069). It is
+// excluded like ScreenshotDir, and its files are moved out before the check that throws a plan run's changes away.
+const PlanImageDir = ".switchboard/plan-images"
+
 // The limits of the images of one run.
 const (
 	MaxScreenshotSize = 5 << 20
@@ -38,13 +42,26 @@ var imageExts = []string{".png", ".jpg", ".jpeg", ".webp"}
 // PrepareScreenshots readies ScreenshotDir for a run: it adds the place to info/exclude once, and removes what an
 // earlier run left there.
 func (s *Space) PrepareScreenshots(ctx context.Context) error {
-	if err := s.excludeScreenshots(ctx); err != nil {
-		return err
-	}
-	return s.ClearScreenshots()
+	return s.preparePlace(ctx, ScreenshotDir)
 }
 
-func (s *Space) excludeScreenshots(ctx context.Context) error {
+// PreparePlanImages readies PlanImageDir for a plan run as PrepareScreenshots readies ScreenshotDir.
+func (s *Space) PreparePlanImages(ctx context.Context) error {
+	return s.preparePlace(ctx, PlanImageDir)
+}
+
+func (s *Space) preparePlace(ctx context.Context, rel string) error {
+	if err := s.exclude(ctx, rel); err != nil {
+		return err
+	}
+	if p := s.place(rel); p != "" {
+		return os.RemoveAll(p)
+	}
+	return nil
+}
+
+// exclude adds rel, a place under the worktree, to info/exclude once.
+func (s *Space) exclude(ctx context.Context, rel string) error {
 	dir := s.Dir()
 	p, err := s.git(ctx, dir, nil, "rev-parse", "--git-path", "info/exclude")
 	if err != nil {
@@ -53,7 +70,7 @@ func (s *Space) excludeScreenshots(ctx context.Context) error {
 	if !filepath.IsAbs(p) {
 		p = filepath.Join(dir, p)
 	}
-	line := "/" + ScreenshotDir + "/"
+	line := "/" + rel + "/"
 	b, err := os.ReadFile(p)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
@@ -78,11 +95,14 @@ func (s *Space) excludeScreenshots(ctx context.Context) error {
 	return f.Close()
 }
 
-// screenshotDir is ScreenshotDir in the worktree, or "" when it is missing or when it, or .switchboard, is not a
-// directory of the worktree itself, such as a symbolic link a run made: nothing behind a link is read or removed.
-func (s *Space) screenshotDir() string {
+// screenshotDir is ScreenshotDir in the worktree; see place.
+func (s *Space) screenshotDir() string { return s.place(ScreenshotDir) }
+
+// place is rel in the worktree, or "" when it is missing or when it, or .switchboard, is not a directory of the
+// worktree itself, such as a symbolic link a run made: nothing behind a link is read or removed.
+func (s *Space) place(rel string) string {
 	p := s.Dir()
-	for _, part := range strings.Split(ScreenshotDir, "/") {
+	for _, part := range strings.Split(rel, "/") {
 		p = filepath.Join(p, part)
 		if fi, err := os.Lstat(p); err != nil || !fi.IsDir() {
 			return ""
@@ -144,6 +164,46 @@ func (s *Space) CollectScreenshots(dest string) ([]string, []Skipped, error) {
 		names = append(names, name)
 	}
 	return names, skipped, os.RemoveAll(dir)
+}
+
+// MaxPlanImageFiles bounds the files moved out of PlanImageDir; the questions may use MaxScreenshots of them.
+const MaxPlanImageFiles = 50
+
+// CollectPlanImages moves the regular files directly in PlanImageDir, up to MaxScreenshotSize each and
+// MaxPlanImageFiles in all, to dest, and removes PlanImageDir. The questions name the images they use; which of them
+// may be posted is checked there. It returns the names moved.
+func (s *Space) CollectPlanImages(dest string) ([]string, error) {
+	dir := s.place(PlanImageDir)
+	if dir == "" {
+		return nil, nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, e := range entries {
+		if !e.Type().IsRegular() || len(names) == MaxPlanImageFiles {
+			continue
+		}
+		fi, err := e.Info()
+		if err != nil {
+			return nil, err
+		}
+		if fi.Size() > MaxScreenshotSize {
+			continue
+		}
+		if len(names) == 0 {
+			if err := os.MkdirAll(dest, 0o700); err != nil {
+				return nil, err
+			}
+		}
+		if err := move(filepath.Join(dir, e.Name()), filepath.Join(dest, e.Name())); err != nil {
+			return nil, err
+		}
+		names = append(names, e.Name())
+	}
+	return names, os.RemoveAll(dir)
 }
 
 // move renames from to to, or copies it when the rename fails, as across file systems.

@@ -23,7 +23,7 @@ func TestTheVerifyCommandAndGitRunOutsideTheSandbox(t *testing.T) {
 		"implement":         {settings("make verify"), []string{"make verify", "git", "git *"}},
 		"spaces":            {settings("  make   verify "), []string{"make verify", "git", "git *"}},
 		"no verify command": {settings(""), []string{"git", "git *"}},
-		"plan":              {planSettings(), []string{"git", "git *"}},
+		"plan":              {planSettings(false, "", ""), []string{"git", "git *"}},
 	}
 	for name, c := range cases {
 		if !slices.Equal(c.got.Unsandboxed, c.want) {

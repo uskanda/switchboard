@@ -37,6 +37,7 @@ type Inbox interface {
 	Merge(ctx context.Context, ref, sha string) (*inboxapi.MergeResult, error)
 	CancelAutoMerge(ctx context.Context, ref string) error
 	ProjectIcon(ctx context.Context, ref string) (*inboxapi.Icon, error)
+	IssueImage(ctx context.Context, issue, src string) (*inboxapi.Icon, error)
 	ProjectIcons(ctx context.Context) (inboxapi.ProjectIcons, error)
 	RegisterDevice(ctx context.Context, token string) error
 	Approve(ctx context.Context, ref string, since time.Time) error
@@ -120,6 +121,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.merge(w, r)
 	case r.URL.Path == "/api/project-icon" && r.Method == http.MethodGet:
 		s.projectIcon(w, r)
+	case r.URL.Path == "/api/issue-image" && r.Method == http.MethodGet:
+		s.issueImage(w, r)
 	case r.URL.Path == "/api/project-icons" && r.Method == http.MethodGet:
 		out, err := s.Inbox.ProjectIcons(r.Context())
 		s.answer(w, out, err)
@@ -296,6 +299,20 @@ func (s *Server) projectIcon(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", icon.ContentType)
 	w.Header().Set("Cache-Control", "max-age=3600")
 	w.Write(icon.Data)
+}
+
+// issueImage passes an image of a plan question on from the inbox service, which reads it with the inbox token
+// (ADR-069). The page shows it from this origin, so the CSP stays img-src 'self'.
+func (s *Server) issueImage(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	img, err := s.Inbox.IssueImage(r.Context(), q.Get("issue"), q.Get("src"))
+	if err != nil {
+		s.answer(w, nil, err)
+		return
+	}
+	w.Header().Set("Content-Type", img.ContentType)
+	w.Header().Set("Cache-Control", "private, max-age=86400")
+	w.Write(img.Data)
 }
 
 // registerDevice passes an app's FCM token on to the inbox service.

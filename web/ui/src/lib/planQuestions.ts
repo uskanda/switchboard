@@ -7,13 +7,24 @@
 import type { Comment } from "@/lib/api";
 import { defineMessages, type Lang } from "@/lib/i18n";
 
-export type Option = { label: string; text: string };
+/** Image is a picture in a question comment: its address as the comment has it, and its alt text. */
+export type Image = { src: string; alt: string };
+
+/** Option is one option; image is the picture of the screen once it is chosen, on the line right after it (ADR-069). */
+export type Option = { label: string; text: string; image?: Image };
 
 /** Group is one set of options that a single choice answers, with the heading it had on its line, if any. */
 export type Group = { heading?: string; options: Option[] };
 
-/** Part is a piece of a question's body: text, a group of options, or the Mermaid diagram before the options. */
-export type Part = { kind: "text"; text: string } | { kind: "group"; group: Group } | { kind: "diagram"; source: string };
+/**
+ * Part is a piece of a question's body: text, a group of options, or the Mermaid diagram or the picture (ADR-069)
+ * before the options.
+ */
+export type Part =
+  | { kind: "text"; text: string }
+  | { kind: "group"; group: Group }
+  | { kind: "diagram"; source: string }
+  | ({ kind: "image" } & Image);
 
 /** Question is one question of the comment; check is set on one that only confirms the recommended answer. */
 export type Question = { n: number; title: string; parts: Part[]; recommendation: string; check?: boolean };
@@ -43,6 +54,8 @@ const OPTION_LINE = /^\s*(?:[-*+]\s+)?(?:\*\*)?[(（]?([A-Z]|\d{1,2})[)）]?(?:\
 // One option of a line split by slashes.
 const OPTION_SEGMENT = /^[(（]?([A-Z]|\d{1,2})[)）]?(?:[:：.、．]\s*|\s+)(\S.*)$/u;
 const SLASH = /\s*[/／]\s*/u;
+// A line that is one image and nothing else, as internal/agent/planrun.go puts an uploaded picture.
+const IMAGE_LINE = /^\s*!\[([^\]]*)\]\(([^)\s]+)\)\s*$/;
 const INLINE_HEADING = /^([^:：/／]{1,20})[:：]\s*(.+)$/u;
 const COLON_END = /^(.{1,20})[:：]\s*$/u;
 
@@ -106,7 +119,7 @@ function parseParts(lines: string[]): Part[] {
     drawn = true;
   };
   const flush = () => {
-    if (run.length >= 2) pushGroup({ options: run.map(({ label, text }) => ({ label, text })) });
+    if (run.length >= 2) pushGroup({ options: run.map(({ label, text, image }) => (image ? { label, text, image } : { label, text })) });
     else text.push(...run.map((o) => o.raw));
     run = [];
     text.push(...blanks);
@@ -136,6 +149,21 @@ function parseParts(lines: string[]): Part[] {
     if (fenced || FENCE.test(line)) {
       flush();
       text.push(line);
+      continue;
+    }
+    const img = IMAGE_LINE.exec(line);
+    const prevOption = run.at(-1);
+    if (img && prevOption && !blanks.length && !prevOption.image) {
+      // An image right under an option's line is that option's picture.
+      prevOption.image = { src: img[2], alt: img[1] };
+      prevOption.raw = `${prevOption.raw}\n${line}`;
+      continue;
+    }
+    if (img && !drawn && run.length === 0) {
+      // The first image on a line of its own before the options is the question's picture.
+      pushText();
+      parts.push({ kind: "image", src: img[2], alt: img[1] });
+      drawn = true;
       continue;
     }
     if (line.trim() === "") {

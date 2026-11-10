@@ -38,3 +38,23 @@ func (f *Forge) AttachComment(ctx context.Context, ref forge.IssueRef, body stri
 	f.mu.Unlock()
 	return c, nil
 }
+
+// Upload implements forge.Uploader as GitLab does: it reads the file and returns Markdown with a project-relative
+// /uploads/ link to it.
+func (f *Forge) Upload(ctx context.Context, ref forge.IssueRef, path string) (string, error) {
+	f.mu.Lock()
+	failure := f.FailUpload
+	f.mu.Unlock()
+	if failure != nil {
+		return "", failure
+	}
+	if _, err := os.ReadFile(path); err != nil {
+		return "", fmt.Errorf("fake: upload: %w", err)
+	}
+	name := filepath.Base(path)
+	f.mu.Lock()
+	f.Uploaded = append(f.Uploaded, name)
+	n := len(f.Uploaded)
+	f.mu.Unlock()
+	return fmt.Sprintf("![%s](/uploads/%032x/%s)", name, n, name), nil
+}

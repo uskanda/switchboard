@@ -4,6 +4,7 @@ import { IssueRef } from "@/components/IssueRef";
 import { Loading } from "@/components/Loading";
 import { AutoMergeBadge, CancelAutoMergeButton, MergeButton, changeName } from "@/components/MergeButton";
 import { PlanQuestions, QuestionChips } from "@/components/PlanQuestions";
+import { IssueImagesContext, projectBase } from "@/components/QuestionImage";
 import { ReasonBadge } from "@/components/ReasonBadge";
 import { Thread } from "@/components/Thread";
 import { Alert } from "@/components/ui/alert";
@@ -630,13 +631,15 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
                   ? {
                       index: plan.index,
                       node: (
-                        <PlanQuestions
-                          parsed={plan.parsed}
-                          answers={answers}
-                          decided={decided}
-                          disabled={sending}
-                          onChange={(a) => setChoices({ key: plan.key, answers: a })}
-                        />
+                        <IssueImagesContext.Provider value={{ issue: detail.ref, base: projectBase(detail.url) }}>
+                          <PlanQuestions
+                            parsed={plan.parsed}
+                            answers={answers}
+                            decided={decided}
+                            disabled={sending}
+                            onChange={(a) => setChoices({ key: plan.key, answers: a })}
+                          />
+                        </IssueImagesContext.Provider>
                       ),
                     }
                   : undefined

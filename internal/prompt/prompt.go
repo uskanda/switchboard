@@ -356,3 +356,52 @@ const screenshots = `
 // WithScreenshots returns system with the agreement on the images for the issue. Only the runs that implement an
 // issue get it: a direct run and the run of an approved plan, never a plan run or a fix run.
 func WithScreenshots(system string) string { return system + screenshots }
+
+// PlanImages is what the Images section of a plan run says: the command line that takes a picture (switchboard shot
+// with its browser), and whether the project lets the run try a change out in the worktree.
+type PlanImages struct {
+	Shot      string
+	Prototype bool
+}
+
+// WithPlanImages returns system, the system prompt of a plan run, with the Images section before its Tools section
+// (ADR-069). Only a GitLab project's plan run with a browser gets it. The place and the limits are those of
+// workspace.PlanImageDir, workspace.MaxScreenshots and workspace.MaxScreenshotSize.
+func WithPlanImages(system string, im PlanImages) string {
+	proto := ""
+	if im.Prototype {
+		proto = "\n   3. Only when 1 and 2 cannot show it, for example when the change needs a new component: you may use Edit and Write to change the source in the worktree, start the app and take the picture. Every change you make is thrown away after the run, so change only what the picture needs."
+	}
+	section := fmt.Sprintf(planImages, im.Shot, proto)
+	if i := strings.Index(system, "\n## Tools\n"); i >= 0 {
+		return system[:i] + section + system[i:]
+	}
+	return system + section
+}
+
+// planImages is the section of WithPlanImages; %[1]s is the shot command line, %[2]s the prototype step or "".
+const planImages = `
+## Images
+
+- A question may show a picture instead of a diagram: "image" for the question (the screen as it is now), and "option_images" for the options, an object from an option's label to its picture (the screen after that option is chosen), such as {"A": "a.png", "B": "b.png"}. Each is optional. Give a question either a diagram or an image, never both.
+- Choose the kind of picture by what the question asks, and add one only when it helps the owner decide:
+  - A screenshot of the app, when the question is about how a screen looks or changes: what moves, what is added, what a screen says.
+  - A drawn picture, when the question is easier to grasp from a drawing that a Mermaid diagram cannot make well: a layout or sizes, things side by side, a before and after, a table with marks, a rough sketch of a screen that does not exist yet. See "Drawn pictures" below.
+  - A Mermaid diagram, for a flow, a sequence or how a state changes.
+- Save the pictures as .png, .jpg, .jpeg or .webp files directly in .switchboard/plan-images/ and give their file names, without the directory. switchboard posts at most 10 images per round, 5 MB each at most; SVG is never posted. The pictures and the files that make them (scripts, HTML) are the only thing a plan run may write, all in .switchboard/plan-images/, besides the changes allowed below.
+- Take a picture of a page of the app with: %[1]s --url http://localhost:PORT/PATH --out .switchboard/plan-images/NAME.png
+  Options: --width 390 for a phone (1280 by default), --height, --wait SELECTOR, --settle 1500ms (wait for what the page fetches), --full-page, --script FILE (JavaScript run in the page before the picture), --box "SELECTOR|label" and --arrow "SELECTOR|label" (draw a mark; x,y,w,h in place of a selector works too).
+- Write the JavaScript for --script with the Write tool to a file in .switchboard/plan-images/ (such as b.js), the one place a plan run may write, and pass that file. Do not put JavaScript on a command line or in a heredoc: such commands can be refused.
+- Only pages on localhost, 127.0.0.1 and [::1] open, and they cannot load anything from elsewhere. Each shell command runs in a network of its own, so start the app and take the pictures in one command, in this shape:
+  START_THE_APP > /dev/null 2>&1 & %[1]s --url ... --out ...; %[1]s --url ... --out ...; kill %%1
+  The shot waits up to 30 seconds for the page to answer, so no sleep or loop is needed. Keep to this shape: never use $(...), backticks, $!, $?, ( ) subshells, pkill or a VAR=value before a command in it, as a command with them is refused.
+- How to start the app is in the user's instructions; when they do not say, look for it in the repository, and when you cannot start it, go without screenshots and say why in "summary".
+- On a screenshot, explain with the labels of --box and --arrow, or with a --script that adds a short caption or a callout to the page. Keep the words few: the body of the question says the rest.
+- Drawn pictures: write an HTML page with the Write tool to .switchboard/plan-images/NAME.html, with its CSS and any SVG inline and nothing loaded from elsewhere, and take it in one command:
+  python3 -m http.server 8790 --bind 127.0.0.1 --directory .switchboard/plan-images > /dev/null 2>&1 & %[1]s --url http://127.0.0.1:8790/NAME.html --out .switchboard/plan-images/NAME.png --width 960 --height 100 --full-page; kill %%1
+  (--height 100 with --full-page takes the page as tall as what it holds.)
+  Draw it plainly: few colors, large labels, in the language of the questions. It shows the idea, not a finished design.
+- Show the change at the lowest cost that shows it, and stop at the first step that is enough:
+   1. Take the screen as it is now and mark where it changes with --box and --arrow.
+   2. Take it with --script JavaScript that changes the page as the option would: the text, the order, a style, an element added or hidden. The source is not touched.%[2]s
+`

@@ -61,3 +61,27 @@ func TestProjectIconsArePassedOn(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body)
 	}
 }
+
+func (f *fakeInbox) IssueImage(_ context.Context, issue, src string) (*inboxapi.Icon, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	if issue != "gl:nas/sb#3" || src != "/uploads/abc/q.png" {
+		return nil, &inboxapi.Error{Code: inboxapi.CodeNotFound, Message: "no image"}
+	}
+	return &inboxapi.Icon{Data: iconPNG, ContentType: "image/png"}, nil
+}
+
+func TestIssueImageIsPassedOn(t *testing.T) {
+	w := do(newServer(&fakeInbox{}), "GET", "/api/issue-image?issue=gl%3Anas%2Fsb%233&src=%2Fuploads%2Fabc%2Fq.png", "", nil)
+	if w.Code != http.StatusOK || w.Body.String() != string(iconPNG) {
+		t.Fatalf("status = %d, body = %q", w.Code, w.Body)
+	}
+	if h := w.Header(); h.Get("Content-Type") != "image/png" || h.Get("Content-Security-Policy") != csp {
+		t.Fatalf("headers = %v", h)
+	}
+	w = do(newServer(&fakeInbox{}), "GET", "/api/issue-image?issue=gl%3Anas%2Fsb%233&src=https%3A%2F%2Fevil.example%2Fx.png", "", nil)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("another image: status = %d", w.Code)
+	}
+}

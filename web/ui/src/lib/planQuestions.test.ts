@@ -349,6 +349,33 @@ describe("the diagram of a question", () => {
   });
 });
 
+describe("the images of a question", () => {
+  const body = (q: string) => `### 計画についての質問\n\n${q}`;
+  const kinds = (q: Question) => q.parts.map((p) => p.kind);
+  // As internal/agent/planrun.go writes a question with images on GitLab.
+  const written =
+    "❓ **Q1** - **配置**\n\n保存のボタンをどこに置きますか。\n\n![q.png](/uploads/0123456789abcdef0123456789abcdef/q.png)\n\n" +
+    "A: 今のまま\nB: 上に移す\n![b.png](/uploads/fedcba9876543210fedcba9876543210/b.png)\nC: 消す\n\n➡️ **推奨：B** 最初に目に入る。\n";
+
+  it("reads the question's image before the options and an option's image after its line", () => {
+    const q = parsePlanQuestions(body(written))!.questions[0];
+    expect(kinds(q)).toEqual(["text", "image", "group"]);
+    expect(q.parts[1]).toEqual({ kind: "image", src: "/uploads/0123456789abcdef0123456789abcdef/q.png", alt: "q.png" });
+    const [g] = groupsOf(q);
+    expect(g.options.map((o) => o.label)).toEqual(["A", "B", "C"]);
+    expect(g.options[1]).toEqual({ label: "B", text: "上に移す", image: { src: "/uploads/fedcba9876543210fedcba9876543210/b.png", alt: "b.png" } });
+    expect(g.options[0].image).toBeUndefined();
+    expect(defaultAnswers([q])[0].choices).toEqual(["B"]);
+  });
+
+  it("keeps an image after the options, or one among text, as text", () => {
+    const q = parsePlanQuestions(body("❓ **Q1** - **配置**\n\nA: 今のまま\nB: 上に移す\n\n![x](/uploads/0123456789abcdef0123456789abcdef/x.png)\n\n➡️ A\n"))!.questions[0];
+    expect(kinds(q)).toEqual(["group", "text"]);
+    const t = parsePlanQuestions(body("❓ **Q1** - **配置**\n\n説明 ![x](/uploads/a/x.png) です。\n\nA: 今のまま\nB: 上に移す\n\n➡️ A\n"))!.questions[0];
+    expect(kinds(t)).toEqual(["text", "group"]);
+  });
+});
+
 describe("withoutRecommendedMark", () => {
   it("drops the bold label at the start of a recommendation, in either language", () => {
     expect(withoutRecommendedMark("**推奨：B** 読み込みが速くなる")).toBe("読み込みが速くなる");

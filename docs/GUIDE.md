@@ -186,7 +186,7 @@ Linux hosts need `bubblewrap` and `socat`. For each run, before it starts claude
 
 ### Extra permissions and instructions for implementation runs
 
-You can give extra allowed tools and additional instructions of your own to the runs that write files. These are direct implementation, implementation after approval, and the runs that fix a CI failure, a push failure, or a conflict with the base. With these, unattended runs can use the skills and CLIs you use by hand. Plan runs get neither.
+You can give extra allowed tools and additional instructions of your own to the runs that write files. These are direct implementation, implementation after approval, and the runs that fix a CI failure, a push failure, or a conflict with the base. With these, unattended runs can use the skills and CLIs you use by hand. Plan runs get the extra allowed tools as well, so that they can start the app for the pictures of their questions (ADR-069); their instructions are in `plan.md`.
 
 Write the permissions in the config file, as Claude Code permission rules. A skill with `allowed-tools` (as many harness skills have) cannot be called unless `Skill` is allowed. The agent joins the global `agent.allow_tools_extra` and each project's `allow_tools_extra`.
 
@@ -198,7 +198,7 @@ projects:
     allow_tools_extra: ["Bash(openspec *)"]
 ```
 
-Commands in the sandbox run without rules, so you rarely need `Bash` entries such as `Bash(openspec *)`. A command that needs the network or writes outside the sandbox fails even with an entry. The tool name of each `allow_tools_extra` entry (`Skill`, or `Bash` for `Bash(openspec *)`) is also added to the tools the run gets. Runs that write files otherwise get only `Bash`, `Read`, `Edit`, `Write`, `Glob`, `Grep`, and `WebSearch`. Plan runs get `Bash`, `Read`, `Glob`, `Grep`, and `WebSearch`.
+Commands in the sandbox run without rules, so you rarely need `Bash` entries such as `Bash(openspec *)`. A command that needs the network or writes outside the sandbox fails even with an entry. The tool name of each `allow_tools_extra` entry (`Skill`, or `Bash` for `Bash(openspec *)`) is also added to the tools the run gets. Runs that write files otherwise get only `Bash`, `Read`, `Edit`, `Write`, `Glob`, `Grep`, and `WebSearch`. Plan runs get `Bash`, `Read`, `Glob`, `Grep`, and `WebSearch`, and `Edit` and `Write` in a project with `plan_prototype`. A plan run never keeps an edit: an `allow_tools_extra` entry of `Write` is still denied there without `plan_prototype`.
 
 When switchboard reads the config, three kinds of entries are errors. They are an empty entry, an unrestricted `Bash` or `Bash(*)`, and an entry that names an operation every run denies (`git push`, `git rebase`, `gh`, `WebFetch`). A broad entry such as `Bash(git *)` passes, but the denied operations stay denied. Changes to a project's `allow_tools_extra` take effect without a restart; `agent.allow_tools_extra` needs a restart. You can write permissions only in the config file. The web inbox cannot change them.
 
@@ -257,6 +257,35 @@ The same two kinds of runs always get a convention for where to put images. Unde
 On GitHub, the agent attaches the images with `gh issue comment --attach` of the host's `gh` (v2.99.0 or later). It gives `gh` only the agent's token and does not use your `gh` login. For GitLab, the agent uploads them through the uploads API and lists them in a note. When it cannot attach them, the agent posts a comment with only the reason and leaves the done state as it is. Examples are a missing or old `gh`, and a token without the permission. `switchboard doctor` checks the version of `gh` when there are GitHub projects.
 
 You write the steps for taking screenshots and the permissions for the commands they need (`allow_tools_extra`) yourself. See [examples/screenshots.md](examples/screenshots.md) (Japanese) for an example.
+
+### Pictures in plan questions (GitLab)
+
+On a GitLab project, a plan run can show a picture of the screen in a question: one for the question (the screen as it is now) and one for each option (the screen once that option is chosen). A question has either a picture or a Mermaid diagram. The run picks a picture when the question is about how a screen looks or changes, and a diagram for a flow or a state. GitHub projects keep to diagrams, as GitHub has no API that puts an image anywhere in a comment.
+
+The run takes the pictures with `switchboard shot`, which drives Chrome's headless shell on the host. A full Chrome or Chromium makes a Unix socket on start, which a run's sandbox refuses, so it does not start there (V58). Set the browser in `agent.browser`, or put `chrome-headless-shell` on PATH. Without a browser, plan runs are not told about pictures. The headless shell that Playwright installs works:
+
+```yaml
+agent:
+  browser: ~/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell
+```
+
+`switchboard shot` opens only pages on `localhost`, `127.0.0.1`, and `[::1]`, and the page cannot load anything from elsewhere. It waits up to 30 seconds for the page to answer. Each command of a run has a network of its own, so the run starts the app, takes the pictures, and stops the app in one command: `APP > /dev/null 2>&1 & switchboard shot ...; kill %1`. A plan run cannot ask for permission, so Claude Code refuses a command with `$(...)`, backticks, `$!`, a `VAR=value` prefix, or JavaScript with parentheses and `>` on its command line; the run writes its JavaScript with the Write tool to a file in `.switchboard/plan-images/`, the one place a plan run may write, and passes it with `--script` (V58). Write in `plan.md` how to start the app and which port it uses, in that shape:
+
+```markdown
+To take pictures, run `pnpm --dir web/ui exec vite --port 5199 > /dev/null 2>&1 & <shot> --url http://localhost:5199/ ...; kill %1`.
+```
+
+You can also try it by hand:
+
+```bash
+switchboard shot --url http://localhost:5199/ --out shot.png --width 390 --box "#save|move it here"
+```
+
+To show the screen after an option, the run tries three ways in order and stops at the first that is enough: marks on the current screen (`--box`, `--arrow`), JavaScript that changes the page before the picture (`--script`), and, only in a project with `plan_prototype: true`, a change to the source in the worktree. The agent throws every change of a plan run away afterwards; with `plan_prototype` it does not say so in the comment.
+
+A picture need not be of the app. For what a Mermaid diagram draws poorly, such as a layout, things side by side, or a before and after, the run may draw an HTML page in `.switchboard/plan-images/`, serve it on the loopback with `python3 -m http.server`, and take it the same way. On a screenshot, it explains with the labels of `--box` and `--arrow`, or with a short caption that a `--script` adds to the page.
+
+The agent uploads up to 10 pictures a round, PNG, JPEG, or WebP of up to 5 MB each. A picture that cannot be attached leaves a line under its question and `plan.image_dropped` in the audit log. The web inbox draws the pictures of the latest questions in their cards, read through the inbox token; others are links.
 
 ### Running as a service
 

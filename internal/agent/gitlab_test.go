@@ -23,6 +23,8 @@ type gl struct {
 	gref            forge.IssueRef
 	gorigin, gclone string
 	log             bytes.Buffer
+	// edit, when set, changes each agent before it starts.
+	edit func(*Agent)
 }
 
 func newGL(t *testing.T, edit func(*config.Config)) *gl {
@@ -71,6 +73,9 @@ func (x *gl) agent() *Agent {
 		}
 		a.Routes = map[string]Route{"gl:nas/sb": {Forge: x.g, Judge: j}}
 		a.Log = &x.log
+		if x.edit != nil {
+			x.edit(a)
+		}
 	})
 	return a
 }

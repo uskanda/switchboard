@@ -67,3 +67,17 @@ func TestAttachCommentStopsAtAFailedUpload(t *testing.T) {
 		t.Fatalf("requests after a failed upload = %d, want only the upload", len(s.log))
 	}
 }
+
+func TestUploadReturnsTheMarkdown(t *testing.T) {
+	s, c := newServer(t)
+	s.on("POST /api/v4/projects/nas%2Fsb/uploads", jsonReply(map[string]any{"markdown": "![q.png](/uploads/abc/q.png)"}))
+	dir := t.TempDir()
+	p := filepath.Join(dir, "q.png")
+	if err := os.WriteFile(p, []byte("img"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	md, err := c.Upload(ctx, forge.IssueRef{Forge: forge.GitLab, Owner: "nas", Repo: "sb", Number: 3}, p)
+	if err != nil || md != "![q.png](/uploads/abc/q.png)" {
+		t.Fatalf("Upload = %q, %v", md, err)
+	}
+}

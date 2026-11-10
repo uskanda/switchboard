@@ -108,8 +108,8 @@ func TestThePlanAndTheApprovedRunRecordTheirKinds(t *testing.T) {
 	if len(s) != 1 || s[0]["kind"] != "plan" {
 		t.Fatalf("run.started = %v, want one plan run", s)
 	}
-	if allow, ok := s[0]["allow"].([]string); !ok || allow == nil || len(allow) != 0 {
-		t.Errorf("the plan run's allow = %#v, want an empty list", s[0]["allow"])
+	if allow, _ := s[0]["allow"].([]string); !slices.Equal(allow, []string{"Skill", "Bash(openspec *)"}) {
+		t.Errorf("the plan run's allow = %#v, want Skill and Bash(openspec *)", s[0]["allow"])
 	}
 	if h := hashes(s[0]); h["global"] != plan || h["project"] != "" {
 		t.Errorf("the plan run's instructions = %v, want the plan.md hash %s", s[0]["instructions"], plan)

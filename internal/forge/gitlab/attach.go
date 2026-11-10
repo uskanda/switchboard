@@ -20,7 +20,7 @@ import (
 func (c *Client) AttachComment(ctx context.Context, ref forge.IssueRef, body string, files []string) (*forge.Comment, error) {
 	var links []string
 	for _, f := range files {
-		md, err := c.upload(ctx, ref, f)
+		md, err := c.Upload(ctx, ref, f)
 		if err != nil {
 			return nil, err
 		}
@@ -30,8 +30,9 @@ func (c *Client) AttachComment(ctx context.Context, ref forge.IssueRef, body str
 	return c.PostComment(ctx, ref, head+"\n\n"+strings.Join(links, "\n")+"\n\n"+last+"\n")
 }
 
-// upload sends one file as the multipart field "file" and returns its markdown.
-func (c *Client) upload(ctx context.Context, ref forge.IssueRef, path string) (string, error) {
+// Upload implements forge.Uploader: it sends one file as the multipart field "file" (POST /projects/:id/uploads) and
+// returns the markdown GitLab gives for it.
+func (c *Client) Upload(ctx context.Context, ref forge.IssueRef, path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
