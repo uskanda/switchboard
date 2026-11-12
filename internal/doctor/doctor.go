@@ -400,8 +400,9 @@ func (d *Doctor) claude(ctx context.Context) {
 	d.ok("claude %s (checked against %s)", v, claudecode.CheckedVersion)
 }
 
-// gh checks the GitHub CLI the agent attaches the images of a done run with (ADR-051), when this host has a GitHub
-// project. Without it the runs and their write-backs work as before; only the images are not attached.
+// gh checks the GitHub CLI the agent attaches images with, when this host has a GitHub project: the screenshots of a
+// done run (ADR-051) and the pictures of plan questions (ADR-070). Without it the runs and their write-backs work as
+// before; only the images are not attached, and a plan question gets no picture instructions.
 func (d *Doctor) gh(ctx context.Context) {
 	github := false
 	for _, p := range d.Config.ProjectsFor(d.Config.Host.Name) {
@@ -417,10 +418,10 @@ func (d *Doctor) gh(ctx context.Context) {
 	v, err := version(ctx)
 	switch {
 	case err != nil:
-		d.warn("gh: %v: the screenshots of a done run cannot be attached to GitHub issues without gh %s or later", err, ghforge.GHMinVersion)
+		d.warn("gh: %v: the screenshots of a done run and the pictures of plan questions cannot be attached to GitHub issues without gh %s or later", err, ghforge.GHMinVersion)
 	case !ghforge.GHAttaches(v):
-		d.warn("gh %s is older than %s: the screenshots of a done run cannot be attached to GitHub issues", v, ghforge.GHMinVersion)
+		d.warn("gh %s is older than %s: the screenshots of a done run and the pictures of plan questions cannot be attached to GitHub issues", v, ghforge.GHMinVersion)
 	default:
-		d.ok("gh %s (attaches the screenshots of a done run)", v)
+		d.ok("gh %s (attaches the screenshots of a done run and the pictures of plan questions)", v)
 	}
 }
