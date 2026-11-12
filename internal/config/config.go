@@ -260,11 +260,15 @@ const MinRefreshInterval = 10 * time.Second
 // Project is one repository. Ref is the configured "gh:owner/repo" or "gl:group/project"; Forge ("gh" or "gl"),
 // Owner and Repo are parsed from it. On GitLab, Owner is the namespace and may hold subgroups.
 type Project struct {
-	Ref                 string   `yaml:"ref"`
-	Path                string   `yaml:"path"`
-	Host                string   `yaml:"host"`
-	BaseBranch          string   `yaml:"base_branch"`
-	VerifyCommand       string   `yaml:"verify_command"`
+	Ref           string `yaml:"ref"`
+	Path          string `yaml:"path"`
+	Host          string `yaml:"host"`
+	BaseBranch    string `yaml:"base_branch"`
+	VerifyCommand string `yaml:"verify_command"`
+	// SetupCommand is a shell command the agent runs in the worktree before every run starts claude, outside the run's
+	// sandbox and with the verify command's environment: it fetches what the sandbox cannot (dependencies). Claude is
+	// not allowed to run it (ADR-070).
+	SetupCommand        string   `yaml:"setup_command"`
 	IncludeUntrusted    bool     `yaml:"include_untrusted"`
 	ProtectedPathsExtra []string `yaml:"protected_paths_extra"`
 	// PlanFirst is how the ready label starts: always with a plan that waits for approval before any change is made,

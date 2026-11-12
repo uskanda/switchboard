@@ -168,7 +168,7 @@ func (c *Client) ProjectIcon(ctx context.Context, ref string) (*Icon, error) {
 }
 
 // IssueImage returns an image of an issue's comments, named by the issue (gl:group/project#n) and its address as the
-// comment has it (ADR-069, ADR-070). Only the uploads of the issue's GitLab project, and GitHub's attachments for a
+// comment has it (ADR-069, ADR-071). Only the uploads of the issue's GitLab project, and GitHub's attachments for a
 // GitHub issue, are served; anything else is ErrNotFound.
 func (c *Client) IssueImage(ctx context.Context, issue, src string) (*Icon, error) {
 	q := url.Values{"issue": {issue}, "src": {src}}

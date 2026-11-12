@@ -166,6 +166,7 @@ claude -p \
 - `--strict-mcp-config` と空に近い `mcp.json` で、対象リポジトリの `.mcp.json` 由来のMCPサーバーを読み込ませない
 - `-p` は `--bare` を付けない限り、対象リポジトリの `.claude/settings.json` のフックと `.mcp.json` を信頼確認なしで読み込む〔確認済C19〕。`--bare` はサブスクリプションのOAuth認証を読まないため使えない〔確認済C19, C21〕。対策は次の3つ。(1) `--strict-mcp-config` でMCPを固定する。(2) `--setting-sources project,local` で、ユーザーの全体設定を外してプロジェクト設定を読み込む（ADR-028、ADR-057）。V17のとおり、プロジェクト設定を外すと `CLAUDE.md` も読み込まれない。(3) 実行前にworktreeの `.claude/`・`.mcp.json`・`CLAUDE.md` がベースブランチと一致するか確認し、一致しなければ実行しない（ADR-018）
 - `settings.json` はrunごとにエージェントが生成する（許可ツール・拒否ルール・サンドボックス設定）。sandboxは常に有効にする（ADR-057）。`failIfUnavailable` を有効にし、`allowUnsandboxedCommands` を無効にする。sandboxの中のBashは許可の規則なしで動き、拒否の規則だけが働く。`excludedCommands` は、`git` と検証コマンドの全体とする。`filesystem.denyRead` には、資格情報の置き場所、設定ファイルのディレクトリ、状態のディレクトリの項目を入れる。状態のディレクトリの `worktrees` と、実在しないパスは入れない。この設定はrunにだけ渡すので、マスターが手で開く対話セッションには影響しない
+- プロジェクトに `setup_command` があれば、エージェントは、worktreeの準備のあとでclaudeを起動する前に、そのコマンドをworktreeで実行する（ADR-070）。sandboxの外で、検証コマンドと同じ環境で動かす。失敗したとき、`timeout` を超えたとき、gitから見える変更をworktreeに残したときは、claudeを起動せずに実行を誤りにする。`excludedCommands` には入れないので、claudeはこのコマンドをsandboxの外で実行できない
 - Linuxでは、claudeを起動する前に `bwrap --ro-bind / / --dev /dev --unshare-all true` を実行する。名前空間を作れなければ、実行を誤りにする（V51）
 - 作業ディレクトリは、issueごとに固定したパスのworktreeとする。パスは `<data>/worktrees/<forge>/<project>/issue-<n>`。ブランチは `switchboard/issue-<n>`。`--resume` は作業ディレクトリに縛られず、IDで全プロジェクトから探す〔確認済C17〕。それでもファイルの文脈を揃えるため、パスは固定する
 - transcript（`~/.claude/projects/…/<session-id>.jsonl`）の形式は内部仕様でバージョンごとに変わる〔確認済C22〕ので解析しない。必要な情報はstream-jsonの最終resultから取る
@@ -417,6 +418,7 @@ projects:
     host: macbook-air
     base_branch: main
     verify_command: "make test"        # 任意。未設定なら検証なし（ADR-022）
+    setup_command: "pnpm install --frozen-lockfile"   # 任意。実行のたびに、claudeの起動の前にsandboxの外で動かす（ADR-070）
     include_untrusted: false           # 公開リポジトリでは true にできない
     protected_paths_extra: []
 comments:

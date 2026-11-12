@@ -44,7 +44,7 @@ type PlacedError struct {
 func (e *PlacedError) Error() string { return e.Err.Error() }
 func (e *PlacedError) Unwrap() error { return e.Err }
 
-// PlacedAttacher is a forge client that attaches image files to a comment and puts each where its mark is (ADR-070).
+// PlacedAttacher is a forge client that attaches image files to a comment and puts each where its mark is (ADR-071).
 // Only the GitHub client is one: gh --attach puts the images after the body, and the comment is edited afterwards to
 // move them. The comment ends with the last line of body. When the images cannot be put in place, the comment is
 // deleted and an error returned, so that the caller can post the comment without them.
@@ -60,7 +60,7 @@ type UploadReader interface {
 	ReadUpload(ctx context.Context, owner, repo, secret, name string) ([]byte, error)
 }
 
-// AttachmentReader reads back an image attached to a comment on GitHub (ADR-070), the one at
+// AttachmentReader reads back an image attached to a comment on GitHub (ADR-071), the one at
 // https://github.com/user-attachments/assets/<id>, checked by ImageTypeUpTo with MaxQuestionImageBytes; ErrNotFound
 // when there is none.
 type AttachmentReader interface {

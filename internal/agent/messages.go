@@ -14,9 +14,11 @@ type texts struct {
 
 	timeout, interrupted, maxTurns, failed, noDeclaration, prepare, start, sandbox string
 	configChanged, verifyFailed, notPushed, pushFailed, prFailed, mrFailed         string
-	pr, mr, verified, notVerified, prSummary, prVerification, withheld             string
-	prUpdated, mrUpdated                                                           string // the done line of a reused change request
-	claim, multipleStarts                                                          string
+	// A setup command that failed, ran out of time, or left changes git sees (paths, or only content) in the worktree.
+	setupFailed, setupTimeout, setupChanged, setupChangedContent       string
+	pr, mr, verified, notVerified, prSummary, prVerification, withheld string
+	prUpdated, mrUpdated                                               string // the done line of a reused change request
+	claim, multipleStarts                                              string
 
 	// A push the agent does not fix: the title, why for each kind, and the heading of git's output.
 	pushTitle, pushAuth, pushRule, pushMoved, gitOutput string
@@ -79,10 +81,15 @@ var english = texts{
 
 	configChanged: "The Claude Code configuration in the worktree differs from the base branch, so claude was not started: %s. Restore these files, then reply.",
 	verifyFailed:  "`%s` failed. The end of its output:",
-	notPushed:     "The branch was not pushed:",
-	pushFailed:    "The branch could not be pushed: %s",
-	prFailed:      "The branch was pushed, but the pull request could not be opened: %s",
-	mrFailed:      "The branch was pushed, but the merge request could not be opened: %s",
+	setupFailed:   "The setup command `%s` failed, so claude was not started. The end of its output:",
+	setupTimeout:  "The setup command `%s` ran longer than the timeout (%s), so claude was not started. The end of its output:",
+	setupChanged:  "The setup command `%s` left changes that git sees in the worktree, so claude was not started. Make the command write only to ignored paths. The changed paths:",
+
+	setupChangedContent: "The setup command `%s` changed the content of tracked files in the worktree, so claude was not started. Make the command write only to ignored paths.",
+	notPushed:           "The branch was not pushed:",
+	pushFailed:          "The branch could not be pushed: %s",
+	prFailed:            "The branch was pushed, but the pull request could not be opened: %s",
+	mrFailed:            "The branch was pushed, but the merge request could not be opened: %s",
 
 	pr:             "Pull request: %s",
 	prUpdated:      "Pull request updated: %s",
@@ -181,10 +188,15 @@ var japanese = texts{
 
 	configChanged: "worktreeのClaude Codeの設定が基準ブランチと異なるため、claudeを起動しませんでした：%s。これらのファイルを元に戻してから返信してください。",
 	verifyFailed:  "`%s` が失敗しました。出力の末尾：",
-	notPushed:     "ブランチをpushしませんでした：",
-	pushFailed:    "ブランチをpushできませんでした：%s",
-	prFailed:      "ブランチはpushしましたが、PRを作れませんでした：%s",
-	mrFailed:      "ブランチはpushしましたが、MRを作れませんでした：%s",
+	setupFailed:   "準備のコマンド `%s` が失敗したため、claudeを起動しませんでした。出力の末尾：",
+	setupTimeout:  "準備のコマンド `%s` がタイムアウト（%s）を超えたため、claudeを起動しませんでした。出力の末尾：",
+	setupChanged:  "準備のコマンド `%s` が、gitから見える変更をworktreeに残したため、claudeを起動しませんでした。コマンドが無視の対象のパスだけに書くようにしてください。変わったパス：",
+
+	setupChangedContent: "準備のコマンド `%s` が、worktreeの追跡しているファイルの内容を変えたため、claudeを起動しませんでした。コマンドが無視の対象のパスだけに書くようにしてください。",
+	notPushed:           "ブランチをpushしませんでした：",
+	pushFailed:          "ブランチをpushできませんでした：%s",
+	prFailed:            "ブランチはpushしましたが、PRを作れませんでした：%s",
+	mrFailed:            "ブランチはpushしましたが、MRを作れませんでした：%s",
 
 	pr:             "PR：%s",
 	prUpdated:      "PRを更新しました：%s",

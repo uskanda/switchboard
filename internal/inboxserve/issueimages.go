@@ -18,7 +18,7 @@ import (
 )
 
 // IssueImages serves /v1/issue-image: an image uploaded to a GitLab project, or attached to a GitHub comment, as the
-// question comments of plan runs hold them (ADR-069, ADR-070), read with the inbox token. An upload never changes, so the image read is kept in Dir for good.
+// question comments of plan runs hold them (ADR-069, ADR-071), read with the inbox token. An upload never changes, so the image read is kept in Dir for good.
 type IssueImages struct {
 	// Config is the configuration in use; Server.Reload replaces it.
 	Config *config.Config

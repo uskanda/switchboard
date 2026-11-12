@@ -40,7 +40,7 @@ type outcome struct {
 	Skipped    []workspace.Skipped `json:"skipped,omitempty"`
 	ShotsError string              `json:"shots_error,omitempty"`
 	// For plan questions on GitHub: the images AttachPlaced puts at their marks in Body, and the comment posted instead
-	// when they cannot be put in place (ADR-070).
+	// when they cannot be put in place (ADR-071).
 	Placed []placedImage `json:"placed,omitempty"`
 	Plain  string        `json:"plain,omitempty"`
 	// Until, for a run that hit a usage limit (queued, or a fix run's wait): when the host starts runs again.

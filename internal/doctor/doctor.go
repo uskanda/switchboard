@@ -401,7 +401,7 @@ func (d *Doctor) claude(ctx context.Context) {
 }
 
 // gh checks the GitHub CLI the agent attaches images with, when this host has a GitHub project: the screenshots of a
-// done run (ADR-051) and the pictures of plan questions (ADR-070). Without it the runs and their write-backs work as
+// done run (ADR-051) and the pictures of plan questions (ADR-071). Without it the runs and their write-backs work as
 // before; only the images are not attached, and a plan question gets no picture instructions.
 func (d *Doctor) gh(ctx context.Context) {
 	github := false

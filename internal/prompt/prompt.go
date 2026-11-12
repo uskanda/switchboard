@@ -334,6 +334,25 @@ const sandbox = `
 - Never ask to run a command outside the sandbox (dangerouslyDisableSandbox): such a request is refused.
 `
 
+// WithSetup returns system with the section on the project's setup command, which the agent ran in the worktree
+// before the run to fetch what the sandbox cannot; system itself when the project has none (ADR-070).
+func WithSetup(system, setup string) string {
+	v := strings.Join(strings.Fields(setup), " ")
+	if v == "" {
+		return system
+	}
+	return system + fmt.Sprintf(setupSection, "`"+v+"`")
+}
+
+// setupSection is the section of WithSetup; %s is the setup command.
+const setupSection = `
+## Dependencies
+
+- switchboard ran %s in this directory before this run, outside the sandbox, so the project's dependencies are already installed.
+- Do not install or download dependencies yourself, and do not run that command: the sandbox cannot reach the network, and the attempt only fails after its retries.
+- If something is missing all the same, or your change needs a dependency that is not installed, say what is missing and end the run as waiting.
+`
+
 // WithUserInstructions returns system with the user's additional instructions added as its last section, or system
 // itself when extra is blank. The built-in rules win where the two conflict.
 func WithUserInstructions(system, extra string) string {
@@ -365,7 +384,7 @@ type PlanImages struct {
 }
 
 // WithPlanImages returns system, the system prompt of a plan run, with the Images section before its Tools section
-// (ADR-069, ADR-070). Only a plan run with a browser and a forge that can place images gets it. The place and the limits are those of
+// (ADR-069, ADR-071). Only a plan run with a browser and a forge that can place images gets it. The place and the limits are those of
 // workspace.PlanImageDir, workspace.MaxScreenshots and workspace.MaxScreenshotSize.
 func WithPlanImages(system string, im PlanImages) string {
 	proto := ""

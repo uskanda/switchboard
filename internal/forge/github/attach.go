@@ -75,7 +75,7 @@ func (c *Client) AttachComment(ctx context.Context, ref forge.IssueRef, body str
 // attachedImage is an image gh put after the body: ![name](https://github.com/user-attachments/assets/<uuid>).
 var attachedImage = regexp.MustCompile(`!\[([^\]\n]*)\]\((https://github\.com/user-attachments/assets/[0-9a-fA-F-]+)\)`)
 
-// AttachPlaced implements forge.PlacedAttacher (ADR-070): it posts body with gh issue comment --attach, as
+// AttachPlaced implements forge.PlacedAttacher (ADR-071): it posts body with gh issue comment --attach, as
 // AttachComment does, then edits the comment so that the image of each file, which gh put after the body, takes the
 // place of the file's mark. The images gh put are matched to the files in order, and each by its name, the file's
 // name without its extension. An edit that fails is tried once more; when the images cannot be put in place, the

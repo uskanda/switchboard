@@ -184,6 +184,28 @@ A run does not use the Claude Code user's global settings (the sandbox, hooks, p
 
 Linux hosts need `bubblewrap` and `socat`. For each run, before it starts claude, the agent checks that bwrap can create namespaces. When it cannot, as inside another sandbox or a container, the agent does not start claude. It marks the run as an error and gives the reason in a comment.
 
+### Preparing dependencies
+
+Commands in the sandbox cannot download dependencies. For a project whose tests need them, put a setup command in `setup_command`.
+
+```yaml
+projects:
+  - ref: gh:owner/repo
+    setup_command: pnpm install --frozen-lockfile
+```
+
+Before every run, after it prepares the worktree and before it starts claude, the agent runs this command in the worktree. Plan runs and fix runs get it too. The command runs outside the sandbox and can reach the network. It gets the environment of the verify command, so no forge token reaches it. `agent.timeout` limits how long it may take. claude cannot run this command outside the sandbox.
+
+Because the command runs before every run, pick one that ends quickly when the dependencies are up to date and that leaves the lockfile alone. `pnpm install --frozen-lockfile`, `npm ci`, and `go mod download` are examples. List the paths it writes to (`node_modules`, for example) in `.gitignore`.
+
+In each of these cases the agent does not start claude, sets the issue to waiting, and gives the reason in a comment.
+
+- It ended with a non-zero exit code. The comment carries the end of its output
+- It ran longer than `agent.timeout`
+- It left changes that git sees in the worktree: a rewritten tracked file, or a new file that is not ignored. The comment lists the changed paths, and the changes stay in the worktree
+
+The whole output is kept in `setup.log` in the run's directory, and the audit log gets a `setup.ran` line. Fix the configuration and reply on the issue to start the next run.
+
 ### Extra permissions and instructions for implementation runs
 
 You can give extra allowed tools and additional instructions of your own to the runs that write files. These are direct implementation, implementation after approval, and the runs that fix a CI failure, a push failure, or a conflict with the base. With these, unattended runs can use the skills and CLIs you use by hand. Plan runs get the extra allowed tools as well, so that they can start the app for the pictures of their questions (ADR-069); their instructions are in `plan.md`.
@@ -260,7 +282,7 @@ You write the steps for taking screenshots and the permissions for the commands 
 
 ### Pictures in plan questions
 
-A plan run can show a picture of the screen in a question: one for the question (the screen as it is now) and one for each option (the screen once that option is chosen). A question has either a picture or a Mermaid diagram. The run picks a picture when the question is about how a screen looks or changes, and a diagram for a flow or a state. On a GitHub project, `gh` 2.99.0 or later must also be on PATH (ADR-070). GitHub has no API that puts an image anywhere in a comment. So the agent posts the question with the pictures attached through `gh issue comment --attach`, then edits the comment at once to move each picture from the end to its question or option. With an older `gh`, or none, GitHub plan runs are not told about pictures. As with the screenshots of a done run, `gh` gets only the agent's token, and `switchboard doctor` checks its version.
+A plan run can show a picture of the screen in a question: one for the question (the screen as it is now) and one for each option (the screen once that option is chosen). A question has either a picture or a Mermaid diagram. The run picks a picture when the question is about how a screen looks or changes, and a diagram for a flow or a state. On a GitHub project, `gh` 2.99.0 or later must also be on PATH (ADR-071). GitHub has no API that puts an image anywhere in a comment. So the agent posts the question with the pictures attached through `gh issue comment --attach`, then edits the comment at once to move each picture from the end to its question or option. With an older `gh`, or none, GitHub plan runs are not told about pictures. As with the screenshots of a done run, `gh` gets only the agent's token, and `switchboard doctor` checks its version.
 
 The run takes the pictures with `switchboard shot`, which drives Chrome's headless shell on the host. A full Chrome or Chromium makes a Unix socket on start, which a run's sandbox refuses, so it does not start there (V58). Set the browser in `agent.browser`, or put `chrome-headless-shell` on PATH. Without a browser, plan runs are not told about pictures. The headless shell that Playwright installs works:
 
@@ -285,7 +307,7 @@ To show the screen after an option, the run tries three ways in order and stops 
 
 A picture need not be of the app. For what a Mermaid diagram draws poorly, such as a layout, things side by side, or a before and after, the run may draw an HTML page in `.switchboard/plan-images/`, serve it on the loopback with `python3 -m http.server`, and take it the same way. On a screenshot, it explains with the labels of `--box` and `--arrow`, or with a short caption that a `--script` adds to the page.
 
-The agent uploads up to 10 pictures a round, PNG, JPEG, or WebP of up to 5 MB each. A picture that cannot be attached leaves a line under its question and `plan.image_dropped` in the audit log. When the pictures cannot be moved into place on GitHub, the agent deletes that comment and posts the questions again without them. The web inbox draws the pictures of the latest questions in their cards, read through the inbox token; others are links. Whether the web inbox can read the pictures of a private GitHub repository is not yet checked (V59); if it cannot, they are links.
+The agent uploads up to 10 pictures a round, PNG, JPEG, or WebP of up to 5 MB each. A picture that cannot be attached leaves a line under its question and `plan.image_dropped` in the audit log. When the pictures cannot be moved into place on GitHub, the agent deletes that comment and posts the questions again without them. The web inbox draws the pictures of the latest questions in their cards, read through the inbox token; others are links. Whether the web inbox can read the pictures of a private GitHub repository is not yet checked (V60); if it cannot, they are links.
 
 ### Running as a service
 

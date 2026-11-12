@@ -17,7 +17,7 @@ import (
 	"github.com/uskanda/switchboard/internal/workspace"
 )
 
-// planImagesOf says whether the plan runs of ref may show pictures (ADR-069, ADR-070), and how they take one: a GitLab
+// planImagesOf says whether the plan runs of ref may show pictures (ADR-069, ADR-071), and how they take one: a GitLab
 // project's when its client uploads, a GitHub project's when its client places attachments and gh has --attach, and
 // only when a browser is found.
 func (a *Agent) planImagesOf(ref forge.IssueRef, prototype bool) (prompt.PlanImages, bool) {

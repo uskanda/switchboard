@@ -34,7 +34,7 @@ func isAttachmentHost(host string) bool {
 	return ok && strings.HasPrefix(bucket, "github-production-user-asset-") && !strings.Contains(bucket, ".")
 }
 
-// ReadAttachment implements forge.AttachmentReader (ADR-070): it reads github.com/user-attachments/assets/<id> with the
+// ReadAttachment implements forge.AttachmentReader (ADR-071): it reads github.com/user-attachments/assets/<id> with the
 // client's token, and follows the redirect only to where GitHub keeps the file, without the token.
 func (c *Client) ReadAttachment(ctx context.Context, id string) ([]byte, error) {
 	allowed := c.attachmentHost
