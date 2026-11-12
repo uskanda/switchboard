@@ -333,6 +333,15 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) (o *outcome) {
 		}
 		return o.verify(fmt.Sprintf(a.msg.configChanged, err))
 	}
+	if cmd := strings.TrimSpace(p.SetupCommand); cmd != "" {
+		why, canceled := a.setup(ctx, sp, is.Ref, rec.Run, cmd)
+		if canceled {
+			return nil
+		}
+		if why != "" {
+			return o.fail(why)
+		}
+	}
 	if pl.implements() {
 		if err := sp.PrepareScreenshots(ctx); err != nil {
 			if ctx.Err() != nil {
@@ -424,9 +433,11 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) (o *outcome) {
 			req.SystemPrompt = prompt.WithScreenshots(req.SystemPrompt)
 		}
 		req.SystemPrompt = prompt.WithSandbox(req.SystemPrompt, p.VerifyCommand)
+		req.SystemPrompt = prompt.WithSetup(req.SystemPrompt, p.SetupCommand)
 		req.SystemPrompt = prompt.WithUserInstructions(req.SystemPrompt, extra)
 	}
 	if pl.kind == planRun {
+		req.SystemPrompt = prompt.WithSetup(req.SystemPrompt, p.SetupCommand)
 		req.ResumeFrom = a.resumeFrom(pl, launchOf(req, head))
 		in.Continued = req.ResumeFrom != ""
 	}

@@ -391,3 +391,19 @@ func TestPlanSystemWithoutImagesHasNoSection(t *testing.T) {
 		t.Fatal("a plan run without images is told about them")
 	}
 }
+
+func TestWithSetupNamesTheCommandThatFetchedTheDependencies(t *testing.T) {
+	sys := System("en", "main")
+	s := WithSetup(sys, "  pnpm   install --frozen-lockfile ")
+	if !strings.HasPrefix(s, sys) {
+		t.Fatalf("WithSetup changed the rules:\n%s", s)
+	}
+	for _, want := range []string{"## Dependencies", "`pnpm install --frozen-lockfile`", "before this run", "Do not", "missing"} {
+		if !strings.Contains(s[len(sys):], want) {
+			t.Errorf("the setup section lacks %q:\n%s", want, s[len(sys):])
+		}
+	}
+	if none := WithSetup(sys, " "); none != sys {
+		t.Errorf("a project without a setup command got a section:\n%s", none[len(sys):])
+	}
+}

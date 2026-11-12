@@ -85,6 +85,7 @@ projects:
     host: ubuntu-a
     base_branch: main
     verify_command: ""                # empty: no verification, and the pull request says so
+    # setup_command: pnpm install --frozen-lockfile   # run in the worktree before every run starts claude, outside the sandbox: fetch dependencies here, into ignored paths only
     include_untrusted: false          # true is refused for public repositories
     protected_paths_extra: []
     plan_first: never                 # how agent:ready starts: always (with a plan, as agent:plan), auto (with a plan unless the issue is clear), never (true and false still read as always and never)
