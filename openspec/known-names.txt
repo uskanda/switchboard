@@ -46,3 +46,4 @@ navigator.language
 navigator.languages
 document.documentElement.lang
 window.navigator
+private-user-images.githubusercontent.com
