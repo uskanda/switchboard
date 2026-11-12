@@ -36,4 +36,4 @@
 ## 6. 全体の確認
 
 - [x] 6.1 `make verify` をsandboxの外で実行し、通ることを確かめる
-- [ ] 6.2 `config.yaml` のsmarternewsのプロジェクトに `setup_command: pnpm install --frozen-lockfile` を足し、計画の実行を1回動かす。worktreeに `node_modules` ができ、実行の中で `pnpm exec vitest run` が通り、監査ログに `<setup.ran>` が残ることを確かめる。結果を `docs/ROADMAP.md` の検証項目に書く
+- [x] 6.2 `config.yaml` のsmarternewsのプロジェクトに `setup_command: pnpm install --frozen-lockfile` を足し、計画の実行を1回動かす。worktreeに `node_modules` ができ、実行の中で `pnpm exec vitest run` が通り、監査ログに `<setup.ran>` が残ることを確かめる。結果を `docs/ROADMAP.md` の検証項目に書く
