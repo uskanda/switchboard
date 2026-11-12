@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -200,6 +201,10 @@ func (x *h) agentWith(edit func(*Agent)) *Agent {
 		Env:      append(os.Environ(), x.envExtra...),
 		IntGrace: 200 * time.Millisecond, TermGrace: 200 * time.Millisecond,
 		CheckSandbox: noSandboxCheck,
+		// No browser and no gh with --attach, whatever this host has, so that a plan run is told about pictures
+		// only in the tests that give it them.
+		FindBrowser: func() (string, error) { return "", errors.New("no browser in the tests") },
+		GHAttaches:  func() bool { return false },
 	}
 	if edit != nil {
 		edit(x.a)
