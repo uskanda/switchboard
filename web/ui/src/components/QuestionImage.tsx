@@ -37,8 +37,8 @@ export const projectBase = (issueUrl: string) => issueUrl.replace(/\/-\/(?:issue
 const href = (src: string, base: string) => (src.startsWith("/") && !src.startsWith("//") && base ? base + src : src);
 
 /**
- * QuestionImage draws a picture of a plan question (ADR-069), read through this server from the issue's GitLab
- * project with the inbox token, so that the page's CSP stays img-src 'self'. It fits the card's width, and a tall one
+ * QuestionImage draws a picture of a plan question (ADR-069, ADR-071), read through this server from the issue's
+ * GitLab project or GitHub's attachments with the inbox token, so that the page's CSP stays img-src 'self'. It fits the card's width, and a tall one
  * a height of 60% of the screen at most; pressing it
  * opens it at its own size in a dialog that scrolls both ways. A picture that cannot be read, or one drawn outside an
  * issue, is a link to it, as every other image of issue text is.

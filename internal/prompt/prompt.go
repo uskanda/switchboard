@@ -384,7 +384,7 @@ type PlanImages struct {
 }
 
 // WithPlanImages returns system, the system prompt of a plan run, with the Images section before its Tools section
-// (ADR-069). Only a GitLab project's plan run with a browser gets it. The place and the limits are those of
+// (ADR-069, ADR-071). Only a plan run with a browser and a forge that can place images gets it. The place and the limits are those of
 // workspace.PlanImageDir, workspace.MaxScreenshots and workspace.MaxScreenshotSize.
 func WithPlanImages(system string, im PlanImages) string {
 	proto := ""

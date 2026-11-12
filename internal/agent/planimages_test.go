@@ -160,16 +160,110 @@ func TestPlanRunWithoutABrowserGetsNoImages(t *testing.T) {
 	}
 }
 
-func TestGitHubPlanRunGetsNoImages(t *testing.T) {
+// newImageH is a GitHub world whose agent finds a browser and a gh that has --attach, when attaches.
+func newImageH(t *testing.T, attaches bool) *h {
+	t.Helper()
 	x := newH(t, "", nil)
-	x.agentWith(func(a *Agent) { a.FindBrowser = func() (string, error) { return "/usr/bin/chromium", nil } })
+	x.agentWith(func(a *Agent) {
+		a.FindBrowser = func() (string, error) { return "/usr/bin/chromium", nil }
+		a.GHAttaches = func() bool { return attaches }
+	})
+	return x
+}
+
+func (x *h) questionPosts() []post {
+	var out []post
+	for _, p := range x.posts(x.ref) {
+		if p.Marker != nil && p.Marker.Reason == "plan-questions" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func TestGitHubPlanQuestionGetsItsImagesInPlace(t *testing.T) {
+	x := newImageH(t, true)
+	x.step(1, pngFile("q.png")+pngFile("b.png")+imageQuestion("q.png", map[string]string{"B": "b.png"}))
+	p := x.startPlan()
+	if len(x.f.Placed) != 1 || !slices.Equal(x.f.Placed[0], []string{"q.png", "b.png"}) {
+		t.Fatalf("placed %v, want q.png then b.png", x.f.Placed)
+	}
+	q := strings.Index(p.Body, "![q](https://github.com/user-attachments/assets/")
+	b := strings.Index(p.Body, "A: Keep it\nB: Move it up\n![b](https://github.com/user-attachments/assets/")
+	if q < 0 || b < q || strings.Index(p.Body, "Where does the save button go?") > q {
+		t.Fatalf("the images are not in place:\n%s", p.Body)
+	}
+	if strings.Contains(p.Body, "switchboard-image:") || strings.Contains(p.Body, "```mermaid") {
+		t.Fatalf("a mark or the diagram is left:\n%s", p.Body)
+	}
+	if p.Marker == nil || p.Marker.Reason != "plan-questions" || len(x.questionPosts()) != 1 {
+		t.Fatalf("marker %+v, %d question posts", p.Marker, len(x.questionPosts()))
+	}
+	sys := x.file("system-1.md")
+	if !strings.Contains(sys, "## Images") || !strings.Contains(sys, "shot --browser /usr/bin/chromium") {
+		t.Errorf("the GitHub plan run was not told about images:\n%s", sys)
+	}
+	if !strings.Contains(x.file("argv-1"), "Write") {
+		t.Errorf("the plan run lacks the Write tool:\n%s", x.file("argv-1"))
+	}
+}
+
+func TestGitHubPlanRunWithAnOldGHGetsNoImages(t *testing.T) {
+	x := newImageH(t, false)
 	x.step(1, pngFile("q.png")+imageQuestion("q.png", map[string]string{"A": "q.png"}))
 	p := x.startPlan()
 	if sys := x.file("system-1.md"); strings.Contains(sys, "## Images") {
-		t.Fatal("a GitHub plan run was told about images")
+		t.Fatal("a plan run without gh --attach was told about images")
 	}
-	if len(x.f.Uploaded) != 0 || strings.Contains(p.Body, "could not be attached") || strings.Contains(p.Body, "q.png") {
-		t.Fatalf("a GitHub question got images: %v\n%s", x.f.Uploaded, p.Body)
+	if len(x.f.Placed) != 0 || strings.Contains(p.Body, "could not be attached") || strings.Contains(p.Body, "q.png") {
+		t.Fatalf("a question got images: %v\n%s", x.f.Placed, p.Body)
+	}
+	if !strings.Contains(p.Body, "```mermaid") {
+		t.Errorf("the diagram is gone:\n%s", p.Body)
+	}
+}
+
+func TestGitHubPlanImagesThatCannotBePlacedArePostedWithout(t *testing.T) {
+	x := newImageH(t, true)
+	x.f.FailPlaced = errors.New("put the images in place: 502")
+	x.step(1, pngFile("q.png")+pngFile("b.png")+imageQuestion("q.png", map[string]string{"B": "b.png"}))
+	p := x.startPlan()
+	if len(x.questionPosts()) != 1 {
+		t.Fatalf("%d question posts", len(x.questionPosts()))
+	}
+	if !strings.Contains(p.Body, "Some images of this question could not be attached.") || !strings.Contains(p.Body, "```mermaid") ||
+		strings.Contains(p.Body, "switchboard-image:") || !strings.Contains(p.Body, "B: Move it up\nC: Drop it") {
+		t.Fatalf("post:\n%s", p.Body)
+	}
+	for _, option := range []string{"", "B"} {
+		if !x.audit.has("plan.image_dropped", func(e map[string]any) bool {
+			r, _ := e["reason"].(string)
+			return e["option"] == option && strings.HasPrefix(r, imageAttachFail)
+		}) {
+			t.Errorf("no plan.image_dropped for option %q", option)
+		}
+	}
+}
+
+func TestGitHubPlanImagesLeftInTheCommentAreNotPostedAgain(t *testing.T) {
+	x := newImageH(t, true)
+	x.f.FailPlaced = errors.New("the comment cannot be deleted")
+	x.f.PlacedLeft = true
+	x.step(1, pngFile("q.png")+imageQuestion("q.png", nil))
+	x.f.AddLabel(x.ref, "agent:plan", x.master)
+	x.poll()
+	x.settle()
+	n := 0
+	for _, c := range x.f.CommentsOf(x.ref) {
+		if strings.Contains(c.Body, "Where does the save button go?") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("%d question comments, want the one left", n)
+	}
+	if !x.audit.has("plan.images_left", func(e map[string]any) bool { return e["issue"] == x.ref.String() }) {
+		t.Error("the comment left with its images out of place is not logged")
 	}
 }
 
@@ -217,7 +311,8 @@ func TestPlanImagesStopAtTen(t *testing.T) {
 	a := &Agent{Audit: rec}
 	f := newUploadCounter()
 	d := &PlanDeclaration{Status: "questions", Questions: qs}
-	a.attachPlanImages(t.Context(), forge.IssueRef{Forge: forge.GitLab, Owner: "nas", Repo: "sb", Number: 3}, "run", d, 1, dir, f)
+	ref := forge.IssueRef{Forge: forge.GitLab, Owner: "nas", Repo: "sb", Number: 3}
+	a.attachPlanImages(t.Context(), ref, "run", d, 1, dir, func(_ int, _ string, p string) (string, error) { return f.Upload(t.Context(), ref, p) })
 	if f.n != 10 {
 		t.Fatalf("uploaded %d, want 10", f.n)
 	}

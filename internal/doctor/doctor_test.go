@@ -77,6 +77,7 @@ func TestGHIsChecked(t *testing.T) {
 		t.Fatalf("%d failures:\n%s", n, w.out.String())
 	}
 	w.expect(t, "ok", "gh 2.99.0")
+	w.expect(t, "ok", "pictures of plan questions")
 	for _, c := range []struct {
 		version string
 		err     error
@@ -92,6 +93,7 @@ func TestGHIsChecked(t *testing.T) {
 		}
 		w.expect(t, "warn", c.want)
 		w.expect(t, "warn", "screenshots")
+		w.expect(t, "warn", "pictures of plan questions")
 	}
 }
 
