@@ -377,3 +377,9 @@
 - 決定：計画の実行にも `allow_tools_extra` を渡す。ADR-051の「撮影専用の設定の項目は作らない」を改め、`agent.browser` と、プロジェクトごとの `plan_prototype` を足す。`plan_prototype` を有効にしたプロジェクトだけ、計画の実行に `Edit` と `Write` を許す。書き換えは、今までどおり実行のあとの検査で捨て、そのことはコメントに書かない。「計画の実行は何も変えない」という前提は、このプロジェクトでは「変えても必ず捨てる」に改める
 - 決定：受信箱の `/v1/issue-image` が返すのは、issueのGitLabのプロジェクトのアップロード（`/uploads/<secret>/<name>`）だけである。受信箱のトークンでGitLabのAPIから読み、画像の形式を検査して返す。Web表示は、最新の質問の問いのカードで、その画像を `switchboard-web` を通して描く。CSPは変えない
 - 理由：利用者が図で知りたいのは、多くの場合「画面が実際にどう変わるか」であり、流れ図では伝わらない。GitLabはアップロードの記法を本文の好きな位置に置けるが、GitHubには公開のAPIが無く、`gh --attach` は画像を末尾に付ける。sandboxの中の1回のコマンドでサーバーを起動してChromiumで撮れることは、V58で確かめた。撮影を決まったサブコマンドにすれば、LLMにsandboxの外でスクリプトを動かさせずに済む。開けるページと読み込みの先も、switchboardが絞れる。試作は手間がかかり、worktreeを書き換えるので、利用者が選んだプロジェクトだけに許す。grillingの記録は `add-plan-question-images` の第1〜第4ラウンドQ1〜Q17
+
+## ADR-070 GitHubの計画の質問にも、画像を付ける（採用、2026-11-12）
+- 決定：ADR-069の「GitHubのプロジェクトはMermaidだけとする」を改める。GitHubのプロジェクトの計画の実行にも、GitLabと同じ画像の項を渡す。渡すのは、ブラウザが見つかり、`gh` が `--attach` を持つ（2.99.0以上）ときだけとする
+- 決定：画像を持つ質問のコメントは、画像の位置に目印（`<!-- switchboard-image:N -->` の行）を置いた本文を、`gh issue comment --attach` で投稿する。そのあと、末尾に付いた画像の記法を順に目印の位置へ移すように、コメントを編集する。記法の名前は、拡張子を除いたファイル名と照らし合わせる。編集に失敗したら1度だけやり直す。それでも失敗したら、コメントを消し、画像なしの質問を投稿し直す。投稿し直した質問は、画像を付けられなかったことを問いに書き、図を残し、画像ごとに `plan.image_dropped` を残す。消すこともできなかったときは、`plan.images_left` を残し、投稿し直さない
+- 決定：受信箱の `/v1/issue-image` は、GitHubのissueでは添付の画像を返す。URLは `https://github.com/user-attachments/assets/<uuid>` の形に限る。受信箱のトークンは `github.com` への要求にだけ付ける。転送の先は、GitHubの添付の置き場所の2つのホストだけを許し、トークンを付けない。S3の `github-production-user-asset-*` のバケットと、`private-user-images.githubusercontent.com` である
+- 理由：smarternewsのgrillingで、GitHubのプロジェクトには画像が出なかった。`gh --attach` がエージェントのトークンで画像を付けられることは、実装のdoneの添付で分かった（V47）。目印を置いて投稿のあとに移せば、コメントは1件で済み、リポジトリに画像をコミットせずに済む。公開のリポジトリの添付の画像は、認証なしでも読めた。非公開のリポジトリで受信箱のトークンで読めるかは、V59として残す。grillingの記録は `add-github-plan-question-images` の第1〜第2ラウンドQ1〜Q6

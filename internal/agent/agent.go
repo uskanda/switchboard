@@ -72,6 +72,11 @@ type Agent struct {
 	FindBrowser func() (string, error)
 	// Executable is the switchboard binary a plan run calls for its pictures; os.Executable when empty.
 	Executable string
+	// GHAttaches reports whether gh has --attach, which a GitHub plan run's pictures need (ADR-070); when nil, gh from
+	// PATH is asked for its version once.
+	GHAttaches func() bool
+	ghOnce     sync.Once
+	ghAttaches bool
 
 	ctx    context.Context // runs end when it does
 	unlock func()

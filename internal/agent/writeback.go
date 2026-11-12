@@ -39,6 +39,10 @@ type outcome struct {
 	Shots      []string            `json:"shots,omitempty"`
 	Skipped    []workspace.Skipped `json:"skipped,omitempty"`
 	ShotsError string              `json:"shots_error,omitempty"`
+	// For plan questions on GitHub: the images AttachPlaced puts at their marks in Body, and the comment posted instead
+	// when they cannot be put in place (ADR-070).
+	Placed []placedImage `json:"placed,omitempty"`
+	Plain  string        `json:"plain,omitempty"`
 	// Until, for a run that hit a usage limit (queued, or a fix run's wait): when the host starts runs again.
 	Until time.Time `json:"until,omitempty"`
 
@@ -166,7 +170,7 @@ func (a *Agent) writeOut(ctx context.Context, ref forge.IssueRef, o *outcome, se
 		}
 		body += "\n\n" + m.Format() + "\n"
 		a.checkComment(ref, o.Run, "comment.md", body)
-		c, err := a.forgeOf(ref).PostComment(ctx, ref, body)
+		c, err := a.postOutcome(ctx, ref, o, body, "\n\n"+m.Format()+"\n")
 		if err != nil {
 			return fmt.Errorf("post comment: %w", err)
 		}
@@ -191,6 +195,38 @@ func (a *Agent) writeOut(ctx context.Context, ref forge.IssueRef, o *outcome, se
 		}
 	}
 	return a.attach(ctx, ref, o, comments)
+}
+
+// postOutcome posts body, the comment of o with its marker tail. Plan questions with images to put in place on GitHub
+// go through AttachPlaced; when it cannot put them, each image is logged as dropped and o.Plain is posted instead,
+// unless the comment it posted is left, which then stands for the questions.
+func (a *Agent) postOutcome(ctx context.Context, ref forge.IssueRef, o *outcome, body, tail string) (*forge.Comment, error) {
+	pa, ok := a.forgeOf(ref).(forge.PlacedAttacher)
+	if len(o.Placed) == 0 || !ok || o.Plain == "" || workspace.HasSecret(o.Body) {
+		return a.forgeOf(ref).PostComment(ctx, ref, body)
+	}
+	images := make([]forge.PlacedImage, len(o.Placed))
+	for i, p := range o.Placed {
+		images[i] = forge.PlacedImage{Mark: p.Mark, Path: p.Path}
+	}
+	c, err := pa.AttachPlaced(ctx, ref, body, images)
+	if err == nil {
+		return c, nil
+	}
+	if ctx.Err() != nil {
+		return nil, err
+	}
+	why := workspace.Redact(err.Error())
+	var pe *forge.PlacedError
+	if errors.As(err, &pe) && pe.Left {
+		a.Audit.Log("plan.images_left", map[string]any{"issue": ref.String(), "run": o.Run, "error": why})
+		return &forge.Comment{Body: body}, nil
+	}
+	for _, p := range o.Placed {
+		a.Audit.Log("plan.image_dropped", map[string]any{"issue": ref.String(), "run": o.Run, "q": p.Q, "option": p.Option,
+			"image": filepath.Base(p.Path), "reason": imageAttachFail + why})
+	}
+	return a.forgeOf(ref).PostComment(ctx, ref, o.Plain+tail)
 }
 
 // attach posts the comment with the images of a done run, after its done post and its label (ADR-051), unless

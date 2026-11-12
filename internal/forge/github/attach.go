@@ -3,10 +3,12 @@ package github
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -47,9 +49,92 @@ func ghEnv(dir string) []string {
 // the host's user. The body goes in on standard input. When gh puts the attachments after the body, the comment is
 // edited so that the body's last line, the marker, ends it again.
 func (c *Client) AttachComment(ctx context.Context, ref forge.IssueRef, body string, files []string) (*forge.Comment, error) {
-	cfg, err := os.MkdirTemp("", "switchboard-gh-*")
+	id, err := c.ghAttach(ctx, ref, body, files)
 	if err != nil {
 		return nil, err
+	}
+	if id == 0 {
+		return &forge.Comment{Body: body}, nil // posted; gh did not say which comment
+	}
+	got, err := c.readComment(ctx, ref, id)
+	if err != nil {
+		return nil, fmt.Errorf("read the attached comment: %w", err)
+	}
+	_, last := forge.SplitLastLine(body)
+	if strings.HasSuffix(strings.TrimRight(got.Body, " \t\r\n"), last) {
+		return got, nil
+	}
+	fixed := strings.TrimRight(strings.Replace(got.Body, last, "", 1), " \t\r\n") + "\n\n" + last + "\n"
+	if err := c.EditComment(ctx, ref, id, fixed); err != nil {
+		return nil, fmt.Errorf("put the marker last: %w", err)
+	}
+	got.Body = fixed
+	return got, nil
+}
+
+// attachedImage is an image gh put after the body: ![name](https://github.com/user-attachments/assets/<uuid>).
+var attachedImage = regexp.MustCompile(`!\[([^\]\n]*)\]\((https://github\.com/user-attachments/assets/[0-9a-fA-F-]+)\)`)
+
+// AttachPlaced implements forge.PlacedAttacher (ADR-070): it posts body with gh issue comment --attach, as
+// AttachComment does, then edits the comment so that the image of each file, which gh put after the body, takes the
+// place of the file's mark. The images gh put are matched to the files in order, and each by its name, the file's
+// name without its extension. An edit that fails is tried once more; when the images cannot be put in place, the
+// comment is deleted.
+func (c *Client) AttachPlaced(ctx context.Context, ref forge.IssueRef, body string, images []forge.PlacedImage) (*forge.Comment, error) {
+	files := make([]string, len(images))
+	for i, im := range images {
+		files[i] = im.Path
+	}
+	id, err := c.ghAttach(ctx, ref, body, files)
+	if err != nil {
+		return nil, &forge.PlacedError{Err: err}
+	}
+	if id == 0 {
+		return nil, &forge.PlacedError{Err: errors.New("gh did not say which comment it posted"), Left: true}
+	}
+	got, err := c.readComment(ctx, ref, id)
+	var placed string
+	if err == nil {
+		placed, err = placeImages(body, got.Body, images)
+	}
+	if err == nil {
+		if err = c.EditComment(ctx, ref, id, placed); err != nil {
+			err = c.EditComment(ctx, ref, id, placed)
+		}
+	}
+	if err != nil {
+		left := c.DeleteComment(ctx, ref, id) != nil
+		return nil, &forge.PlacedError{Err: fmt.Errorf("put the images in place: %w", err), Left: left}
+	}
+	got.Body = placed
+	return got, nil
+}
+
+// placeImages returns body with the mark of each image replaced by the image gh put after the body in posted.
+func placeImages(body, posted string, images []forge.PlacedImage) (string, error) {
+	found := attachedImage.FindAllStringSubmatch(posted, -1)
+	if len(found) != len(images) {
+		return "", fmt.Errorf("gh attached %d images, not %d", len(found), len(images))
+	}
+	for i, im := range images {
+		name := filepath.Base(im.Path)
+		name = strings.TrimSuffix(name, filepath.Ext(name))
+		if found[i][1] != name {
+			return "", fmt.Errorf("the image %d is %q, not %q", i+1, found[i][1], name)
+		}
+		if !strings.Contains(body, im.Mark) {
+			return "", fmt.Errorf("the body has no mark %q", im.Mark)
+		}
+		body = strings.Replace(body, im.Mark, found[i][0], 1)
+	}
+	return body, nil
+}
+
+// ghAttach runs gh issue comment --attach and returns the ID of the comment it posted; 0 when gh did not say.
+func (c *Client) ghAttach(ctx context.Context, ref forge.IssueRef, body string, files []string) (int64, error) {
+	cfg, err := os.MkdirTemp("", "switchboard-gh-*")
+	if err != nil {
+		return 0, err
 	}
 	defer os.RemoveAll(cfg)
 	args := []string{"issue", "comment", strconv.Itoa(ref.Number), "-R", ref.Owner + "/" + ref.Repo, "--body-file", "-"}
@@ -66,28 +151,23 @@ func (c *Client) AttachComment(ctx context.Context, ref forge.IssueRef, body str
 		if len(msg) > 500 {
 			msg = msg[len(msg)-500:]
 		}
-		return nil, fmt.Errorf("gh issue comment --attach: %w: %s", err, msg)
+		return 0, fmt.Errorf("gh issue comment --attach: %w: %s", err, msg)
 	}
 	m := commentURL.FindStringSubmatch(out.String())
 	if m == nil {
-		return &forge.Comment{Body: body}, nil // posted; gh did not say which comment
+		return 0, nil
 	}
 	id, _ := strconv.ParseInt(m[1], 10, 64)
+	return id, nil
+}
+
+// readComment reads the issue comment id.
+func (c *Client) readComment(ctx context.Context, ref forge.IssueRef, id int64) (*forge.Comment, error) {
 	var gc ghComment
 	if _, err := c.do(ctx, http.MethodGet, c.url(fmt.Sprintf("/repos/%s/%s/issues/comments/%d", ref.Owner, ref.Repo, id), nil), nil, &gc, nil); err != nil {
-		return nil, fmt.Errorf("read the attached comment: %w", err)
+		return nil, err
 	}
-	got := &forge.Comment{ID: gc.ID, Body: gc.Body, Author: gc.User.user(), CreatedAt: gc.CreatedAt}
-	_, last := forge.SplitLastLine(body)
-	if strings.HasSuffix(strings.TrimRight(gc.Body, " \t\r\n"), last) {
-		return got, nil
-	}
-	fixed := strings.TrimRight(strings.Replace(gc.Body, last, "", 1), " \t\r\n") + "\n\n" + last + "\n"
-	if err := c.EditComment(ctx, ref, id, fixed); err != nil {
-		return nil, fmt.Errorf("put the marker last: %w", err)
-	}
-	got.Body = fixed
-	return got, nil
+	return &forge.Comment{ID: gc.ID, Body: gc.Body, Author: gc.User.user(), CreatedAt: gc.CreatedAt}, nil
 }
 
 var ghVersion = regexp.MustCompile(`(?m)^gh version (\d+\.\d+\.\d+)`)

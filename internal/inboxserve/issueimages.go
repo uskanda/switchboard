@@ -17,16 +17,21 @@ import (
 	"github.com/uskanda/switchboard/internal/forge"
 )
 
-// IssueImages serves /v1/issue-image: an image uploaded to a GitLab project, as the question comments of plan runs
-// hold them (ADR-069), read with the inbox token. An upload never changes, so the image read is kept in Dir for good.
+// IssueImages serves /v1/issue-image: an image uploaded to a GitLab project, or attached to a GitHub comment, as the
+// question comments of plan runs hold them (ADR-069, ADR-070), read with the inbox token. An upload never changes, so the image read is kept in Dir for good.
 type IssueImages struct {
 	// Config is the configuration in use; Server.Reload replaces it.
 	Config *config.Config
 	// Uploads reads the uploads with each forge's inbox token, by forge kind. Only GitLab has one.
 	Uploads map[string]forge.UploadReader
+	// Attachments reads GitHub's attachments; GitHub issues have no images when it is nil.
+	Attachments forge.AttachmentReader
 	// Dir keeps the images read; nothing is kept on disk when it is "".
 	Dir string
 }
+
+// attachmentURL is the form of a GitHub attachment's address; its group is the attachment's ID.
+var attachmentURL = regexp.MustCompile(`^https://github\.com/user-attachments/assets/([0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})$`)
 
 // uploadSecret is the form of the secret part of an upload's path.
 var uploadSecret = regexp.MustCompile(`^[0-9a-f]{16,64}$`)
@@ -44,7 +49,14 @@ func (s *Server) issueImage(w http.ResponseWriter, r *http.Request) {
 	issue, src := q.Get("issue"), q.Get("src")
 	ref, _, _ := strings.Cut(issue, "#")
 	p, ok := findProject(s.issueImagesConfig(), ref)
-	if ok && (!s.sees(r.Context(), p.Ref) || p.Forge != forge.GitLab) {
+	if ok && !s.sees(r.Context(), p.Ref) {
+		ok = false
+	}
+	if ok && p.Forge == forge.GitHub {
+		s.githubImage(w, r, src)
+		return
+	}
+	if ok && p.Forge != forge.GitLab {
 		ok = false
 	}
 	up := s.IssueImages.Uploads[p.Forge]
@@ -62,6 +74,27 @@ func (s *Server) issueImage(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusNotFound, inboxapi.CodeNotFound, "the image cannot be read: "+err.Error())
 		return
 	}
+	serveImage(w, data)
+}
+
+// githubImage serves the GitHub attachment src points to; 404 for any other address, before any request leaves.
+func (s *Server) githubImage(w http.ResponseWriter, r *http.Request, src string) {
+	m := attachmentURL.FindStringSubmatch(src)
+	at := s.IssueImages.Attachments
+	if m == nil || at == nil {
+		fail(w, http.StatusNotFound, inboxapi.CodeNotFound, "not an attachment of GitHub")
+		return
+	}
+	id := strings.ToLower(m[1])
+	data, err := s.IssueImages.cached(r.Context(), "github\n"+id, func(ctx context.Context) ([]byte, error) { return at.ReadAttachment(ctx, id) })
+	if err != nil {
+		fail(w, http.StatusNotFound, inboxapi.CodeNotFound, "the image cannot be read: "+err.Error())
+		return
+	}
+	serveImage(w, data)
+}
+
+func serveImage(w http.ResponseWriter, data []byte) {
 	ct, _ := forge.ImageTypeUpTo(data, forge.MaxQuestionImageBytes)
 	w.Header().Set("Content-Type", ct)
 	w.Header().Set("Cache-Control", "private, max-age=86400")
@@ -105,7 +138,14 @@ func uploadOf(src, base, owner, repo string) (secret, name string, ok bool) {
 
 // read is the upload, from Dir when it was read before.
 func (ii *IssueImages) read(ctx context.Context, up forge.UploadReader, p config.Project, secret, name string) ([]byte, error) {
-	sum := sha256.Sum256([]byte(p.Ref + "\n" + secret + "\n" + name))
+	return ii.cached(ctx, p.Ref+"\n"+secret+"\n"+name, func(ctx context.Context) ([]byte, error) {
+		return up.ReadUpload(ctx, p.Owner, p.Repo, secret, name)
+	})
+}
+
+// cached is the image of key, from Dir when it was read before, else from get, then kept in Dir.
+func (ii *IssueImages) cached(ctx context.Context, key string, get func(context.Context) ([]byte, error)) ([]byte, error) {
+	sum := sha256.Sum256([]byte(key))
 	path := ""
 	if ii.Dir != "" {
 		path = filepath.Join(ii.Dir, hex.EncodeToString(sum[:]))
@@ -117,7 +157,7 @@ func (ii *IssueImages) read(ctx context.Context, up forge.UploadReader, p config
 	}
 	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), IconFetchTimeout)
 	defer cancel()
-	data, err := up.ReadUpload(fctx, p.Owner, p.Repo, secret, name)
+	data, err := get(fctx)
 	if err != nil {
 		return nil, err
 	}

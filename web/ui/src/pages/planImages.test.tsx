@@ -14,9 +14,6 @@ class FakeEventSource {
 
 const t0 = "2026-11-09T10:00:00Z";
 const ref = "gl:nas/sb#3";
-const url = "https://gitlab.test/nas/sb/-/issues/3";
-const item = { n: 1, state: "waiting", ref, project: "nas/sb", number: 3, title: "Layout", url,
-  host: "laptop", waiting_since: t0, reason: "plan-questions", question: "Q1", updated_at: t0, notes: 0 };
 const asked = (body: string) => ({ author: "agent", created_at: t0, body, agent: true, kind: "waiting" });
 const person = (body: string) => ({ author: "me", created_at: t0, body, agent: false });
 
@@ -27,7 +24,9 @@ const withImages = (n: number) =>
   `### 計画についての質問\n\n**計画：** 保存のボタンを移す\n\n❓ **Q${n}** - **配置**\n\n保存のボタンをどこに置きますか。\n\n![q.png](${qImage})\n\n` +
   `A: 今のまま\nB: 上に移す\n![b.png](${bImage})\n\n➡️ **推奨：B** 最初に目に入る。\n`;
 
-function serve(comments: unknown[]) {
+function serve(comments: unknown[], ref = "gl:nas/sb#3", url = "https://gitlab.test/nas/sb/-/issues/3") {
+  const item = { n: 1, state: "waiting", ref, project: ref.slice(3).split("#")[0], number: 3, title: "Layout", url,
+    host: "laptop", waiting_since: t0, reason: "plan-questions", question: "Q1", updated_at: t0, notes: 0 };
   const last = comments.at(-1) as { body: string };
   const detail = { ref, title: "Layout", url, waiting: true, host: "laptop", state: "waiting", reason: "plan-questions",
     since: t0, post: last.body, approve_word: "/ok", author: "me", created_at: t0, body: "Move the button.", comments };
@@ -38,9 +37,9 @@ function serve(comments: unknown[]) {
   }));
 }
 
-const open = async () => {
+const open = async (at = ref) => {
   render(
-    <MemoryRouter initialEntries={["/issue/gl%3Anas%2Fsb%233"]}>
+    <MemoryRouter initialEntries={["/issue/" + encodeURIComponent(at)]}>
       <AppRoutes />
     </MemoryRouter>,
   );
@@ -89,6 +88,27 @@ describe("the pictures of a plan question", () => {
     await open();
     expect(screen.getAllByRole("img", { name: "q.png" })).toHaveLength(1);
     expect(screen.getAllByRole("link", { name: /画像：q\.png/ }).length).toBeGreaterThan(0);
+  });
+});
+
+describe("the pictures of a GitHub plan question", () => {
+  const ghRef = "gh:o/app#3";
+  const ghImage = "https://github.com/user-attachments/assets/25e444c9-ce78-4f99-9210-92a708c8e1dd";
+  const body = withImages(1).replace(`![q.png](${qImage})`, `![q](${ghImage})`);
+
+  it("draws an attachment of GitHub, read through this server", async () => {
+    serve([asked(body)], ghRef, "https://github.com/o/app/issues/3");
+    await open(ghRef);
+    const q = screen.getByRole("img", { name: "q" });
+    expect(q.getAttribute("src")).toBe(`/api/issue-image?${new URLSearchParams({ issue: ghRef, src: ghImage })}`);
+  });
+
+  it("falls back to a link to GitHub when the attachment cannot be read", async () => {
+    serve([asked(body)], ghRef, "https://github.com/o/app/issues/3");
+    await open(ghRef);
+    fireEvent.error(screen.getByRole("img", { name: "q" }));
+    const link = screen.getByRole("link", { name: "画像：q" });
+    expect(link.getAttribute("href")).toBe(ghImage);
   });
 });
 

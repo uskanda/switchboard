@@ -62,6 +62,7 @@ func inboxAPI(cfg *config.Config, forges map[string]forge.Forge, store instructi
 	merges := map[string]forge.Merges{}
 	avatars := map[string]forge.Avatars{}
 	uploads := map[string]forge.UploadReader{}
+	var attachments forge.AttachmentReader
 	ci := map[string]forge.CI{}
 	for kind, f := range forges {
 		if r, ok := f.(forge.Repos); ok {
@@ -79,6 +80,9 @@ func inboxAPI(cfg *config.Config, forges map[string]forge.Forge, store instructi
 		if u, ok := f.(forge.UploadReader); ok {
 			uploads[kind] = u
 		}
+		if r, ok := f.(forge.AttachmentReader); ok && kind == forge.GitHub {
+			attachments = r
+		}
 		if c, ok := f.(forge.CI); ok {
 			ci[kind] = c
 		}
@@ -89,7 +93,7 @@ func inboxAPI(cfg *config.Config, forges map[string]forge.Forge, store instructi
 		NewIssues:    &inboxserve.NewIssues{Config: cfg, Issues: issues},
 		Merges:       merges,
 		Icons:        &inboxserve.Icons{Config: cfg, Avatars: avatars},
-		IssueImages:  &inboxserve.IssueImages{Config: cfg, Uploads: uploads},
+		IssueImages:  &inboxserve.IssueImages{Config: cfg, Uploads: uploads, Attachments: attachments},
 		CI:           ci,
 	}
 	reload = func(ps []config.Project) {

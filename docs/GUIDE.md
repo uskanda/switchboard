@@ -258,9 +258,9 @@ On GitHub, the agent attaches the images with `gh issue comment --attach` of the
 
 You write the steps for taking screenshots and the permissions for the commands they need (`allow_tools_extra`) yourself. See [examples/screenshots.md](examples/screenshots.md) (Japanese) for an example.
 
-### Pictures in plan questions (GitLab)
+### Pictures in plan questions
 
-On a GitLab project, a plan run can show a picture of the screen in a question: one for the question (the screen as it is now) and one for each option (the screen once that option is chosen). A question has either a picture or a Mermaid diagram. The run picks a picture when the question is about how a screen looks or changes, and a diagram for a flow or a state. GitHub projects keep to diagrams, as GitHub has no API that puts an image anywhere in a comment.
+A plan run can show a picture of the screen in a question: one for the question (the screen as it is now) and one for each option (the screen once that option is chosen). A question has either a picture or a Mermaid diagram. The run picks a picture when the question is about how a screen looks or changes, and a diagram for a flow or a state. On a GitHub project, `gh` 2.99.0 or later must also be on PATH (ADR-070). GitHub has no API that puts an image anywhere in a comment. So the agent posts the question with the pictures attached through `gh issue comment --attach`, then edits the comment at once to move each picture from the end to its question or option. With an older `gh`, or none, GitHub plan runs are not told about pictures.
 
 The run takes the pictures with `switchboard shot`, which drives Chrome's headless shell on the host. A full Chrome or Chromium makes a Unix socket on start, which a run's sandbox refuses, so it does not start there (V58). Set the browser in `agent.browser`, or put `chrome-headless-shell` on PATH. Without a browser, plan runs are not told about pictures. The headless shell that Playwright installs works:
 
@@ -285,7 +285,7 @@ To show the screen after an option, the run tries three ways in order and stops 
 
 A picture need not be of the app. For what a Mermaid diagram draws poorly, such as a layout, things side by side, or a before and after, the run may draw an HTML page in `.switchboard/plan-images/`, serve it on the loopback with `python3 -m http.server`, and take it the same way. On a screenshot, it explains with the labels of `--box` and `--arrow`, or with a short caption that a `--script` adds to the page.
 
-The agent uploads up to 10 pictures a round, PNG, JPEG, or WebP of up to 5 MB each. A picture that cannot be attached leaves a line under its question and `plan.image_dropped` in the audit log. The web inbox draws the pictures of the latest questions in their cards, read through the inbox token; others are links.
+The agent uploads up to 10 pictures a round, PNG, JPEG, or WebP of up to 5 MB each. A picture that cannot be attached leaves a line under its question and `plan.image_dropped` in the audit log. When the pictures cannot be moved into place on GitHub, the agent deletes that comment and posts the questions again without them. The web inbox draws the pictures of the latest questions in their cards, read through the inbox token; others are links. Whether the web inbox can read the pictures of a private GitHub repository is not yet checked (V59); if it cannot, they are links.
 
 ### Running as a service
 

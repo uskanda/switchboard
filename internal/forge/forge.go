@@ -23,9 +23,33 @@ type Attacher interface {
 }
 
 // Uploader is a forge client that can upload one image file to a project and return the Markdown that shows it, to
-// be put anywhere in a comment (ADR-069). Only the GitLab client is one: GitHub has no API for it.
+// be put anywhere in a comment (ADR-069). Only the GitLab client is one: GitHub has no API for it (see PlacedAttacher).
 type Uploader interface {
 	Upload(ctx context.Context, ref IssueRef, path string) (string, error)
+}
+
+// PlacedImage is an image of a comment that a PlacedAttacher puts where Mark, a line of the body of its own, is.
+type PlacedImage struct {
+	Mark string `json:"mark"`
+	Path string `json:"path"`
+}
+
+// PlacedError is the error of AttachPlaced. Left tells that the comment it posted is still there, its images not
+// moved to their marks, since it could not be deleted: the caller must not post the comment again.
+type PlacedError struct {
+	Err  error
+	Left bool
+}
+
+func (e *PlacedError) Error() string { return e.Err.Error() }
+func (e *PlacedError) Unwrap() error { return e.Err }
+
+// PlacedAttacher is a forge client that attaches image files to a comment and puts each where its mark is (ADR-070).
+// Only the GitHub client is one: gh --attach puts the images after the body, and the comment is edited afterwards to
+// move them. The comment ends with the last line of body. When the images cannot be put in place, the comment is
+// deleted and an error returned, so that the caller can post the comment without them.
+type PlacedAttacher interface {
+	AttachPlaced(ctx context.Context, ref IssueRef, body string, images []PlacedImage) (*Comment, error)
 }
 
 // UploadReader reads back an image uploaded to a project (ADR-069): the inbox service shows the images of a plan
@@ -34,6 +58,13 @@ type UploadReader interface {
 	// ReadUpload returns the image uploaded to owner/repo as secret/name, checked by ImageTypeUpTo with
 	// MaxQuestionImageBytes; ErrNotFound when there is none.
 	ReadUpload(ctx context.Context, owner, repo, secret, name string) ([]byte, error)
+}
+
+// AttachmentReader reads back an image attached to a comment on GitHub (ADR-070), the one at
+// https://github.com/user-attachments/assets/<id>, checked by ImageTypeUpTo with MaxQuestionImageBytes; ErrNotFound
+// when there is none.
+type AttachmentReader interface {
+	ReadAttachment(ctx context.Context, id string) ([]byte, error)
 }
 
 // SplitLastLine returns body without its last non-blank line, and that line, so that an Attacher can put the

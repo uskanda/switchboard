@@ -29,6 +29,9 @@ type Client struct {
 	graphqlURL string
 	http       *http.Client
 	gh         string // the gh binary AttachComment runs; "gh" when empty
+	webURL     string // GitHub's web pages, for attachments; https://github.com when empty
+	// attachmentHost replaces isAttachmentHost, in tests.
+	attachmentHost func(host string) bool
 
 	mu   sync.Mutex
 	etag map[string]cached // conditional-request cache for UpdatedIssues, keyed by URL

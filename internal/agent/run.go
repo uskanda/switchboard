@@ -678,11 +678,15 @@ func (a *Agent) planOutcome(ctx context.Context, res *claudecode.Result, pl *pla
 		return o.fail(fmt.Sprintf(a.msg.noDeclaration, problem))
 	case d.Status == "questions":
 		a.dropDiagrams(pl.issue.Ref, o.Run, d, pl.qNext)
-		var up forge.Uploader
-		if imagesOn {
-			up, _ = a.forgeOf(pl.issue.Ref).(forge.Uploader)
+		dir := filepath.Join(a.runDir(o.Run), "plan-images")
+		if imagesOn && pl.issue.Ref.Kind() == forge.GitHub {
+			return a.placePlanImages(ctx, pl.issue.Ref, o, d, pl.qNext, dir, word, res.Denials, discarded)
 		}
-		a.attachPlanImages(ctx, pl.issue.Ref, o.Run, d, pl.qNext, filepath.Join(a.runDir(o.Run), "plan-images"), up)
+		var put func(int, string, string) (string, error)
+		if up, ok := a.forgeOf(pl.issue.Ref).(forge.Uploader); imagesOn && ok {
+			put = func(_ int, _ string, path string) (string, error) { return up.Upload(ctx, pl.issue.Ref, path) }
+		}
+		a.attachPlanImages(ctx, pl.issue.Ref, o.Run, d, pl.qNext, dir, put)
 		return o.planQuestions(d, pl.qNext, res.Denials, discarded, word)
 	case d.Status == planImplement:
 		return o.planSkip(d, res.Denials, discarded)

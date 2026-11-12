@@ -66,6 +66,12 @@ type Forge struct {
 	FailAttach error
 	// Attached are the files of each AttachComment call that posted, by base name.
 	Attached [][]string
+	// FailPlaced, when set, is returned by every AttachPlaced call in a *forge.PlacedError, and nothing is posted;
+	// with PlacedLeft also set, the comment is posted with its images after the body, and the error says it is left.
+	FailPlaced error
+	PlacedLeft bool
+	// Placed are the files of each AttachPlaced call that posted with its images in place, by base name.
+	Placed [][]string
 }
 
 type repo struct {
