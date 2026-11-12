@@ -339,3 +339,23 @@ func TestMaxFixAttemptsBelowZeroIsRefused(t *testing.T) {
 		t.Fatalf("err = %v, want max_fix_attempts reported", err)
 	}
 }
+
+func TestProjectSetupCommand(t *testing.T) {
+	c, err := Load(write(t, valid+"    setup_command: pnpm install --frozen-lockfile\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Projects[1].SetupCommand; got != "pnpm install --frozen-lockfile" {
+		t.Errorf("setup_command = %q", got)
+	}
+	if got := c.Projects[0].SetupCommand; got != "" {
+		t.Errorf("setup_command of a project without one = %q", got)
+	}
+}
+
+func TestSetupCommandIsOnlyAProjectKey(t *testing.T) {
+	_, err := Load(write(t, valid+"agent:\n  setup_command: make deps\n"))
+	if err == nil || !strings.Contains(err.Error(), "setup_command") {
+		t.Fatalf("err = %v, want it to name setup_command", err)
+	}
+}
