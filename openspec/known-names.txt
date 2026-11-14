@@ -46,3 +46,7 @@ navigator.language
 navigator.languages
 document.documentElement.lang
 window.navigator
+filesystem.allowWrite
+allowWrite
+sandbox.filesystem
+sandbox.filesystem.allowWrite
