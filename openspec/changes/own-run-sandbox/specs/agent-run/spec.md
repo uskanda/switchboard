@@ -10,7 +10,7 @@
 
 ### Requirement: 実行のsandbox
 エージェントは、実行ごとの設定ファイルでsandboxを有効にして、`claude -p` を起動しなければならない（MUST）。
-sandboxの中のコマンドに、エージェントは、worktreeと `$TMPDIR` への書き込みだけを許さなければならない（MUST）。
+sandboxの中のコマンドに、エージェントは、worktreeと `$TMPDIR` と、実行のGoのビルドキャッシュの置き場所への書き込みだけを許さなければならない（MUST）。
 エージェントは、sandboxの中のコマンドに、ネットワークへの接続を許してはならない（MUST NOT）。
 エージェントは、sandboxの外でのコマンドの再実行を受け付けてはならない（MUST NOT）。
 
