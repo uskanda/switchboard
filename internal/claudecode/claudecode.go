@@ -97,6 +97,32 @@ type Result struct {
 	Limit *usage.LimitHit
 	// CostUSD is what the run cost, as claude reported it (total_cost_usd).
 	CostUSD float64
+	// Fetched are the URLs the run passed to WebFetch, refused and failed calls included, once each in the order of
+	// their first call (ADR-074).
+	Fetched []string
+}
+
+// fetchedURLs adds to res.Fetched the URLs of the WebFetch calls in line, an assistant message.
+func fetchedURLs(line []byte, res *Result) {
+	var m struct {
+		Message struct {
+			Content []struct {
+				Type  string `json:"type"`
+				Name  string `json:"name"`
+				Input struct {
+					URL string `json:"url"`
+				} `json:"input"`
+			} `json:"content"`
+		} `json:"message"`
+	}
+	if json.Unmarshal(line, &m) != nil {
+		return
+	}
+	for _, c := range m.Message.Content {
+		if c.Type == "tool_use" && c.Name == "WebFetch" && c.Input.URL != "" && !slices.Contains(res.Fetched, c.Input.URL) {
+			res.Fetched = append(res.Fetched, c.Input.URL)
+		}
+	}
 }
 
 // allowedEnv are the variables passed to claude. Forge tokens, the SSH agent, the parent Claude Code session and
@@ -328,6 +354,10 @@ func Parse(r io.Reader, res *Result) error {
 					rejected = &t
 				}
 			}
+			continue
+		}
+		if head.Type == "assistant" {
+			fetchedURLs(line, res)
 			continue
 		}
 		if head.Type != "result" {

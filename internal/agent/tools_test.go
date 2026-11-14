@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"slices"
 	"strconv"
 	"strings"
@@ -32,11 +33,59 @@ func TestToolsAddTheToolNamesOfTheExtraAllowsOnce(t *testing.T) {
 }
 
 func TestEveryRunMayUseWebSearch(t *testing.T) {
-	if !slices.Contains(settings("make verify").Allow, "WebSearch") || !slices.Contains(planSettings(false, "", "").Allow, "WebSearch") {
+	if !slices.Contains(settings("make verify").Allow, "WebSearch") || !slices.Contains(planSettings(false, false, "", "").Allow, "WebSearch") {
 		t.Fatal("WebSearch is not allowed in every run")
 	}
 	if !slices.Contains(runTools, "WebSearch") || !slices.Contains(planTools, "WebSearch") {
 		t.Fatal("WebSearch is not passed to every run")
+	}
+}
+
+// A plan run with WebFetch on allows it on any domain and gets the tool, with prototypes and pictures too; off, the
+// settings and the tools are as they were before WebFetch could be allowed (ADR-074).
+func TestPlanRunWebFetch(t *testing.T) {
+	cases := []struct {
+		name      string
+		prototype bool
+		shot, img string
+		images    bool
+	}{
+		{"read only", false, "", "", false},
+		{"prototype", true, "/bin/switchboard shot", "", false},
+		{"pictures", false, "/bin/switchboard shot", "/w/.switchboard/plan-images", true},
+	}
+	for _, c := range cases {
+		on := planSettings(c.prototype, true, c.shot, c.img)
+		if !slices.Contains(on.Allow, "WebFetch") || slices.Contains(on.Deny, "WebFetch") {
+			t.Errorf("%s, on: allow %v, deny %v; want WebFetch allowed", c.name, on.Allow, on.Deny)
+		}
+		if !slices.Contains(planToolsFor(c.prototype, c.images, true), "WebFetch") {
+			t.Errorf("%s, on: WebFetch is not among the tools", c.name)
+		}
+		off := planSettings(c.prototype, false, c.shot, c.img)
+		if slices.Contains(off.Allow, "WebFetch") || !slices.Contains(off.Deny, "WebFetch") {
+			t.Errorf("%s, off: allow %v, deny %v; want WebFetch denied", c.name, off.Allow, off.Deny)
+		}
+		if slices.Contains(planToolsFor(c.prototype, c.images, false), "WebFetch") {
+			t.Errorf("%s, off: WebFetch is among the tools", c.name)
+		}
+		on.Allow = slices.DeleteFunc(on.Allow, func(r string) bool { return r == "WebFetch" })
+		on.Deny = append(slices.Clone(on.Deny), "WebFetch")
+		slices.Sort(on.Deny)
+		slices.Sort(off.Deny)
+		if !slices.Equal(on.Allow, off.Allow) || !slices.Equal(on.Deny, off.Deny) {
+			t.Errorf("%s: on and off differ beyond WebFetch: %+v, %+v", c.name, on, off)
+		}
+	}
+}
+
+// The runs that write files deny WebFetch whatever the project's plan_web_fetch.
+func TestRunsThatWriteDenyWebFetch(t *testing.T) {
+	if s := settings("make verify"); !slices.Contains(s.Deny, "WebFetch") || slices.Contains(s.Allow, "WebFetch") {
+		t.Errorf("settings = %+v, want WebFetch denied", s)
+	}
+	if slices.Contains(runTools, "WebFetch") {
+		t.Error("WebFetch is among the tools of the runs that write files")
 	}
 }
 
@@ -61,7 +110,7 @@ func TestThePlanRunGetsReadOnlyToolsAndItsModel(t *testing.T) {
 	x.step(2, commit("a.txt", "a")+done("Done."))
 	x.startPlan()
 	argv := x.argvOf(1)
-	if got, want := flag(argv, "--tools"), "Bash,Read,Glob,Grep,WebSearch,Skill"; got != want {
+	if got, want := flag(argv, "--tools"), "Bash,Read,Glob,Grep,WebSearch,WebFetch,Skill"; got != want {
 		t.Errorf("the plan run's --tools = %q, want %q", got, want)
 	}
 	if flag(argv, "--model") != "sonnet" || flag(argv, "--effort") != "high" {
@@ -70,6 +119,35 @@ func TestThePlanRunGetsReadOnlyToolsAndItsModel(t *testing.T) {
 	x.replyAndRun("/ok")
 	if argv := x.argvOf(2); flag(argv, "--model") != "opus" || flag(argv, "--effort") != "high" {
 		t.Errorf("the approved run's model = %q, effort = %q; want opus, high", flag(argv, "--model"), flag(argv, "--effort"))
+	}
+	if strings.Contains(flag(x.argvOf(2), "--tools"), "WebFetch") || !strings.Contains(x.file("settings-2.json"), `"WebFetch"`) {
+		t.Errorf("the approved run may use WebFetch: --tools %q", flag(x.argvOf(2), "--tools"))
+	}
+	if !strings.Contains(x.file("system-1.md"), "## Web pages") || strings.Contains(x.file("system-2.md"), "## Web pages") {
+		t.Error("only the plan run should be told about web pages")
+	}
+}
+
+// A project with plan_web_fetch: false keeps WebFetch away from its plan runs.
+func TestThePlanRunOfAProjectWithoutWebFetch(t *testing.T) {
+	off := false
+	x := newH(t, "", func(c *config.Config) { c.Projects[0].PlanWebFetch = &off })
+	x.step(1, planDecl("The plan."))
+	x.startPlan()
+	if got := flag(x.argvOf(1), "--tools"); strings.Contains(got, "WebFetch") {
+		t.Errorf("the plan run's --tools = %q, want no WebFetch", got)
+	}
+	var s struct {
+		Permissions struct{ Allow, Deny []string } `json:"permissions"`
+	}
+	if err := json.Unmarshal([]byte(x.file("settings-1.json")), &s); err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(s.Permissions.Allow, "WebFetch") || !slices.Contains(s.Permissions.Deny, "WebFetch") {
+		t.Errorf("permissions = %+v, want WebFetch denied", s.Permissions)
+	}
+	if strings.Contains(x.file("system-1.md"), "## Web pages") {
+		t.Error("a plan run without WebFetch is told about web pages")
 	}
 }
 

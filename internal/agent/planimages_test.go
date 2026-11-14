@@ -103,7 +103,7 @@ func TestGitLabPlanQuestionGetsItsImages(t *testing.T) {
 	if !strings.Contains(settings, `"Edit(//`) || !strings.Contains(settings, `/@gitlab/nas/sb/issue-3/.switchboard/plan-images/**)"`) {
 		t.Errorf("the plan run may not write its scripts in the place of the images:\n%s", settings)
 	}
-	if !strings.Contains(x.file("argv-1"), "Bash,Read,Glob,Grep,WebSearch,Write") {
+	if !strings.Contains(x.file("argv-1"), "Bash,Read,Glob,Grep,WebSearch,WebFetch,Write") {
 		t.Errorf("the plan run lacks the Write tool:\n%s", x.file("argv-1"))
 	}
 	wt := filepath.Join(x.dir.Path, "worktrees", "@gitlab", "nas", "sb", "issue-3", ".switchboard", "plan-images")
