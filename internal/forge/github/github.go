@@ -32,11 +32,19 @@ type Client struct {
 
 	mu   sync.Mutex
 	etag map[string]cached // conditional-request cache for UpdatedIssues, keyed by URL
+	// commentTags is the conditional-request cache for Comments, keyed by the URL of the first page.
+	commentTags map[string]cachedComments
+	now         func() time.Time // time.Now when nil; for the tests of rate limits
 }
 
 type cached struct {
 	etag  string
 	items []forge.IssueSummary
+}
+
+type cachedComments struct {
+	etag     string
+	comments []forge.Comment
 }
 
 // Option configures a Client.
@@ -56,11 +64,12 @@ func WithHTTPClient(h *http.Client) Option { return func(c *Client) { c.http = h
 // New returns a client for github.com authenticated with token.
 func New(token string, opts ...Option) *Client {
 	c := &Client{
-		token:      token,
-		baseURL:    "https://api.github.com",
-		graphqlURL: "https://api.github.com/graphql",
-		http:       &http.Client{Timeout: 30 * time.Second},
-		etag:       map[string]cached{},
+		token:       token,
+		baseURL:     "https://api.github.com",
+		graphqlURL:  "https://api.github.com/graphql",
+		http:        &http.Client{Timeout: 30 * time.Second},
+		etag:        map[string]cached{},
+		commentTags: map[string]cachedComments{},
 	}
 	for _, o := range opts {
 		o(c)
@@ -150,7 +159,11 @@ func (c *Client) do(ctx context.Context, method, rawURL string, in, out any, hea
 				details = append(details, strings.TrimSpace(e.Code+" "+e.Field))
 			}
 		}
-		return nil, &apiError{method: method, path: req.URL.Path, status: resp.StatusCode, message: m.Message, details: strings.Join(details, "; ")}
+		var err error = &apiError{method: method, path: req.URL.Path, status: resp.StatusCode, message: m.Message, details: strings.Join(details, "; ")}
+		if reset, ok := c.rateLimitReset(resp); ok {
+			err = &forge.RateLimitError{Reset: reset, Err: err}
+		}
+		return nil, err
 	}
 	if raw, ok := out.(*[]byte); ok {
 		*raw = data
@@ -162,6 +175,37 @@ func (c *Client) do(ctx context.Context, method, rawURL string, in, out any, hea
 		}
 	}
 	return resp, nil
+}
+
+// noResetWait is how long a rate limit is assumed to last when the answer does not say.
+const noResetWait = time.Minute
+
+// rateLimitReset tells whether resp refuses for a rate limit, and when the limit resets (V61). GitHub answers 403
+// or 429: a primary limit with x-ratelimit-remaining 0 and x-ratelimit-reset (Unix seconds), a secondary limit with
+// retry-after (seconds), or neither, when noResetWait is assumed. A 403 with neither is no rate limit.
+func (c *Client) rateLimitReset(resp *http.Response) (time.Time, bool) {
+	if resp.StatusCode != http.StatusForbidden && resp.StatusCode != http.StatusTooManyRequests {
+		return time.Time{}, false
+	}
+	now := time.Now()
+	if c.now != nil {
+		now = c.now()
+	}
+	if s := resp.Header.Get("Retry-After"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil {
+			return now.Add(time.Duration(n) * time.Second), true
+		}
+	}
+	if resp.Header.Get("X-RateLimit-Remaining") == "0" {
+		if n, err := strconv.ParseInt(resp.Header.Get("X-RateLimit-Reset"), 10, 64); err == nil {
+			return time.Unix(n, 0), true
+		}
+		return now.Add(noResetWait), true
+	}
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return now.Add(noResetWait), true
+	}
+	return time.Time{}, false
 }
 
 // TokenOwner returns the login of whoever the client's token belongs to.
@@ -220,6 +264,7 @@ type ghIssue struct {
 	Labels        []ghLabel       `json:"labels"`
 	CreatedAt     time.Time       `json:"created_at"`
 	UpdatedAt     time.Time       `json:"updated_at"`
+	Comments      int             `json:"comments"`
 	PullRequest   json.RawMessage `json:"pull_request"`
 	RepositoryURL string          `json:"repository_url"`
 	HTMLURL       string          `json:"html_url"`
@@ -228,7 +273,7 @@ type ghIssue struct {
 func (i ghIssue) summary(owner, repo string) forge.IssueSummary {
 	s := forge.IssueSummary{
 		Ref:   forge.IssueRef{Forge: forge.GitHub, Owner: owner, Repo: repo, Number: i.Number},
-		Title: i.Title, State: i.State, URL: i.HTMLURL, UpdatedAt: i.UpdatedAt,
+		Title: i.Title, State: i.State, URL: i.HTMLURL, UpdatedAt: i.UpdatedAt, Notes: i.Comments,
 	}
 	for _, l := range i.Labels {
 		s.Labels = append(s.Labels, l.Name)
@@ -289,6 +334,50 @@ type ghComment struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// Comments implements forge.Forge. The first page is asked for with the ETag of the last answer; while it comes
+// back 304, the comments of that answer are returned, and GitHub does not count the request against the rate limit
+// (V60). Only when the first page changed are the pages after it read.
+func (c *Client) Comments(ctx context.Context, ref forge.IssueRef) ([]forge.Comment, error) {
+	first := c.url(fmt.Sprintf("/repos/%s/%s/issues/%d/comments", ref.Owner, ref.Repo, ref.Number), url.Values{"per_page": {"100"}})
+	c.mu.Lock()
+	prev, ok := c.commentTags[first]
+	c.mu.Unlock()
+	h := http.Header{}
+	if ok {
+		h.Set("If-None-Match", prev.etag)
+	}
+	var page []ghComment
+	resp, err := c.do(ctx, http.MethodGet, first, nil, &page, h)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode == http.StatusNotModified {
+		return slices.Clone(prev.comments), nil
+	}
+	var out []forge.Comment
+	add := func(p []ghComment) {
+		for _, gc := range p {
+			out = append(out, gc.comment())
+		}
+	}
+	add(page)
+	if m := nextLink.FindStringSubmatch(resp.Header.Get("Link")); m != nil {
+		if err := pages(ctx, c, m[1], add); err != nil {
+			return nil, err
+		}
+	}
+	if e := resp.Header.Get("ETag"); e != "" {
+		c.mu.Lock()
+		c.commentTags[first] = cachedComments{etag: e, comments: out}
+		c.mu.Unlock()
+	}
+	return slices.Clone(out), nil
+}
+
+func (gc ghComment) comment() forge.Comment {
+	return forge.Comment{ID: gc.ID, Body: gc.Body, Author: gc.User.user(), CreatedAt: gc.CreatedAt}
+}
+
 // Thread implements forge.Forge.
 // The issue, its comments and who edited them are three requests that need nothing of one another, so they are sent
 // at once.
@@ -310,7 +399,7 @@ func (c *Client) Thread(ctx context.Context, ref forge.IssueRef) (*forge.Issue, 
 		commentErr = pages(ctx, c, c.url(fmt.Sprintf("/repos/%s/%s/issues/%d/comments", ref.Owner, ref.Repo, ref.Number), url.Values{"per_page": {"100"}}),
 			func(p []ghComment) {
 				for _, gc := range p {
-					comments = append(comments, forge.Comment{ID: gc.ID, Body: gc.Body, Author: gc.User.user(), CreatedAt: gc.CreatedAt})
+					comments = append(comments, gc.comment())
 				}
 			})
 	}()

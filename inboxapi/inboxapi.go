@@ -70,10 +70,12 @@ type AutoMergeResult struct {
 	At      time.Time `json:"at"`
 }
 
-// ForgeError is a forge that could not be read while listing.
+// ForgeError is a forge that could not be read while listing. RetryAt, when set, is when the service reads the
+// forge again for the listing, after the forge answered that the API rate limit is used up.
 type ForgeError struct {
-	Forge   string `json:"forge"` // "github" or "gitlab"
-	Message string `json:"message"`
+	Forge   string     `json:"forge"` // "github" or "gitlab"
+	Message string     `json:"message"`
+	RetryAt *time.Time `json:"retry_at,omitempty"`
 }
 
 // Inbox is the answer to GET /v1/inbox. Relay is whether the service follows the relay's events (RelayConnected,

@@ -162,8 +162,8 @@ func TestARunShorterThanAMinuteHasNoProgressComment(t *testing.T) {
 	x.f.AddLabel(x.ref, "agent:ready", x.master)
 	x.poll()
 	x.settle()
-	if x.f.Comments != 2 || x.f.Edits != 0 {
-		t.Fatalf("comments posted %d, edits %d", x.f.Comments, x.f.Edits)
+	if x.f.Posted != 2 || x.f.Edits != 0 {
+		t.Fatalf("comments posted %d, edits %d", x.f.Posted, x.f.Edits)
 	}
 }
 
@@ -203,8 +203,8 @@ func TestProgressCommentGoesAwayWhenDone(t *testing.T) {
 	x.f.AddLabel(x.ref, "agent:ready", x.master)
 	x.poll()
 	x.settle()
-	if x.labels(x.ref) != "agent:done" || x.f.Comments != 3 || len(progressOf(x.f, x.bot.ID, x.ref)) != 0 {
-		t.Fatalf("labels %q, posted %d, progress %+v", x.labels(x.ref), x.f.Comments, progressOf(x.f, x.bot.ID, x.ref))
+	if x.labels(x.ref) != "agent:done" || x.f.Posted != 3 || len(progressOf(x.f, x.bot.ID, x.ref)) != 0 {
+		t.Fatalf("labels %q, posted %d, progress %+v", x.labels(x.ref), x.f.Posted, progressOf(x.f, x.bot.ID, x.ref))
 	}
 }
 
@@ -255,8 +255,8 @@ func TestGitLabNoteCountIsTakenAfterTheProgressNoteGoes(t *testing.T) {
 	x.g.AddLabel(x.gref, "agent:ready", x.master)
 	x.poll()
 	x.settle()
-	if len(progressOf(x.g, x.bot.ID, x.gref)) != 0 || x.g.Edits+x.g.Comments < 3 {
-		t.Fatalf("progress %+v, posted %d", progressOf(x.g, x.bot.ID, x.gref), x.g.Comments)
+	if len(progressOf(x.g, x.bot.ID, x.gref)) != 0 || x.g.Edits+x.g.Posted < 3 {
+		t.Fatalf("progress %+v, posted %d", progressOf(x.g, x.bot.ID, x.gref), x.g.Posted)
 	}
 	x.a.mu.Lock()
 	n := x.a.notes[x.gref]

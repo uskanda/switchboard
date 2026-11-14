@@ -495,12 +495,18 @@ The work is split between two services.
 - `switchboard inbox serve`: holds the inbox token. Over a Unix socket (`/run/switchboard/inbox.sock`), it serves the APIs for the list, one issue, and replies, plus SSE that announces changes to the list. It caches the list for 60 seconds. Only while a page is connected over SSE does it fetch the list from the forges again and announce changes. With push notifications configured (`inbox.notify.fcm`), it fetches the list even with no page open. The interval is `inbox.refresh_interval`: 30 seconds by default, and 10 seconds at least
 - `switchboard-web serve`: calls that API and serves the pages on a LAN address. It relays the SSE to the browser and holds no forge token
 
-While a page is visible, requests to the forges continue. With five waiting issues and a 30-second interval, the inbox service uses about 600 GitHub REST API calls and about 120 searches an hour. When the tab goes to the background, the page closes the SSE, and once no page is visible, the requests stop. To make fewer requests, lengthen the interval in the config file.
+While a page is visible, requests to the forges continue. Each fetch runs one search per forge, then reads the comments of the issues it found, four at a time. When the tab goes to the background, the page closes the SSE, and once no page is visible, the requests stop.
+
+By default (`inbox.read_mode: adaptive`), the inbox service does not read every issue on every fetch. It reads an issue at once when the search shows a change in its update time, its comment count, or its labels. It also reads, on every fetch, the running issues and the issues that changed within the last 10 minutes. For any other issue, the gap between reads doubles each time nothing has changed, from twice `inbox.refresh_interval` up to `inbox.idle_interval` (30 minutes by default). On GitHub, a comment list that has not changed comes back as 304, which does not count against the rate limit. With `inbox.read_mode: always`, every issue is read on every fetch.
 
 ```yaml
 inbox:
   refresh_interval: 60s
+  read_mode: adaptive   # or always
+  idle_interval: 30m    # at least refresh_interval
 ```
+
+When a forge cannot be read, the page keeps the rows it last read from that forge and shows a banner. When the forge answers that the API rate limit is used up, the inbox service stops reading that forge for the list until the limit resets, and the banner shows when it reads again. Replies, merges, and opening one issue still go to the forge.
 
 The web inbox is the only part that opens a listening port on a host (ADR-036). Expose it only inside the LAN. This version does not authenticate users, so any device inside the LAN can reply under your name and create issues that start runs (ADR-040). The `Origin` and `Host` checks refuse replies and issue creation from outside web pages. Reads such as the list are also refused with 421 when the `Host` is not this address, to prevent DNS rebinding.
 

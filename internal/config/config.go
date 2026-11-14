@@ -230,9 +230,13 @@ type Plan struct {
 // the projects added from the web inbox are cloned under; adding is disabled without it. With Relay set, the
 // service also follows the relay's events with a token of its own, and reads the forges again soon after each one.
 // With Notify.FCM set, it reads the forges every RefreshInterval even with no page listening, and sends push
-// notifications to the registered apps.
+// notifications to the registered apps. ReadMode decides how often the listing reads the comments of each issue:
+// ReadAdaptive (the default) reads an issue whose search result has not changed less and less often, up to every
+// IdleInterval (30m when unset); ReadAlways reads every issue on every listing.
 type Inbox struct {
 	RefreshInterval time.Duration `yaml:"refresh_interval"`
+	ReadMode        string        `yaml:"read_mode"`
+	IdleInterval    time.Duration `yaml:"idle_interval"`
 	ProjectRoot     string        `yaml:"project_root"`
 	Relay           *AgentRelay   `yaml:"relay"`
 	Notify          InboxNotify   `yaml:"notify"`
@@ -253,6 +257,12 @@ type InboxAuth struct {
 
 // ProjectAddEnabled reports whether projects may be added through the inbox service.
 func (i Inbox) ProjectAddEnabled() bool { return i.ProjectRoot != "" }
+
+// The read modes of the inbox listing (Inbox.ReadMode).
+const (
+	ReadAdaptive = "adaptive"
+	ReadAlways   = "always"
+)
 
 // MinRefreshInterval keeps the inbox's reads well under GitHub's search limit of 30 a minute.
 const MinRefreshInterval = 10 * time.Second
@@ -534,6 +544,10 @@ func (c *Config) applyDefaults(approveWritten bool) {
 	if c.Inbox.RefreshInterval == 0 {
 		c.Inbox.RefreshInterval = 30 * time.Second
 	}
+	set(&c.Inbox.ReadMode, ReadAdaptive)
+	if c.Inbox.IdleInterval == 0 {
+		c.Inbox.IdleInterval = 30 * time.Minute
+	}
 	c.Inbox.ProjectRoot = expandHome(c.Inbox.ProjectRoot)
 	if c.Agent.PollInterval == 0 {
 		c.Agent.PollInterval = 60 * time.Second
@@ -599,6 +613,12 @@ func (c *Config) validate() error {
 	need(c.Host.Name, "host.name")
 	if c.Inbox.RefreshInterval < MinRefreshInterval {
 		errs = append(errs, fmt.Errorf("inbox.refresh_interval must be at least %v, got %v", MinRefreshInterval, c.Inbox.RefreshInterval))
+	}
+	if m := c.Inbox.ReadMode; m != ReadAdaptive && m != ReadAlways {
+		errs = append(errs, fmt.Errorf("inbox.read_mode must be %s or %s, got %q", ReadAdaptive, ReadAlways, m))
+	}
+	if c.Inbox.IdleInterval < c.Inbox.RefreshInterval {
+		errs = append(errs, fmt.Errorf("inbox.idle_interval must not be shorter than inbox.refresh_interval (%v), got %v", c.Inbox.RefreshInterval, c.Inbox.IdleInterval))
 	}
 	if r := c.Inbox.ProjectRoot; r != "" && !filepath.IsAbs(r) {
 		errs = append(errs, fmt.Errorf("inbox.project_root must be an absolute path or start with ~/, got %q", r))

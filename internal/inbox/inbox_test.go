@@ -200,12 +200,12 @@ func TestReplyToAnIssueThatIsNotWaitingIsRefused(t *testing.T) {
 	w := newWorld(t)
 	w.f.RemoveLabel(w.a, "agent:waiting")
 	w.f.AddLabel(w.a, "agent:running", w.bot)
-	before := w.f.Comments
+	before := w.f.Posted
 	err := w.b.Reply(ctx, w.a, "Go with B.", false)
-	if err == nil || !strings.Contains(err.Error(), "neither waiting nor done") || w.f.Comments != before {
-		t.Fatalf("Reply = %v, comments %d -> %d", err, before, w.f.Comments)
+	if err == nil || !strings.Contains(err.Error(), "neither waiting nor done") || w.f.Posted != before {
+		t.Fatalf("Reply = %v, comments %d -> %d", err, before, w.f.Posted)
 	}
-	if err := w.b.Reply(ctx, w.a, "Go with B.", true); err != nil || w.f.Comments != before+1 {
+	if err := w.b.Reply(ctx, w.a, "Go with B.", true); err != nil || w.f.Posted != before+1 {
 		t.Fatalf("Reply --force = %v", err)
 	}
 }

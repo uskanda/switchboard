@@ -163,10 +163,10 @@ func TestIssue(t *testing.T) {
 func TestReplyToAnIssueThatIsNotWaiting(t *testing.T) {
 	w := newWorld(t)
 	w.f.RemoveLabel(w.ref, "agent:waiting")
-	before := w.f.Comments
+	before := w.f.Posted
 	err := w.c.Reply(ctx, "gh:o/r#12", "Go with B.", false)
-	if !errors.Is(err, inboxapi.ErrNotWaiting) || w.f.Comments != before {
-		t.Fatalf("err = %v, comments %d -> %d", err, before, w.f.Comments)
+	if !errors.Is(err, inboxapi.ErrNotWaiting) || w.f.Posted != before {
+		t.Fatalf("err = %v, comments %d -> %d", err, before, w.f.Posted)
 	}
 	if err := w.c.Reply(ctx, "gh:o/r#12", "  ", true); !errors.Is(err, inboxapi.ErrInvalid) {
 		t.Fatalf("empty reply: %v", err)

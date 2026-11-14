@@ -16,6 +16,17 @@ var ErrNotFound = errors.New("not found")
 // ErrForbidden reports that the token may not do what was asked (HTTP 403).
 var ErrForbidden = errors.New("forbidden")
 
+// RateLimitError reports that the forge refused a request because the token used up its API rate limit. Reset is
+// when the forge takes requests again. It unwraps to the error the forge's answer would be otherwise (ErrForbidden
+// for GitHub's 403), so checks for that keep working.
+type RateLimitError struct {
+	Reset time.Time
+	Err   error
+}
+
+func (e *RateLimitError) Error() string { return e.Err.Error() }
+func (e *RateLimitError) Unwrap() error { return e.Err }
+
 // Attacher is a forge client that can post a comment with image files attached, as a person attaches them in the
 // forge's web page (ADR-051). The comment ends with the last line of body, so that a marker there still parses.
 type Attacher interface {
@@ -163,8 +174,9 @@ type IssueSummary struct {
 	URL       string // the issue's page on the forge
 	Labels    []string
 	UpdatedAt time.Time
-	// Notes is how many comments people wrote, as GitLab's user_notes_count. GitLab does not move UpdatedAt for a
-	// new comment (V22), so the agent watches this count on waiting issues. Zero on GitHub, which moves UpdatedAt.
+	// Notes is how many comments the issue has, as listings report it: GitLab's user_notes_count (comments by
+	// people), GitHub's comments (every comment). GitLab does not move UpdatedAt for a new comment (V22), so the
+	// agent watches this count on waiting GitLab issues; the inbox watches it on every forge.
 	Notes int
 }
 
@@ -202,6 +214,9 @@ type Forge interface {
 	UpdatedIssues(ctx context.Context, owner, repo string, since time.Time) ([]IssueSummary, error)
 	// Thread returns an issue and all its comments, oldest first, with who last edited each.
 	Thread(ctx context.Context, ref IssueRef) (*Issue, []Comment, error)
+	// Comments returns all the comments of an issue, oldest first, without who edited them: the inbox's listing
+	// reads them alone. An adapter may answer from a conditional request, which costs no rate limit.
+	Comments(ctx context.Context, ref IssueRef) ([]Comment, error)
 	// LabelActor returns who most recently added label to the issue, or ErrNotFound.
 	LabelActor(ctx context.Context, ref IssueRef, label string) (*User, error)
 	// SetLabels replaces every label of the issue with labels.

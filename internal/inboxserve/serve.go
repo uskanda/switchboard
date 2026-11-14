@@ -274,7 +274,7 @@ func (s *Server) fetchLocked(ctx context.Context) *inboxapi.Inbox {
 	}
 	s.withAutoMerge(out)
 	for _, e := range errs {
-		out.Errors = append(out.Errors, inboxapi.ForgeError{Forge: e.Forge, Message: e.Err.Error()})
+		out.Errors = append(out.Errors, inboxapi.ForgeError{Forge: e.Forge, Message: e.Err.Error(), RetryAt: e.RetryAt})
 	}
 	if errors.Is(ctx.Err(), context.Canceled) {
 		return out

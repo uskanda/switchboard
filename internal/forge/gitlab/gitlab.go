@@ -103,7 +103,11 @@ func (c *Client) do(ctx context.Context, method, rawURL string, in, out any) (*h
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, &apiError{method: method, path: req.URL.Path, status: resp.StatusCode, message: message(data)}
+		var err error = &apiError{method: method, path: req.URL.Path, status: resp.StatusCode, message: message(data)}
+		if resp.StatusCode == http.StatusTooManyRequests {
+			err = &forge.RateLimitError{Reset: rateLimitReset(resp.Header, time.Now()), Err: err}
+		}
+		return nil, err
 	}
 	if raw, ok := out.(*[]byte); ok {
 		*raw = data
@@ -115,6 +119,18 @@ func (c *Client) do(ctx context.Context, method, rawURL string, in, out any) (*h
 		}
 	}
 	return resp, nil
+}
+
+// rateLimitReset is when a 429 says the limit resets (V61): RateLimit-Reset (Unix seconds), else Retry-After
+// (seconds), else a minute from now.
+func rateLimitReset(h http.Header, now time.Time) time.Time {
+	if n, err := strconv.ParseInt(h.Get("RateLimit-Reset"), 10, 64); err == nil {
+		return time.Unix(n, 0)
+	}
+	if n, err := strconv.Atoi(h.Get("Retry-After")); err == nil {
+		return now.Add(time.Duration(n) * time.Second)
+	}
+	return now.Add(time.Minute)
 }
 
 // message reads GitLab's error body, whose "message" is a string, a list or a map of field errors, or whose
@@ -295,6 +311,24 @@ func (c *Client) Thread(ctx context.Context, ref forge.IssueRef) (*forge.Issue, 
 		comments[i].Edit = e
 	}
 	return is, comments, nil
+}
+
+// Comments implements forge.Forge: the notes of the issue, oldest first, without the system notes.
+func (c *Client) Comments(ctx context.Context, ref forge.IssueRef) ([]forge.Comment, error) {
+	base := project(ref.Owner, ref.Repo) + "/issues/" + strconv.Itoa(ref.Number)
+	var out []forge.Comment
+	_, err := pages(ctx, c, c.url(base+"/notes", url.Values{"sort": {"asc"}, "order_by": {"created_at"}, "per_page": {"100"}}), 0,
+		func(p []glNote) {
+			for _, n := range p {
+				if !n.System {
+					out = append(out, forge.Comment{ID: n.ID, Body: n.Body, Author: n.Author.user(), CreatedAt: n.CreatedAt})
+				}
+			}
+		})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // editQuery asks for a page of the notes, newest first: $before is the cursor of the page after, null for the newest.

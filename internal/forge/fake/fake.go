@@ -13,16 +13,16 @@ import (
 
 // Forge holds repositories, issues, comments, label events, users and pull requests in memory.
 type Forge struct {
-	mu       sync.Mutex
-	kind     string // forge.GitHub or forge.GitLab
-	now      func() time.Time
-	nextID   int64
-	repos    map[string]*repo
-	users    map[string]forge.User
-	PRs      []forge.ChangeRequest
-	closed   map[int]bool // indexes into PRs that ClosePR closed
-	Comments int          // number of PostComment calls, for tests that count writes
-	Edits    int          // number of EditComment calls
+	mu     sync.Mutex
+	kind   string // forge.GitHub or forge.GitLab
+	now    func() time.Time
+	nextID int64
+	repos  map[string]*repo
+	users  map[string]forge.User
+	PRs    []forge.ChangeRequest
+	closed map[int]bool // indexes into PRs that ClosePR closed
+	Posted int          // number of PostComment calls, for tests that count writes
+	Edits  int          // number of EditComment calls
 	// PostAs is the login PostComment posts as; "agent" when empty.
 	PostAs string
 	// FailSetLabels, when set, is returned by the next SetLabels call and then cleared.
@@ -41,6 +41,8 @@ type Forge struct {
 	failThread, failPost     int // FailNthThread, FailNthPostComment: calls left until the failing one
 	failThreadEr, failPostEr error
 	failThreadOf             *forge.IssueRef // FailNthThreadOf: only the calls for this issue count
+	failComments             int             // FailNthComments: calls left until the failing one
+	failCommentsEr           error
 	// FailSearch, when set, is returned by the next SearchOpenIssuesWithLabel call and then cleared.
 	FailSearch error
 	// FailRepoPrivate, when set, is returned by the next RepoPrivate call and then cleared.
@@ -364,6 +366,26 @@ func (f *Forge) Thread(_ context.Context, ref forge.IssueRef) (*forge.Issue, []f
 	return &d, append([]forge.Comment(nil), is.comments...), nil
 }
 
+// Comments implements forge.Forge.
+func (f *Forge) Comments(_ context.Context, ref forge.IssueRef) ([]forge.Comment, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if nth(&f.failComments) {
+		return nil, f.failCommentsEr
+	}
+	if r, ok := f.repos[ref.Owner+"/"+ref.Repo]; ok && r.issues[ref.Number] == nil {
+		return nil, forge.ErrNotFound
+	}
+	return append([]forge.Comment(nil), f.issue(ref).comments...), nil
+}
+
+// FailNthComments makes the n-th Comments call from now fail with err.
+func (f *Forge) FailNthComments(n int, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.failComments, f.failCommentsEr = n, err
+}
+
 // LabelActor implements forge.Forge.
 func (f *Forge) LabelActor(_ context.Context, ref forge.IssueRef, label string) (*forge.User, error) {
 	f.mu.Lock()
@@ -439,7 +461,7 @@ func (f *Forge) PostCommentAs(ref forge.IssueRef, body, login string) (*forge.Co
 		f.mu.Unlock()
 		return nil, f.failPostEr
 	}
-	f.Comments++
+	f.Posted++
 	c := f.addComment(ref, body, f.users[login])
 	hook := f.AfterPostComment
 	f.mu.Unlock()
