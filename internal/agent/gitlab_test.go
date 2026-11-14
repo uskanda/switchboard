@@ -250,3 +250,42 @@ func TestRunningIssueWorktreeIsNotRemoved(t *testing.T) {
 		t.Fatalf("the worktree is still there after the run stopped: %v", err)
 	}
 }
+
+// A GitLab issue that waits for a slot after a reply is not read again while its note count stays (grilling Q1).
+func TestGitLabQueuedReplyIsNotReadAgain(t *testing.T) {
+	x := newGL(t, nil)
+	var cf *countingForge
+	x.edit = func(a *Agent) {
+		r := a.Routes["gl:nas/sb"]
+		cf = newCountingForge(r.Forge)
+		r.Forge = cf
+		a.Routes["gl:nas/sb"] = r
+	}
+	x.g.AddLabel(x.gref, "agent:ready", x.master)
+	x.poll()
+	x.settle()
+	if x.glabels() != "agent:waiting" {
+		t.Fatalf("labels = %q, want agent:waiting", x.glabels())
+	}
+	x.step(2, block(2, waiting("s", "q")))
+	x.f.AddLabel(x.ref, "agent:ready", x.master)
+	x.poll()
+	x.waitStarted(2)
+	defer func() { x.release(2); x.settle() }()
+	x.g.AddComment(x.gref, "Use hi.", x.master)
+	x.poll()
+	x.a.mu.Lock()
+	queue := x.a.queueOrder()
+	x.a.mu.Unlock()
+	if len(queue) != 1 {
+		t.Fatalf("queue = %v, want the replied GitLab issue", queue)
+	}
+	x.poll() // the queued comment changed the note count once
+	cf.take()
+	for i := 0; i < 3; i++ {
+		x.poll()
+	}
+	if n := cf.take(); n["Thread"] != 0 || n["LabelActor"] != 0 {
+		t.Errorf("3 polls with no new note read the queued issue: %v", n)
+	}
+}

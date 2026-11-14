@@ -113,10 +113,13 @@ func (a *Agent) scanWatches(ctx context.Context) {
 	a.mu.Unlock()
 	for _, p := range a.projectList() {
 		f := a.routeOf(p).Forge
-		if _, ok := f.(forge.CI); !ok {
+		if _, ok := f.(forge.CI); !ok || a.limited(projectRef(p)) {
 			continue
 		}
 		list, err := f.SearchOpenIssuesWithLabel(ctx, forge.Projects(p.FullName()), a.Config.Labels.Done)
+		if a.noteLimit(projectRef(p), err) {
+			continue
+		}
 		if err != nil {
 			a.logf("%s: search the done issues: %v", p.Ref, err)
 			continue
@@ -129,6 +132,9 @@ func (a *Agent) scanWatches(ctx context.Context) {
 			if !inProject(s.Ref, p) || watched || seen && !s.UpdatedAt.After(at) {
 				continue
 			}
+			if a.limited(s.Ref) {
+				break
+			}
 			a.findWatch(ctx, p, s)
 		}
 	}
@@ -136,6 +142,9 @@ func (a *Agent) scanWatches(ctx context.Context) {
 
 func (a *Agent) findWatch(ctx context.Context, p config.Project, s forge.IssueSummary) {
 	_, comments, err := a.forgeOf(s.Ref).Thread(ctx, s.Ref)
+	if a.noteLimit(s.Ref, err) {
+		return
+	}
 	if err != nil {
 		a.logf("%s: read the issue for its CI: %v", s.Ref, err)
 		return
@@ -181,7 +190,7 @@ func (a *Agent) checkWatches(ctx context.Context) {
 		a.mu.Lock()
 		w := a.watches[ref]
 		a.mu.Unlock()
-		if w != nil {
+		if w != nil && !a.limited(ref) {
 			a.checkWatch(ctx, ref, w, false)
 		}
 	}
@@ -232,7 +241,7 @@ func (a *Agent) startFixes(ctx context.Context) {
 		if full {
 			return
 		}
-		if slot && still {
+		if slot && still && !a.limited(fw.ref) {
 			a.checkWatch(ctx, fw.ref, w, true)
 		}
 	}
@@ -344,6 +353,8 @@ func (a *Agent) checkWatch(ctx context.Context, ref forge.IssueRef, w *watch, fo
 // a change request that is gone ends it too; anything else is tried again at the next poll.
 func (a *Agent) ciError(ref forge.IssueRef, w *watch, err error) {
 	switch {
+	case a.noteLimit(ref, err):
+		// A rate limit also answers 403; the watch goes on after the reset.
 	case errors.Is(err, forge.ErrForbidden):
 		a.unwatch(ref, "the token may not read the CI")
 		a.Audit.Log("ci.forbidden", map[string]any{"issue": ref.String(), "error": err.Error()})
