@@ -350,3 +350,20 @@ func TestTheCIWaitIsNotified(t *testing.T) {
 		t.Fatalf("notifications = %q", got)
 	}
 }
+
+// A rate limit also answers 403 (V61); it is no sign that the token may not read the CI, and the watch goes on.
+func TestARateLimitedCIKeepsTheWatch(t *testing.T) {
+	w := newCI(t, "", nil)
+	w.f.FailCI = &forge.RateLimitError{Reset: w.now().Add(30 * time.Minute), Err: forge.ErrForbidden}
+	w.poll()
+	if !w.a.watching() || w.audit.has("ci.forbidden", nil) {
+		t.Fatalf("watching=%v forbidden logged=%v: a rate limit ended the watch", w.a.watching(), w.audit.has("ci.forbidden", nil))
+	}
+	w.f.FailCI = nil
+	w.later(31 * time.Minute)
+	w.f.SetChecks("o", "r", w.syncHead(), forge.Check{Name: "test", Done: true, Conclusion: forge.Success})
+	w.poll()
+	if w.a.watching() {
+		t.Fatal("the watch did not go on after the reset")
+	}
+}

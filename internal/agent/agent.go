@@ -117,6 +117,7 @@ type Agent struct {
 	// resumes marks the queued issues whose queued comment is the resume mark of a run that hit a usage limit: the
 	// comment stays over a restart, and goes when the issue starts or leaves the queue.
 	resumes map[forge.IssueRef]bool
+	limits  map[string]time.Time // by limitKey: when the forge takes reads again after a rate limit (ADR-072)
 	wg      sync.WaitGroup
 
 	pollMu     sync.Mutex // one poll or relay refresh at a time
@@ -246,6 +247,7 @@ func (a *Agent) Start(ctx context.Context) error {
 	a.unwatched = map[forge.IssueRef]time.Time{}
 	a.forbidden = map[string]bool{}
 	a.resumes = map[forge.IssueRef]bool{}
+	a.limits = map[string]time.Time{}
 	a.paused, a.cost = nil, costs{}
 	a.scanned = time.Time{}
 	a.wake = make(chan struct{}, 1)
@@ -395,7 +397,13 @@ func (a *Agent) poll(ctx context.Context, ps []config.Project) error {
 // pollProject evaluates the issues of p updated since the last poll and, on GitLab, the waiting issues with new notes.
 func (a *Agent) pollProject(ctx context.Context, p config.Project) []error {
 	f := a.routeOf(p).Forge
+	if a.limited(projectRef(p)) {
+		return nil
+	}
 	list, err := f.UpdatedIssues(ctx, p.Owner, p.Repo, a.since(p))
+	if a.noteLimit(projectRef(p), err) {
+		return nil
+	}
 	if err != nil {
 		return []error{fmt.Errorf("%s: %w", p.Ref, err)}
 	}
@@ -405,17 +413,25 @@ func (a *Agent) pollProject(ctx context.Context, p config.Project) []error {
 		listed[s.Ref] = true
 		a.mu.Lock()
 		last, ok := a.seen[s.Ref]
-		_, again := a.unsettled[s.Ref]
+		u, again := a.unsettled[s.Ref]
 		a.mu.Unlock()
 		if ok && !s.UpdatedAt.After(last) && !again {
 			continue
 		}
-		if err := a.evaluate(ctx, p, s); err != nil {
+		if again && u.queued && !s.UpdatedAt.After(u.at) {
+			continue // it only waits for a slot, and drain reads it again before it starts
+		}
+		if a.limited(s.Ref) {
+			// Kept to evaluate after the reset; it also holds since back, so the next listing has it.
+			a.unsettle(s.Ref, s.UpdatedAt, false)
+			continue
+		}
+		if err := a.evaluate(ctx, p, s); err != nil && !a.noteLimit(s.Ref, err) {
 			errs = append(errs, err)
 		}
 	}
 	a.forgetMissing(p, listed)
-	if p.Forge == forge.GitLab {
+	if p.Forge == forge.GitLab && !a.limited(projectRef(p)) {
 		errs = append(errs, a.pollReplies(ctx, p, f)...)
 	}
 	return errs
@@ -425,6 +441,9 @@ func (a *Agent) pollProject(ctx context.Context, p config.Project) []error {
 // move an issue's update time for a new comment (V22), so UpdatedIssues alone misses replies.
 func (a *Agent) pollReplies(ctx context.Context, p config.Project, f forge.Forge) []error {
 	waiting, err := f.SearchOpenIssuesWithLabel(ctx, forge.Projects(p.FullName()), a.Config.Labels.Waiting, a.Config.Labels.Done)
+	if a.noteLimit(projectRef(p), err) {
+		return nil
+	}
 	if err != nil {
 		return []error{fmt.Errorf("%s: %w", p.Ref, err)}
 	}
@@ -436,7 +455,10 @@ func (a *Agent) pollReplies(ctx context.Context, p config.Project, f forge.Forge
 		if ok && n == s.Notes {
 			continue
 		}
-		if err := a.evaluate(ctx, p, s); err != nil {
+		if a.limited(s.Ref) {
+			return errs // the notes stay unrecorded, so the issue is read after the reset
+		}
+		if err := a.evaluate(ctx, p, s); err != nil && !a.noteLimit(s.Ref, err) {
 			errs = append(errs, err)
 		}
 	}
@@ -462,6 +484,12 @@ func (a *Agent) evaluate(ctx context.Context, p config.Project, s forge.IssueSum
 		return nil
 	}
 	a.unsettle(s.Ref, s.UpdatedAt, errors.Is(err, errQueued))
+	if errors.Is(err, errQueued) {
+		// pollReplies reads a queued issue again only for a new note; drain reads it before it starts.
+		a.mu.Lock()
+		a.notes[s.Ref] = s.Notes
+		a.mu.Unlock()
+	}
 	if errors.Is(err, errQueued) || errors.Is(err, state.ErrLocked) {
 		return nil // evaluated again later
 	}
@@ -877,7 +905,7 @@ func (a *Agent) resume(p config.Project, ref forge.IssueRef) {
 	if !a.handles(p) {
 		return
 	}
-	if err := a.consider(a.ctx, p, ref); err != nil && !errors.Is(err, errQueued) && a.ctx.Err() == nil {
+	if err := a.consider(a.ctx, p, ref); err != nil && !errors.Is(err, errQueued) && !a.noteLimit(ref, err) && a.ctx.Err() == nil {
 		a.logf("%s: %v", ref, err)
 	}
 }
@@ -936,7 +964,13 @@ func (a *Agent) drain(ctx context.Context) {
 		if !free {
 			continue
 		}
+		if a.limited(ref) {
+			a.requeue(ref, q)
+			continue
+		}
 		switch err := a.consider(ctx, p, ref); {
+		case a.noteLimit(ref, err):
+			a.requeue(ref, q)
 		case err == nil:
 			a.mu.Lock()
 			delete(a.unsettled, ref)
@@ -953,6 +987,15 @@ func (a *Agent) drain(ctx context.Context) {
 			a.mu.Unlock()
 			a.logf("%s: %v", ref, err)
 		}
+	}
+}
+
+// requeue puts ref back in the queue as q, when drain took it out and could not read it for a rate limit.
+func (a *Agent) requeue(ref forge.IssueRef, q queuedRun) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if _, ok := a.pending[ref]; !ok && a.active[ref] == nil {
+		a.pending[ref] = q
 	}
 }
 
