@@ -2,6 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "@/App";
+import { setLanguageChoice } from "@/lib/i18n";
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 
@@ -22,7 +23,18 @@ function answer(inbox: () => Response) {
 
 const unreachable = () => json({ code: "unavailable", message: "down" }, 503);
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  setLanguageChoice("auto");
+});
+
+/** limited is a listing whose GitHub is rate limited until 16:49 in the browser's time zone. */
+const limited = () =>
+  json({
+    items: [],
+    errors: [{ forge: "github", message: "API rate limit exceeded", retry_at: new Date(2026, 10, 14, 16, 49).toISOString() }],
+    fetched_at: "",
+  });
 
 function at(path: string) {
   return render(
@@ -53,6 +65,27 @@ describe("the inbox errors above the panes", () => {
     at("/issue/gh%3Ao%2Fr%2312");
     const alert = await screen.findByText("GitHubを読めませんでした：rate limited");
     expect(screen.getByRole("navigation", { name: "一覧", hidden: true })).not.toContainElement(alert);
+  });
+
+  it("show when a rate-limited forge is read again, in the browser's time", async () => {
+    answer(limited);
+    at("/");
+    expect(await screen.findByText("githubのAPI制限中です。16:49に読み直します")).toBeInTheDocument();
+    expect(screen.queryByText(/API rate limit exceeded/)).toBeNull();
+  });
+
+  it("show the rate limit in English", async () => {
+    setLanguageChoice("en");
+    answer(limited);
+    at("/");
+    expect(await screen.findByText("github API rate limit reached. Reading it again at 16:49")).toBeInTheDocument();
+  });
+
+  it("show the forge's message for an error that is no rate limit", async () => {
+    setLanguageChoice("en");
+    answer(() => json({ items: [], errors: [{ forge: "gitlab", message: "connection refused" }], fetched_at: "" }));
+    at("/");
+    expect(await screen.findByText("Could not read gitlab: connection refused")).toBeInTheDocument();
   });
 
   it("do not show the inbox errors on the settings", async () => {

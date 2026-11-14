@@ -84,3 +84,40 @@ func TestInboxRelayNeedsURLAndTokenRef(t *testing.T) {
 		}
 	}
 }
+
+func TestInboxReadModeDefaults(t *testing.T) {
+	c, err := Load(write(t, valid))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Inbox.ReadMode != ReadAdaptive {
+		t.Errorf("read mode = %q, want %q", c.Inbox.ReadMode, ReadAdaptive)
+	}
+	if c.Inbox.IdleInterval != 30*time.Minute {
+		t.Errorf("idle interval = %v, want 30m", c.Inbox.IdleInterval)
+	}
+}
+
+func TestInboxReadModeIsRead(t *testing.T) {
+	c, err := Load(write(t, valid+"inbox:\n  read_mode: always\n  idle_interval: 10m\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Inbox.ReadMode != ReadAlways || c.Inbox.IdleInterval != 10*time.Minute {
+		t.Errorf("read mode, idle interval = %q, %v, want always, 10m", c.Inbox.ReadMode, c.Inbox.IdleInterval)
+	}
+}
+
+func TestInboxUnknownReadModeIsRefused(t *testing.T) {
+	_, err := Load(write(t, valid+"inbox:\n  read_mode: lazy\n"))
+	if err == nil || !strings.Contains(err.Error(), "inbox.read_mode") || !strings.Contains(err.Error(), "adaptive") || !strings.Contains(err.Error(), "always") {
+		t.Fatalf("err = %v, want inbox.read_mode refused naming adaptive and always", err)
+	}
+}
+
+func TestInboxIdleIntervalUnderRefreshIsRefused(t *testing.T) {
+	_, err := Load(write(t, valid+"inbox:\n  refresh_interval: 1m\n  idle_interval: 30s\n"))
+	if err == nil || !strings.Contains(err.Error(), "inbox.idle_interval") || !strings.Contains(err.Error(), "inbox.refresh_interval") {
+		t.Fatalf("err = %v, want inbox.idle_interval refused below inbox.refresh_interval", err)
+	}
+}

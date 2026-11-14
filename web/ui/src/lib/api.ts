@@ -188,7 +188,8 @@ const queueTexts = defineMessages({
  */
 export type Inbox = {
   items: Item[];
-  errors: { forge: string; message: string }[];
+  /** retry_at, set after the forge answered that the API rate limit is used up, is when the service reads it again. */
+  errors: { forge: string; message: string; retry_at?: string }[];
   fetched_at: string;
   relay?: "connected" | "disconnected" | "";
   refresh_interval_seconds?: number;

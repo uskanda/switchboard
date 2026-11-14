@@ -3,6 +3,7 @@
 package inbox
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -45,6 +46,12 @@ type Inbox struct {
 	// keeps its ID, so one lookup serves every later listing and detail.
 	idMu sync.Mutex
 	ids  map[string]int64
+
+	// states keeps, per forge kind, what the listings have read so far: the reads of each issue, the last rows, and
+	// a rate limit to wait out. A listing in a long-lived Inbox (the inbox service) uses it to read less; a fresh one
+	// (the CLI) reads everything.
+	stMu   sync.Mutex
+	states map[string]*forgeState
 }
 
 // DefaultCache is $XDG_CACHE_HOME/switchboard/inbox.json, with ~/.cache when XDG_CACHE_HOME is unset.
@@ -198,10 +205,12 @@ func (b *Inbox) List(ctx context.Context) ([]Item, error) {
 	return items, errors.Join(errs...)
 }
 
-// ForgeError is a forge that could not be read while listing.
+// ForgeError is a forge that could not be read while listing. RetryAt, when set, is when the listing reads the
+// forge again after it answered that the API rate limit is used up.
 type ForgeError struct {
-	Forge string // "github" or "gitlab"
-	Err   error
+	Forge   string // "github" or "gitlab"
+	Err     error
+	RetryAt *time.Time
 }
 
 func (e ForgeError) Error() string { return e.Forge + " could not be read: " + e.Err.Error() }
@@ -236,7 +245,13 @@ func (b *Inbox) Collect(ctx context.Context) ([]Item, []ForgeError) {
 	for i, r := range results {
 		items = append(items, r.items...)
 		if r.err != nil {
-			errs = append(errs, ForgeError{Forge: forgeName(kinds[i]), Err: r.err})
+			fe := ForgeError{Forge: forgeName(kinds[i]), Err: r.err}
+			var rl *forge.RateLimitError
+			if errors.As(r.err, &rl) {
+				at := rl.Reset
+				fe.RetryAt = &at
+			}
+			errs = append(errs, fe)
 		}
 	}
 	sort.SliceStable(items, func(i, j int) bool {
@@ -300,61 +315,115 @@ func (b *Inbox) scopeOf(kind string) forge.Scope {
 }
 
 // list reads one forge's waiting, running and queued issues within its scope. An issue with a start label is listed
-// only once the agent has queued it.
+// only once the agent has queued it. It reads the comments of the issues that need it (see due), four at a time,
+// and builds the other rows from the comments read before. When the forge cannot be read, the rows it last listed
+// stand in for what could not be read, beside the error; while a rate limit lasts, the forge is not asked at all.
 func (b *Inbox) list(ctx context.Context, kind string) ([]Item, error) {
 	f := b.forgeOf(kind)
 	if f == nil {
 		return nil, errors.New("no client")
 	}
+	now := b.now()
+	st := b.state(kind)
+	if until := st.limitedUntil(); now.Before(until) {
+		return st.lastItems(), &forge.RateLimitError{Reset: until,
+			Err: fmt.Errorf("API rate limit used up; reading again at %s", until.UTC().Format(time.RFC3339))}
+	}
+	fail := func(err error) ([]Item, error) {
+		var rl *forge.RateLimitError
+		if errors.As(err, &rl) {
+			st.limit(rl.Reset)
+		}
+		return st.lastItems(), err
+	}
 	found, err := f.SearchOpenIssuesWithLabel(ctx, b.scopeOf(kind), b.listed()...)
 	if err != nil {
-		return nil, err
+		return fail(err)
 	}
 	ids := map[string]int64{}
-	var items []Item
+	var listed []forge.IssueSummary
 	for _, s := range found {
 		if _, ok := b.project(s.Ref.Kind(), s.Ref.Owner, s.Ref.Repo); !ok {
 			continue
 		}
-		agentID, ok := ids[s.Ref.Project()]
-		if !ok {
+		if _, ok := ids[s.Ref.Project()]; !ok {
 			id, err := b.agentID(ctx, s.Ref)
 			if err != nil {
-				return nil, err
+				return fail(err)
 			}
-			agentID, ids[s.Ref.Project()] = id, id
+			ids[s.Ref.Project()] = id
 		}
-		_, comments, err := f.Thread(ctx, s.Ref)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", s.Ref, err)
-		}
-		st := labels.StateOf(s.Labels, b.Config.Labels)
-		if st == b.Config.Labels.Running {
-			items = append(items, withUpdate(runningItem(s, comments, agentID), s))
-			continue
-		}
-		if q, qm := latestOf(comments, agentID, marker.Queued); q != nil {
-			items = append(items, withUpdate(queuedItem(s, qm), s))
-			continue
-		}
-		if st == b.Config.Labels.Done {
-			items = append(items, withUpdate(doneItem(s, comments, agentID), s))
-			continue
-		}
-		if st != b.Config.Labels.Waiting {
-			continue // a start label the agent has not taken up yet
-		}
-		it := withUpdate(Item{State: Waiting, Ref: refString(s.Ref), Project: s.Ref.Project(), Number: s.Ref.Number, Title: s.Title, URL: s.URL, Host: "?", Reason: "?", Question: "?"}, s)
-		if c, m := latestPost(comments, agentID); c != nil {
-			it.Host, it.Reason, it.Question = orQ(m.Host), orQ(m.Reason), Excerpt(c.Body)
-			if !m.At.IsZero() {
-				at := m.At
-				it.WaitingSince = &at
-			}
-		}
-		items = append(items, it)
+		listed = append(listed, s)
 	}
-	return items, nil
+
+	plan := st.plan(listed, now, b.readPolicy(), func(s forge.IssueSummary) bool {
+		return labels.StateOf(s.Labels, b.Config.Labels) == b.Config.Labels.Running
+	})
+	read := make([][]forge.Comment, len(listed))
+	errs := make([]error, len(listed))
+	sem := make(chan struct{}, concurrentReads)
+	var wg sync.WaitGroup
+	for i, s := range listed {
+		if !plan[i] {
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			read[i], errs[i] = f.Comments(ctx, s.Ref)
+		}()
+	}
+	wg.Wait()
+
+	var items []Item
+	var firstErr error
+	for i, s := range listed {
+		comments, ok := st.record(s, now, b.readPolicy(), plan[i], read[i], errs[i])
+		if errs[i] != nil {
+			firstErr = cmp.Or(firstErr, fmt.Errorf("%s: %w", s.Ref, errs[i]))
+			var rl *forge.RateLimitError
+			if errors.As(errs[i], &rl) {
+				st.limit(rl.Reset)
+			}
+		}
+		if !ok {
+			continue // never read: there is no row to show
+		}
+		if it, ok := b.item(s, comments, ids[s.Ref.Project()]); ok {
+			items = append(items, it)
+		}
+	}
+	st.keep(listed, items)
+	return items, firstErr
+}
+
+// item is the row of a listed issue built from its comments; false for an issue with a start label that the agent
+// has not queued yet.
+func (b *Inbox) item(s forge.IssueSummary, comments []forge.Comment, agentID int64) (Item, bool) {
+	st := labels.StateOf(s.Labels, b.Config.Labels)
+	if st == b.Config.Labels.Running {
+		return withUpdate(runningItem(s, comments, agentID), s), true
+	}
+	if q, qm := latestOf(comments, agentID, marker.Queued); q != nil {
+		return withUpdate(queuedItem(s, qm), s), true
+	}
+	if st == b.Config.Labels.Done {
+		return withUpdate(doneItem(s, comments, agentID), s), true
+	}
+	if st != b.Config.Labels.Waiting {
+		return Item{}, false // a start label the agent has not taken up yet
+	}
+	it := withUpdate(Item{State: Waiting, Ref: refString(s.Ref), Project: s.Ref.Project(), Number: s.Ref.Number, Title: s.Title, URL: s.URL, Host: "?", Reason: "?", Question: "?"}, s)
+	if c, m := latestPost(comments, agentID); c != nil {
+		it.Host, it.Reason, it.Question = orQ(m.Host), orQ(m.Reason), Excerpt(c.Body)
+		if !m.At.IsZero() {
+			at := m.At
+			it.WaitingSince = &at
+		}
+	}
+	return it, true
 }
 
 // listed are the labels the listing searches: waiting, done (an open done issue waits to be closed), running, and the

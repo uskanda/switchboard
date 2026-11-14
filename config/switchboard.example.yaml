@@ -47,6 +47,8 @@ plan:
 
 inbox:
   refresh_interval: 30s               # how often inbox serve reads the forges while a web page is open; at least 10s
+  # read_mode: adaptive                # adaptive reads the comments of a quiet issue less and less often; always reads every issue each time
+  # idle_interval: 30m                 # the longest gap adaptive leaves between reads of a quiet issue; at least refresh_interval
   # project_root: ~/repos              # lets the web inbox add projects, cloned under this directory; off when unset
   # notify:                            # push notifications to the Android app (app/); off when unset
   #   fcm:
