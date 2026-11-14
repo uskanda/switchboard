@@ -172,6 +172,29 @@ func homeOf(env []string) string {
 	return h
 }
 
+// goCacheDir is the runs' Go build cache: switchboard/go-build under $XDG_CACHE_HOME of env, else under
+// $HOME/.cache. It is one for every project and apart from the user's own build cache (ADR-073).
+func goCacheDir(env []string) string {
+	if env == nil {
+		env = os.Environ()
+	}
+	base := ""
+	for _, kv := range slices.Backward(env) {
+		if v, ok := strings.CutPrefix(kv, "XDG_CACHE_HOME="); ok {
+			base = v
+			break
+		}
+	}
+	if !filepath.IsAbs(base) {
+		home := homeOf(env)
+		if home == "" {
+			return ""
+		}
+		base = filepath.Join(home, ".cache")
+	}
+	return filepath.Join(base, "switchboard", "go-build")
+}
+
 // runTools are the tools every run that writes files gets; planTools those of a plan run. A tool the session lacks
 // cannot be called, whatever the allow rules say, and every tool left out shortens the system prompt.
 var (
@@ -447,6 +470,12 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) (o *outcome) {
 		return o.fail(fmt.Sprintf(a.msg.prepare, err))
 	}
 	req.Settings.DenyRead = denyRead(homeOf(a.Env), a.Config.Path, a.State.Path, dir)
+	if cache := goCacheDir(a.Env); cache != "" {
+		if err := os.MkdirAll(cache, 0o700); err != nil {
+			return o.fail(fmt.Sprintf(a.msg.prepare, err))
+		}
+		req.Settings.AllowWrite, req.GoCache = []string{cache}, cache
+	}
 	if err := a.checkSandbox(ctx); err != nil {
 		return o.fail(fmt.Sprintf(a.msg.sandbox, err))
 	}
@@ -558,7 +587,7 @@ func (a *Agent) finish(ctx context.Context, pl *plan, sp *workspace.Space, d *De
 	verified := a.msg.notVerified
 	if cmd := p.VerifyCommand; cmd != "" {
 		// The command runs code claude wrote, so it gets claude's environment: no forge token.
-		out, err := a.shell(ctx, sp.Dir(), claudecode.Env(a.Env, "subscription"), cmd)
+		out, err := a.shell(ctx, sp.Dir(), claudecode.WithGoCache(claudecode.Env(a.Env, "subscription"), goCacheDir(a.Env)), cmd)
 		if ctx.Err() != nil {
 			return nil
 		}

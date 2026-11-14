@@ -299,6 +299,7 @@ You run unattended on an issue, in its plan stage. Nobody can answer you during 
 
 - Read and search files with Read, Grep and Glob, not with cat, grep or find.
 - Shell commands run in a sandbox: they cannot reach the network, and whatever they change in the worktree is thrown away after the run.
+- GOCACHE is set to a build cache that commands in the sandbox may write: run go commands as they are, without setting or changing GOCACHE.
 - git status, git diff and git log run outside the sandbox, each only as a single command on its own: not in a pipe, not after && or ;, and not starting with cd. Commands that write to the history, build or reach the forge are refused, and the run goes on without them.
 
 ## Rules
@@ -328,7 +329,8 @@ func WithSandbox(system, verify string) string {
 const sandbox = `
 ## The sandbox
 
-- Your shell commands run in a sandbox. They may write only in the current directory and in $TMPDIR, and cannot reach the network, so dependencies cannot be downloaded.
+- Your shell commands run in a sandbox. They may write only in the current directory, in $TMPDIR and in the Go build cache, and cannot reach the network, so dependencies cannot be downloaded.
+- GOCACHE is set to that build cache: run go commands as they are, without setting or changing GOCACHE.
 - Read, search and change files with Read, Grep, Glob, Edit and Write, not with cat >, heredocs or python3.
 - %s, and only as a single command on its own: not in a pipe, not after && or ;, and not starting with cd. Run them that way, or they run inside the sandbox and fail where they need what it withholds.
 - Never ask to run a command outside the sandbox (dangerouslyDisableSandbox): such a request is refused.

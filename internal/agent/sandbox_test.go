@@ -117,6 +117,54 @@ func TestARunHidesTheStateButNotItsWorktree(t *testing.T) {
 	}
 }
 
+// ADR-073: every run, the plan run too, gets the Go build cache under the user's cache directory as GOCACHE and may
+// write it from the sandbox; the agent makes it before claude starts. The parent's GOCACHE does not reach claude.
+func TestARunGetsTheGoBuildCache(t *testing.T) {
+	cacheHome := t.TempDir()
+	x := newH(t, "", nil)
+	x.envExtra = append(x.envExtra, "XDG_CACHE_HOME="+cacheHome, "GOCACHE=/elsewhere/go-build")
+	x.agentWith(func(a *Agent) {})
+	x.step(1, planDecl("The plan."))
+	x.step(2, commit("a.txt", "a")+done("Done."))
+	x.startPlan()
+	x.replyAndRun("/ok")
+	want := filepath.Join(cacheHome, "switchboard", "go-build")
+	if fi, err := os.Stat(want); err != nil || !fi.IsDir() {
+		t.Fatalf("the cache %s was not made: %v", want, err)
+	}
+	for n := 1; n <= 2; n++ {
+		var s struct {
+			Sandbox struct {
+				Filesystem struct {
+					AllowWrite []string `json:"allowWrite"`
+				} `json:"filesystem"`
+			} `json:"sandbox"`
+		}
+		if err := json.Unmarshal([]byte(x.file("settings-"+strconv.Itoa(n)+".json")), &s); err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(s.Sandbox.Filesystem.AllowWrite, []string{want}) {
+			t.Errorf("run %d: allowWrite = %v", n, s.Sandbox.Filesystem.AllowWrite)
+		}
+		env := strings.Split(x.file("env-"+strconv.Itoa(n)), "\n")
+		if !slices.Contains(env, "GOCACHE="+want) || slices.Contains(env, "GOCACHE=/elsewhere/go-build") {
+			t.Errorf("run %d: GOCACHE in env = %v", n, slices.DeleteFunc(env, func(kv string) bool { return !strings.HasPrefix(kv, "GOCACHE=") }))
+		}
+	}
+}
+
+func TestGoCacheDir(t *testing.T) {
+	if got := goCacheDir([]string{"HOME=/h", "XDG_CACHE_HOME=/x"}); got != "/x/switchboard/go-build" {
+		t.Errorf("with XDG_CACHE_HOME = %q", got)
+	}
+	if got := goCacheDir([]string{"HOME=/h"}); got != "/h/.cache/switchboard/go-build" {
+		t.Errorf("with HOME only = %q", got)
+	}
+	if got := goCacheDir([]string{"HOME=/h", "XDG_CACHE_HOME=relative"}); got != "/h/.cache/switchboard/go-build" {
+		t.Errorf("with a relative XDG_CACHE_HOME = %q", got)
+	}
+}
+
 func TestARunFailsWithoutStartingClaudeWhenTheSandboxIsUnavailable(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("the check runs bwrap only on Linux")

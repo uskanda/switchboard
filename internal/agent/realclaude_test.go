@@ -285,6 +285,71 @@ func TestRealClaudeSandbox(t *testing.T) {
 	}
 }
 
+// V65: filesystem.allowWrite lets commands in the sandbox write the run's Go build cache, and only it: another place
+// outside the worktree stays read-only, and the worktree and $TMPDIR stay writable. GOCACHE reaches the commands, so
+// go build needs no prefix.
+func TestRealClaudeSandboxAllowWrite(t *testing.T) {
+	dir := realClaudeRepo(t)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, err := os.MkdirTemp(home, ".switchboard-allowwrite-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(base) })
+	cache, other := filepath.Join(base, "go-build"), filepath.Join(base, "other")
+	for _, d := range []string{cache, other} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files := map[string]string{
+		"go.mod":  "module example.com/probe\n\ngo 1.21\n",
+		"main.go": "package main\n\nimport \"fmt\"\n\nfunc main() { fmt.Println(\"probe\") }\n",
+	}
+	for name, body := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := settings("")
+	s.AllowWrite = []string{cache}
+	res, err := claudecode.Run(context.Background(), claudecode.Request{
+		Binary: realClaudeBinary(), Dir: dir, RunDir: filepath.Join(t.TempDir(), "run"), SessionID: newUUID(),
+		Prompt: "Run each of these commands with the Bash tool, one call per command, exactly as written, and go on " +
+			"after a failure: `touch " + filepath.Join(cache, "touched") + "`, `touch " + filepath.Join(other, "touched") +
+			"`, `touch worktree-touched`, `touch \"$TMPDIR/tmp-touched\" && echo TMP-WRITABLE`, `go env GOCACHE`, `go build -o /dev/null .`. " +
+			"Do not try any other way. End with status \"done\" and list in the summary each command with its output or error.",
+		SystemPrompt: prompt.WithSandbox("Answer with the structured output.", ""), Settings: s, GoCache: cache,
+		Tools: runTools, MaxTurns: 12, Schema: Schema, Auth: "subscription", Timeout: 10 * time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("result %q; denials %+v", res.Text, res.Denials)
+	exists := func(p string) bool { _, err := os.Lstat(p); return err == nil }
+	if !exists(filepath.Join(cache, "touched")) {
+		t.Error("a command in the sandbox could not write the allowWrite path")
+	}
+	if exists(filepath.Join(other, "touched")) {
+		t.Error("a command in the sandbox wrote outside the worktree, $TMPDIR and the allowWrite path")
+	}
+	if !exists(filepath.Join(dir, "worktree-touched")) {
+		t.Error("a command in the sandbox could not write the worktree")
+	}
+	if !strings.Contains(res.Text, cache) {
+		t.Error("go env GOCACHE did not print the run's cache")
+	}
+	if entries, _ := os.ReadDir(cache); len(entries) < 3 {
+		t.Errorf("go build left nothing in the cache: %d entries", len(entries))
+	}
+	if !strings.Contains(res.Text, "TMP-WRITABLE") {
+		t.Error("a command in the sandbox could not write $TMPDIR")
+	}
+}
+
 // V53: a plan run that forks from the previous round's session takes the new session ID and remembers that round.
 func TestRealClaudePlanRoundForksFromThePrevious(t *testing.T) {
 	dir := realClaudeRepo(t)

@@ -36,7 +36,7 @@ func (a *Agent) setup(ctx context.Context, sp *workspace.Space, ref forge.IssueR
 	sctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 	start := time.Now()
-	out, runErr := a.shell(sctx, sp.Dir(), claudecode.Env(a.Env, "subscription"), cmd)
+	out, runErr := a.shell(sctx, sp.Dir(), claudecode.WithGoCache(claudecode.Env(a.Env, "subscription"), goCacheDir(a.Env)), cmd)
 	if ctx.Err() != nil {
 		return "", true
 	}
