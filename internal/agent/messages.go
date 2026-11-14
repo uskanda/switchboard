@@ -42,6 +42,9 @@ type texts struct {
 	// label of the plan's title, the bold start of a question's recommendation (with its label), and the heading of
 	// the questions that only confirm the recommended answer. The web inbox reads that heading in both languages.
 	planQuestionsTitle, planTitle, planQuestionsHint, planHint, planDiscarded, planLabel, planRecommended, planChecks string
+	// fetched heads the pages a plan run read (ADR-074); fetchedMore, with the count, stands for those past the first
+	// maxFetched.
+	fetched, fetchedMore string
 	// planImageDropped is the line of a question whose images, or some of them, could not be attached (ADR-069).
 	planImageDropped string
 	// The comment of a plan run that skipped the questions and the approval: its title and its first line; and the
@@ -109,6 +112,8 @@ var english = texts{
 	planQuestionsHint:  "Reply `%s` to accept the recommended answers, or `%s q2 is B` to change some of them.",
 	planHint:           "Reply `%s` to approve this plan and start the work. To change it, reply with what to change.",
 	planDiscarded:      "The run changed the worktree although the plan stage changes nothing; those changes were discarded.",
+	fetched:            "Pages read",
+	fetchedMore:        "and %d more",
 	planLabel:          "Plan:",
 	planRecommended:    "Recommended: %s",
 	planChecks:         "Please check the recommended answers",
@@ -216,6 +221,8 @@ var japanese = texts{
 	planQuestionsHint:  "推奨どおりでよければ `%s`、変えたい問いがあれば `%s q2はB` のように返答してください。",
 	planHint:           "この計画で進めるなら `%s` と返答してください。直してほしいところがあれば、そのまま返答してください。",
 	planDiscarded:      "計画の段階では何も変えないはずの実行がworktreeを変えたため、その変更を捨てました。",
+	fetched:            "参照したページ",
+	fetchedMore:        "ほか%d件",
 	planLabel:          "計画：",
 	planRecommended:    "推奨：%s",
 	planChecks:         "推奨でよいか確認してほしい問い",

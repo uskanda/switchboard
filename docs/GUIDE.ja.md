@@ -216,9 +216,11 @@ projects:
     allow_tools_extra: ["Bash(openspec *)"]
 ```
 
-sandboxの中のコマンドは規則なしで動くので、`Bash(openspec *)` のような `Bash` の項目は、ほとんどの場合要らない。ネットワークやsandboxの外の書き込みが要るコマンドは、項目を足しても動かない。`allow_tools_extra` の各項目のツール名（`Skill`、`Bash(openspec *)` なら `Bash`）は、実行に渡すツールにも足される。実行に渡すツールは、ファイルを書く実行では `Bash`、`Read`、`Edit`、`Write`、`Glob`、`Grep`、`WebSearch` だけである。計画の実行には、`Bash`、`Read`、`Glob`、`Grep`、`WebSearch` を渡し、`plan_prototype` を有効にしたプロジェクトでは `Edit` と `Write` も渡す。`plan_prototype` が無いと、`allow_tools_extra` に `Write` があっても、計画の実行では拒否したままである。
+sandboxの中のコマンドは規則なしで動くので、`Bash(openspec *)` のような `Bash` の項目は、ほとんどの場合要らない。ネットワークやsandboxの外の書き込みが要るコマンドは、項目を足しても動かない。`allow_tools_extra` の各項目のツール名（`Skill`、`Bash(openspec *)` なら `Bash`）は、実行に渡すツールにも足される。実行に渡すツールは、ファイルを書く実行では `Bash`、`Read`、`Edit`、`Write`、`Glob`、`Grep`、`WebSearch` だけである。計画の実行には、`Bash`、`Read`、`Glob`、`Grep`、`WebSearch`、`WebFetch` を渡し、`plan_prototype` を有効にしたプロジェクトでは `Edit` と `Write` も渡す。`plan_prototype` が無いと、`allow_tools_extra` に `Write` があっても、計画の実行では拒否したままである。
 
-設定を読むときに、空の項目、制限の無い `Bash` と `Bash(*)`、どの実行でも拒否する操作（`git push`、`git rebase`、`gh`、`WebFetch`）を名指しする項目は誤りになる。`Bash(git *)` のような広い項目は通るが、拒否する操作は拒否されたままである。プロジェクトの `allow_tools_extra` は再起動せずに反映され、`agent.allow_tools_extra` は再起動で反映される。許可は設定ファイルにだけ書け、受信箱のWeb表示からは変えられない。
+計画の実行は、`WebFetch` でWebのページを、ドメインを限らずに読める。読んだURLは、計画のコメントに折りたたんだ「参照したページ」の一覧として載る。ファイルを書く実行には `WebFetch` を渡さない。秘密にしたいコードのプロジェクトでは、`plan_web_fetch: false` で外せる。`agent.plan_web_fetch` で全体の既定を変え、プロジェクトの `plan_web_fetch` で上書きする。プロジェクトの値は再起動せずに反映され、`agent.plan_web_fetch` は再起動で反映される。
+
+設定を読むときに、空の項目、制限の無い `Bash` と `Bash(*)`、`allow_tools_extra` では開けない操作（`git push`、`git rebase`、`gh`、`WebFetch`）を名指しする項目は誤りになる。`Bash(git *)` のような広い項目は通るが、拒否する操作は拒否されたままである。プロジェクトの `allow_tools_extra` は再起動せずに反映され、`agent.allow_tools_extra` は再起動で反映される。許可は設定ファイルにだけ書け、受信箱のWeb表示からは変えられない。
 
 指示は、計画の指示と同じディレクトリに `run.md` の名前で置く。全体は `instructions/run.md` である。GitHubのプロジェクトは `instructions/gh/<owner>/<repo>/run.md` に置く。GitLabなら `instructions/gl/<group>/<project>/run.md` である。保存の検査と監査ログは計画の指示と同じで、Web表示の「設定」の画面からも編集できる。
 

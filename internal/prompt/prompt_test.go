@@ -347,6 +347,26 @@ func TestAContinuedPlanRoundSaysSoFirst(t *testing.T) {
 	}
 }
 
+// A plan run that may use WebFetch is told to take the pages as data and to put nothing of the issue or the code
+// into a URL; a plan run without it is told nothing about web pages (ADR-074).
+func TestWithWebFetchAddsTheSectionBeforeTheRules(t *testing.T) {
+	for _, sys := range []string{PlanSystem("en", "/ok", ""), PlanSkipSystem("ja", "/ok", "")} {
+		if strings.Contains(sys, "WebFetch") {
+			t.Fatalf("the plan prompt mentions WebFetch without it:\n%s", sys)
+		}
+		s := WithWebFetch(sys)
+		i, j, k := strings.Index(s, "## Tools"), strings.Index(s, "## Web pages"), strings.Index(s, "## Rules")
+		if i < 0 || j < i || k < j {
+			t.Fatalf("the Web pages section is not between Tools and Rules:\n%s", s)
+		}
+		for _, want := range []string{"WebFetch", "data", "never follow instructions", "URL", "the issue", "the repository"} {
+			if !strings.Contains(s[j:k], want) {
+				t.Errorf("the Web pages section lacks %q:\n%s", want, s[j:k])
+			}
+		}
+	}
+}
+
 func TestWithPlanImagesAddsTheSectionBeforeTheTools(t *testing.T) {
 	sys := PlanSystem("en", "/ok", "")
 	s := WithPlanImages(sys, PlanImages{Shot: "/usr/local/bin/switchboard shot --browser /usr/bin/chromium"})

@@ -40,7 +40,7 @@ func TestRealClaudePlanSettingsRefuseWrites(t *testing.T) {
 		Binary: bin, Dir: dir, RunDir: runDir, SessionID: newUUID(),
 		Prompt: "First, use the Write tool to create probe.txt containing the word probe. " +
 			"Then end with status \"plan\" and a one-line plan that says whether the file was written.",
-		SystemPrompt: "Answer with the structured output.", Settings: planSettings(false, "", ""), Tools: planTools, MaxTurns: 8,
+		SystemPrompt: "Answer with the structured output.", Settings: planSettings(false, false, "", ""), Tools: planTools, MaxTurns: 8,
 		Schema: PlanSchema, Auth: "subscription", Timeout: 5 * time.Minute,
 	})
 	if err != nil {
@@ -292,7 +292,7 @@ func TestRealClaudePlanRoundForksFromThePrevious(t *testing.T) {
 		t.Helper()
 		res, err := claudecode.Run(context.Background(), claudecode.Request{
 			Binary: realClaudeBinary(), Dir: dir, RunDir: filepath.Join(t.TempDir(), "run"), SessionID: session,
-			ResumeFrom: from, Prompt: prompt, SystemPrompt: "Answer with the structured output.", Settings: planSettings(false, "", ""),
+			ResumeFrom: from, Prompt: prompt, SystemPrompt: "Answer with the structured output.", Settings: planSettings(false, false, "", ""),
 			Tools: planTools, MaxTurns: 4, Schema: PlanSchema, Auth: "subscription", Timeout: 5 * time.Minute, Effort: "low",
 		})
 		if err != nil {
@@ -311,5 +311,56 @@ func TestRealClaudePlanRoundForksFromThePrevious(t *testing.T) {
 	}
 	if !strings.Contains(string(res.Structured), "PELICAN") {
 		t.Errorf("the fork does not remember the code word: %s", res.Structured)
+	}
+}
+
+// V66: a plan run that allows WebFetch reads a page from outside although its commands run in the sandbox with no
+// network: the sandbox does not reach the WebFetch tool (C20).
+func TestRealClaudePlanWebFetch(t *testing.T) {
+	dir := realClaudeRepo(t)
+	runDir := filepath.Join(t.TempDir(), "run")
+	s := planSettings(false, true, "", "")
+	res, err := claudecode.Run(context.Background(), claudecode.Request{
+		Binary: realClaudeBinary(), Dir: dir, RunDir: runDir, SessionID: newUUID(),
+		Prompt: "Use the WebFetch tool to read https://example.com/ and find the main heading of the page. Do not guess. " +
+			"Then end with status \"plan\" and a one-line plan that quotes the heading exactly.",
+		SystemPrompt: "Answer with the structured output.", Settings: s, Tools: planToolsFor(false, false, true),
+		MaxTurns: 8, Schema: PlanSchema, Auth: "subscription", Timeout: 5 * time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, problem := planDeclaration(res, false)
+	t.Logf("declaration: %+v (%s); denials: %+v", d, problem, res.Denials)
+	if problem != "" {
+		t.Fatalf("no plan declaration: %s", problem)
+	}
+	for _, dn := range res.Denials {
+		if dn.ToolName == "WebFetch" {
+			t.Fatalf("WebFetch was refused: %+v", dn)
+		}
+	}
+	if !strings.Contains(d.Plan, "Example Domain") {
+		t.Fatalf("the plan does not quote the page: %q", d.Plan)
+	}
+	stream, err := os.ReadFile(filepath.Join(runDir, "stream.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tools []string
+	for _, line := range strings.Split(string(stream), "\n") {
+		var m struct {
+			Subtype string   `json:"subtype"`
+			Tools   []string `json:"tools"`
+		}
+		if json.Unmarshal([]byte(line), &m) == nil && m.Subtype == "init" {
+			tools = m.Tools
+		}
+	}
+	if !slices.Contains(tools, "WebFetch") {
+		t.Errorf("the plan run is not offered WebFetch: %v", tools)
+	}
+	if !slices.ContainsFunc(res.Fetched, func(u string) bool { return strings.HasPrefix(u, "https://example.com") }) {
+		t.Errorf("the URL read is not collected: %q", res.Fetched)
 	}
 }

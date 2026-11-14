@@ -266,11 +266,11 @@ func TestPlanRunPushesNothing(t *testing.T) {
 // An extra allow of Write does not let a plan run write unless the project allows prototypes; then Edit and Write are
 // allowed, and the rest stays denied.
 func TestPlanRunSettingsPrototype(t *testing.T) {
-	s := planSettings(false, "", "", []string{"Write"})
+	s := planSettings(false, false, "", "", []string{"Write"})
 	if !slices.Contains(s.Deny, "Write") || !slices.Contains(s.Deny, "Edit") {
 		t.Errorf("deny = %v, want Edit and Write while prototypes are off", s.Deny)
 	}
-	p := planSettings(true, "/bin/switchboard shot --browser /bin/chromium", "")
+	p := planSettings(true, false, "/bin/switchboard shot --browser /bin/chromium", "")
 	if slices.Contains(p.Deny, "Write") || slices.Contains(p.Deny, "Edit") || !slices.Contains(p.Allow, "Write") || !slices.Contains(p.Allow, "Edit") {
 		t.Errorf("prototype settings = %+v, want Edit and Write allowed", p)
 	}
@@ -282,13 +282,13 @@ func TestPlanRunSettingsPrototype(t *testing.T) {
 	if !slices.Contains(p.Allow, "Bash(/bin/switchboard shot --browser /bin/chromium *)") {
 		t.Errorf("allow = %v, want the shot command", p.Allow)
 	}
-	if got := strings.Join(planToolsFor(true, false), ","); got != "Bash,Read,Glob,Grep,WebSearch,Edit,Write" {
+	if got := strings.Join(planToolsFor(true, false, false), ","); got != "Bash,Read,Glob,Grep,WebSearch,Edit,Write" {
 		t.Errorf("tools = %s", got)
 	}
 }
 
 func TestPlanRunSettingsReadOnly(t *testing.T) {
-	s := planSettings(false, "", "")
+	s := planSettings(false, false, "", "")
 	for _, denied := range []string{"Edit", "Write", "NotebookEdit", "Bash(git commit)", "Bash(git add *)", "Bash(git push)", "Bash(make *)"} {
 		if !slices.Contains(s.Deny, denied) {
 			t.Errorf("%s is not denied", denied)
@@ -576,7 +576,7 @@ func TestDiagramProblem(t *testing.T) {
 // A plan run that may take pictures may write in their place, and nowhere else: it writes the scripts for the
 // pictures there (V58: a heredoc with such a script can be refused).
 func TestPlanRunSettingsWriteThePlaceOfTheImages(t *testing.T) {
-	s := planSettings(false, "/bin/switchboard shot --browser /bin/hs", "/state/worktrees/@gitlab/nas/sb/issue-3/.switchboard/plan-images")
+	s := planSettings(false, false, "/bin/switchboard shot --browser /bin/hs", "/state/worktrees/@gitlab/nas/sb/issue-3/.switchboard/plan-images")
 	// The Write tool is checked against the Edit rules: a Write(...) rule lets nothing through (V58).
 	if !slices.Contains(s.Allow, "Edit(//state/worktrees/@gitlab/nas/sb/issue-3/.switchboard/plan-images/**)") {
 		t.Errorf("allow = %v, want Write in the place of the images", s.Allow)
@@ -584,7 +584,7 @@ func TestPlanRunSettingsWriteThePlaceOfTheImages(t *testing.T) {
 	if slices.Contains(s.Allow, "Write") || slices.Contains(s.Deny, "Write") || !slices.Contains(s.Deny, "Edit") {
 		t.Errorf("settings = %+v, want Write only by its rule and Edit denied", s)
 	}
-	if got := strings.Join(planToolsFor(false, true), ","); got != "Bash,Read,Glob,Grep,WebSearch,Write" {
+	if got := strings.Join(planToolsFor(false, true, false), ","); got != "Bash,Read,Glob,Grep,WebSearch,Write" {
 		t.Errorf("tools = %s", got)
 	}
 }

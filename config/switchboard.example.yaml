@@ -76,6 +76,7 @@ agent:
   # plan: { model: "", effort: "" }   # overrides for the plan runs
   # fix: { model: "", effort: "" }    # overrides for the fix runs (CI, rejected pushes, conflicts)
   # browser: ""                      # for switchboard shot, such as ~/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell; a full Chrome cannot start in a run's sandbox. Empty looks for chrome-headless-shell, chromium, chromium-browser, google-chrome on PATH
+  # plan_web_fetch: true              # let the plan runs read web pages with WebFetch, on any domain; the URLs read are listed in the plan's comment. Other runs never get WebFetch. Takes a restart
 
 # quota:                              # API cost caps of this host, in USD; used only with claude.auth: api_key
 #   daily_usd: 20                     # local day; no run starts after the day's costs reach it, until midnight
@@ -91,6 +92,7 @@ projects:
     include_untrusted: false          # true is refused for public repositories
     protected_paths_extra: []
     plan_first: never                 # how agent:ready starts: always (with a plan, as agent:plan), auto (with a plan unless the issue is clear), never (true and false still read as always and never)
+    # plan_web_fetch: false           # overrides agent.plan_web_fetch; false keeps WebFetch away from this project's plan runs, as for secret code
     # max_parallel: 1                 # runs of this project at once, within agent.max_parallel; none when unset
     # icon: "🚀"                      # the web inbox's icon: an https:// image URL, an image file (/ or ~/), or one emoji; the forge's avatar when unset
   # - ref: gl:YOUR_GROUP/switchboard-sandbox   # gl:group/project, or gl:group/sub/project
