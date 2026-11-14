@@ -210,12 +210,16 @@ var planBaseAllow = append([]string{"Read", "Glob", "Grep", "WebSearch"}, claude
 
 // planSettings are what a plan run may do: read, search and look at the history, and what the user added in extra
 // (agent.allow_tools_extra, then the project's). Nothing that writes, unless prototype (projects[].plan_prototype)
-// lets it edit the worktree to try a change out for a picture. shot, when not empty, is the command line that takes
+// lets it edit the worktree to try a change out for a picture. fetch (the project's plan_web_fetch) lets it read web
+// pages with WebFetch, on any domain (ADR-074). shot, when not empty, is the command line that takes
 // the pictures, and images the absolute path of the place of the pictures, where the run may Write the scripts for
 // them (a heredoc of a script can be refused, V58). The rules are not the boundary; the check after the run is
 // (workspace.Space.Restore), which throws every change away.
-func planSettings(prototype bool, shot, images string, extra ...[]string) claudecode.Settings {
+func planSettings(prototype, fetch bool, shot, images string, extra ...[]string) claudecode.Settings {
 	allow := slices.Clone(planBaseAllow)
+	if fetch {
+		allow = append(allow, "WebFetch")
+	}
 	if shot != "" {
 		allow = append(allow, "Bash("+shot+" *)")
 	}
@@ -230,7 +234,10 @@ func planSettings(prototype bool, shot, images string, extra ...[]string) claude
 		allow = append(allow, "Edit", "Write")
 	}
 	allow = append(allow, extraAllow(allow, extra...)...)
-	deny := []string{"NotebookEdit", "WebFetch"}
+	deny := []string{"NotebookEdit"}
+	if !fetch {
+		deny = append(deny, "WebFetch")
+	}
 	if !prototype {
 		deny = append(deny, "Edit")
 	}
@@ -242,9 +249,12 @@ func planSettings(prototype bool, shot, images string, extra ...[]string) claude
 }
 
 // planToolsFor are the tools of a plan run: planTools, Edit and Write when prototype, Write when it takes pictures
-// (images), and those the extra rules name.
-func planToolsFor(prototype, images bool, extra ...[]string) []string {
+// (images), WebFetch when fetch, and those the extra rules name.
+func planToolsFor(prototype, images, fetch bool, extra ...[]string) []string {
 	base := slices.Clone(planTools)
+	if fetch {
+		base = append(base, "WebFetch")
+	}
 	switch {
 	case prototype:
 		base = append(base, "Edit", "Write")
@@ -256,7 +266,7 @@ func planToolsFor(prototype, images bool, extra ...[]string) []string {
 
 // planQuestions writes back the questions of a plan round, numbered from first, in the order planDeclaration left
 // them: the first question that only confirms the recommended answer starts under a heading of its own.
-func (o *outcome) planQuestions(d *PlanDeclaration, first int, denials []claudecode.Denial, discarded bool, word string) *outcome {
+func (o *outcome) planQuestions(d *PlanDeclaration, first int, fetched []string, denials []claudecode.Denial, discarded bool, word string) *outcome {
 	parts := []string{o.planTitleLine(d)}
 	if s := strings.TrimSpace(d.Summary); s != "" {
 		parts = append(parts, s)
@@ -272,7 +282,7 @@ func (o *outcome) planQuestions(d *PlanDeclaration, first int, denials []claudec
 		qs = append(qs, text)
 	}
 	parts = append(parts, strings.Join(qs, "\n\n---\n\n"))
-	parts = append(parts, o.planTail(denials, discarded, fmt.Sprintf(o.msg.planQuestionsHint, word, word))...)
+	parts = append(parts, o.planTail(fetched, denials, discarded, fmt.Sprintf(o.msg.planQuestionsHint, word, word))...)
 	o.set("waiting", marker.PlanQuestions, o.msg.planQuestionsTitle, parts...)
 	o.Q = first + len(d.Questions) - 1
 	return o
@@ -324,22 +334,17 @@ func (o *outcome) questionText(n int, q PlanQuestion) string {
 }
 
 // planText writes back the plan of a plan run.
-func (o *outcome) planText(d *PlanDeclaration, denials []claudecode.Denial, discarded bool, word string) *outcome {
+func (o *outcome) planText(d *PlanDeclaration, fetched []string, denials []claudecode.Denial, discarded bool, word string) *outcome {
 	parts := []string{o.planTitleLine(d), strings.TrimSpace(d.Plan)}
-	parts = append(parts, o.planTail(denials, discarded, fmt.Sprintf(o.msg.planHint, word))...)
+	parts = append(parts, o.planTail(fetched, denials, discarded, fmt.Sprintf(o.msg.planHint, word))...)
 	return o.set("waiting", marker.PlanReady, o.msg.planTitle, parts...)
 }
 
 // planSkip ends a plan run that skipped the questions and the approval: its comment, with the plan, is posted as the
 // claim of the run that implements it (skipAgain), and nothing is written back for the plan run.
-func (o *outcome) planSkip(d *PlanDeclaration, denials []claudecode.Denial, discarded bool) *outcome {
+func (o *outcome) planSkip(d *PlanDeclaration, fetched []string, denials []claudecode.Denial, discarded bool) *outcome {
 	parts := []string{o.planTitleLine(d), o.msg.planSkipped, strings.TrimSpace(d.Plan)}
-	if discarded {
-		parts = append(parts, o.msg.planDiscarded)
-	}
-	if len(denials) > 0 {
-		parts = append(parts, "<details>\n<summary>"+o.msg.denied+"</summary>\n\n"+deniedList(denials)+"\n\n</details>")
-	}
+	parts = append(parts, o.planNotes(fetched, denials, discarded)...)
 	o.skip = "### " + o.msg.planSkippedTitle + "\n\n" + strings.Join(parts, "\n\n")
 	return o
 }
@@ -402,17 +407,65 @@ func (o *outcome) planTitleLine(d *PlanDeclaration) string {
 	return "**" + o.msg.planLabel + "** " + strings.Join(strings.Fields(d.Title), " ")
 }
 
-// planTail is the end of a plan-stage comment: the discarded changes, the refused operations folded away, and the
+// planTail is the end of a plan-stage comment: planNotes, and the
 // hint on how to answer as the last line.
-func (o *outcome) planTail(denials []claudecode.Denial, discarded bool, hint string) []string {
+func (o *outcome) planTail(fetched []string, denials []claudecode.Denial, discarded bool, hint string) []string {
+	return append(o.planNotes(fetched, denials, discarded), hint)
+}
+
+// planNotes are what a plan-stage comment says about the run itself: the discarded changes, and the pages read and
+// the refused operations folded away.
+func (o *outcome) planNotes(fetched []string, denials []claudecode.Denial, discarded bool) []string {
 	var parts []string
 	if discarded {
 		parts = append(parts, o.msg.planDiscarded)
 	}
+	if len(fetched) > 0 {
+		parts = append(parts, "<details>\n<summary>"+o.msg.fetched+"</summary>\n\n"+fetchedList(fetched, o.msg.fetchedMore)+"\n\n</details>")
+	}
 	if len(denials) > 0 {
 		parts = append(parts, "<details>\n<summary>"+o.msg.denied+"</summary>\n\n"+deniedList(denials)+"\n\n</details>")
 	}
-	return append(parts, hint)
+	return parts
+}
+
+// maxFetched and maxFetchedLen bound the list of the pages a plan run read: the URLs past the first maxFetched are
+// only counted, and a URL is cut after maxFetchedLen characters.
+const maxFetched, maxFetchedLen = 20, 200
+
+// fetchedList is the URLs a plan run passed to WebFetch as a Markdown list, each whole in a code span unless longer
+// than maxFetchedLen; more, with the count, stands for the URLs past the first maxFetched (ADR-074).
+func fetchedList(fetched []string, more string) string {
+	var lines []string
+	for i, u := range fetched {
+		if i == maxFetched {
+			lines = append(lines, "- "+fmt.Sprintf(more, len(fetched)-maxFetched))
+			break
+		}
+		if r := []rune(u); len(r) > maxFetchedLen {
+			u = string(r[:maxFetchedLen]) + "…"
+		}
+		lines = append(lines, "- "+codeSpan(u))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// codeSpan is s in a Markdown code span, fenced with one backtick more than the longest run of backticks in s.
+func codeSpan(s string) string {
+	longest, run := 0, 0
+	for _, r := range s {
+		if r == '`' {
+			run++
+			longest = max(longest, run)
+		} else {
+			run = 0
+		}
+	}
+	fence := strings.Repeat("`", longest+1)
+	if longest > 0 {
+		return fence + s + " " + fence
+	}
+	return fence + s + fence
 }
 
 // deniedList is the refused operations as a Markdown list.

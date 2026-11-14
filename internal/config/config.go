@@ -136,6 +136,21 @@ type Agent struct {
 	// Browser is the Chrome or Chromium switchboard shot runs (~/ expanded); empty looks for one on PATH. A plan run
 	// is told about images only when a browser is found (ADR-069).
 	Browser string `yaml:"browser"`
+	// PlanWebFetch lets the plan runs read web pages with WebFetch, on any domain, unless a project says otherwise;
+	// nil means on (ADR-074). The other runs never get WebFetch.
+	PlanWebFetch *bool `yaml:"plan_web_fetch"`
+}
+
+// PlanWebFetchFor reports whether the plan runs of p may use WebFetch: p's plan_web_fetch, else agent.plan_web_fetch,
+// else on.
+func (a Agent) PlanWebFetchFor(p Project) bool {
+	switch {
+	case p.PlanWebFetch != nil:
+		return *p.PlanWebFetch
+	case a.PlanWebFetch != nil:
+		return *a.PlanWebFetch
+	}
+	return true
 }
 
 // RunModel is a model and an effort level; an empty field takes the agent's default.
@@ -290,6 +305,9 @@ type Project struct {
 	// PlanPrototype lets this project's plan runs edit the worktree to try a change out before they take its picture;
 	// the edits are thrown away after the run (ADR-069).
 	PlanPrototype bool `yaml:"plan_prototype"`
+	// PlanWebFetch overrides agent.plan_web_fetch for this project: false keeps WebFetch away from its plan runs, as
+	// for a project whose code is secret.
+	PlanWebFetch *bool `yaml:"plan_web_fetch"`
 	// MaxParallel caps the runs of this project at once, under agent.max_parallel; nil leaves only that cap.
 	MaxParallel *int `yaml:"max_parallel"`
 	// TokenRef and AgentIdentity, set together, replace the forge's agent token and identity for this project, as

@@ -421,12 +421,16 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) (o *outcome) {
 			shotCmd, imageDir = images.Shot, filepath.Join(dir, workspace.PlanImageDir)
 		}
 		extra := [][]string{a.Config.Agent.AllowToolsExtra, p.AllowToolsExtra}
-		added = extraAllow(planSettings(p.PlanPrototype, shotCmd, imageDir).Allow, extra...)
-		req.SystemPrompt, req.Settings, req.Schema = prompt.PlanSystem(lang, word, used.Text), planSettings(p.PlanPrototype, shotCmd, imageDir, extra...), PlanSchema
+		fetch := a.Config.Agent.PlanWebFetchFor(p)
+		added = extraAllow(planSettings(p.PlanPrototype, fetch, shotCmd, imageDir).Allow, extra...)
+		req.SystemPrompt, req.Settings, req.Schema = prompt.PlanSystem(lang, word, used.Text), planSettings(p.PlanPrototype, fetch, shotCmd, imageDir, extra...), PlanSchema
 		if pl.skippable {
 			req.SystemPrompt, req.Schema = prompt.PlanSkipSystem(lang, word, used.Text), PlanSkipSchema
 		}
-		req.Tools = planToolsFor(p.PlanPrototype, imagesOn, extra...)
+		if fetch {
+			req.SystemPrompt = prompt.WithWebFetch(req.SystemPrompt)
+		}
+		req.Tools = planToolsFor(p.PlanPrototype, imagesOn, fetch, extra...)
 		if imagesOn {
 			req.SystemPrompt = prompt.WithPlanImages(req.SystemPrompt, images)
 			if err := sp.PreparePlanImages(ctx); err != nil {
@@ -723,11 +727,11 @@ func (a *Agent) planOutcome(ctx context.Context, res *claudecode.Result, pl *pla
 			up, _ = a.forgeOf(pl.issue.Ref).(forge.Uploader)
 		}
 		a.attachPlanImages(ctx, pl.issue.Ref, o.Run, d, pl.qNext, filepath.Join(a.runDir(o.Run), "plan-images"), up)
-		return o.planQuestions(d, pl.qNext, res.Denials, discarded, word)
+		return o.planQuestions(d, pl.qNext, res.Fetched, res.Denials, discarded, word)
 	case d.Status == planImplement:
-		return o.planSkip(d, res.Denials, discarded)
+		return o.planSkip(d, res.Fetched, res.Denials, discarded)
 	}
-	return o.planText(d, res.Denials, discarded, word)
+	return o.planText(d, res.Fetched, res.Denials, discarded, word)
 }
 
 // loadInstructions returns the user's additional instructions of kind for a run of p, read again for every run. A
