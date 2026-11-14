@@ -318,6 +318,7 @@ func TestRunWritesTheSandbox(t *testing.T) {
 	req := request(t, bin)
 	req.Settings.Unsandboxed = []string{"make verify", "git", "git *"}
 	req.Settings.DenyRead = []string{"/home/alice/.ssh"}
+	req.Settings.AllowWrite = []string{"/home/alice/.cache/switchboard/go-build"}
 	if _, err := Run(context.Background(), req); err != nil {
 		t.Fatal(err)
 	}
@@ -329,7 +330,8 @@ func TestRunWritesTheSandbox(t *testing.T) {
 			AutoAllowBashIfSandboxed *bool    `json:"autoAllowBashIfSandboxed"`
 			ExcludedCommands         []string `json:"excludedCommands"`
 			Filesystem               struct {
-				DenyRead []string `json:"denyRead"`
+				DenyRead   []string `json:"denyRead"`
+				AllowWrite []string `json:"allowWrite"`
 			} `json:"filesystem"`
 		} `json:"sandbox"`
 	}
@@ -341,8 +343,45 @@ func TestRunWritesTheSandbox(t *testing.T) {
 	if !is(s.Enabled, true) || !is(s.FailIfUnavailable, true) || !is(s.AllowUnsandboxedCommands, false) || !is(s.AutoAllowBashIfSandboxed, true) {
 		t.Errorf("sandbox switches = %+v", s)
 	}
-	if !slices.Equal(s.ExcludedCommands, req.Settings.Unsandboxed) || !slices.Equal(s.Filesystem.DenyRead, req.Settings.DenyRead) {
+	if !slices.Equal(s.ExcludedCommands, req.Settings.Unsandboxed) || !slices.Equal(s.Filesystem.DenyRead, req.Settings.DenyRead) ||
+		!slices.Equal(s.Filesystem.AllowWrite, req.Settings.AllowWrite) {
 		t.Errorf("sandbox lists = %+v", s)
+	}
+}
+
+func TestRunWritesAnEmptyAllowWrite(t *testing.T) {
+	bin, _ := fakeClaude(t, "done.jsonl", 0, false, false, 0)
+	req := request(t, bin)
+	if _, err := Run(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, filepath.Join(req.RunDir, "settings.json")); !strings.Contains(got, `"allowWrite": []`) {
+		t.Fatalf("settings.json lacks an empty allowWrite: %s", got)
+	}
+}
+
+func TestRunSetsGOCACHE(t *testing.T) {
+	bin, rec := fakeClaude(t, "done.jsonl", 0, false, false, 0)
+	req := request(t, bin)
+	req.Env = append(req.Env, "GOCACHE=/home/alice/.cache/go-build")
+	req.GoCache = "/home/alice/.cache/switchboard/go-build"
+	if _, err := Run(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	env := read(t, filepath.Join(rec, "env"))
+	if !strings.Contains(env, "GOCACHE=/home/alice/.cache/switchboard/go-build") || strings.Contains(env, "GOCACHE=/home/alice/.cache/go-build") {
+		t.Errorf("claude env GOCACHE wrong:\n%s", env)
+	}
+}
+
+func TestWithGoCache(t *testing.T) {
+	parent := []string{"PATH=/bin", "GOCACHE=/home/alice/.cache/go-build"}
+	got := WithGoCache(Env(parent, "subscription"), "/c/go-build")
+	if strings.Join(got, ",") != "PATH=/bin,GOCACHE=/c/go-build" {
+		t.Errorf("with a dir = %v", got)
+	}
+	if got := WithGoCache(Env(parent, "subscription"), ""); strings.Join(got, ",") != "PATH=/bin" {
+		t.Errorf("without a dir = %v", got)
 	}
 }
 

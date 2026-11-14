@@ -172,11 +172,13 @@ switchboard instructions edit gh:o/switchboard  # 1つのプロジェクトの�
 
 ### 実行のsandbox
 
-実行の中のシェルのコマンドは、実行ごとのsandboxの中で動く。書き込めるのはworktreeと `$TMPDIR` だけで、ネットワークには接続できない。資格情報の置き場所（`~/.ssh`、`~/.config/gh` など）と、switchboardの設定と状態のディレクトリは読めない。sandboxの中のコマンドは、許可の規則が無くても動く。拒否する操作（`git push`、`git rebase`、`gh` など）は、sandboxの中でも拒否される。
+実行の中のシェルのコマンドは、実行ごとのsandboxの中で動く。書き込めるのは、worktreeと `$TMPDIR` と、Goのビルドキャッシュの置き場所だけである。ネットワークには接続できない。資格情報の置き場所（`~/.ssh`、`~/.config/gh` など）と、switchboardの設定と状態のディレクトリは読めない。sandboxの中のコマンドは、許可の規則が無くても動く。拒否する操作（`git push`、`git rebase`、`gh` など）は、sandboxの中でも拒否される。
 
 sandboxの外で動くのは、`git` と、プロジェクトの検証コマンドの全体（`make verify` など）だけである。この2つは、許可の規則で決まる。同じ道具のほかのコマンド（`make deploy` など）は、sandboxの中で動く。
 
 実行は、Claude Codeの利用者の全体設定（`~/.claude/settings.json` のsandbox、フック、プラグイン、許可の規則）を使わない。対象リポジトリのプロジェクト設定は読み込む。
+
+Goのビルドキャッシュの置き場所は、`$XDG_CACHE_HOME`（無ければ `~/.cache`）の下の `switchboard/go-build` で、全プロジェクトで1つである。エージェントは、claudeを起動する前にこれを作り、`GOCACHE` としてclaudeに渡す。準備のコマンドと検証コマンドも、同じ `GOCACHE` で動く。利用者自身のビルドキャッシュ（`~/.cache/go-build`）には、実行の中から書かない（ADR-073）。Goのモジュールは、sandboxの中からは取得できないので、準備のコマンドに `go mod download` を書く。
 
 Linuxの端末には、`bubblewrap` と `socat` が要る。エージェントは実行のたびに、claudeを起動する前に、bwrapで名前空間を作れるかを確かめる。作れないとき（別のsandboxやコンテナの中など）は、claudeを起動せず、実行を誤りにして理由をコメントに書く。
 

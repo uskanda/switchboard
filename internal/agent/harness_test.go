@@ -36,6 +36,7 @@ type h struct {
 	stop                 context.CancelFunc
 	ref                  forge.IssueRef
 	envExtra             []string
+	cacheHome            string       // XDG_CACHE_HOME of the agent, so that runs keep the Go build cache out of the real home
 	skew                 atomic.Int64 // how far the fake forge's clock runs ahead of the real one
 }
 
@@ -111,7 +112,7 @@ func run(t *testing.T, dir string, name string, args ...string) string {
 func newH(t *testing.T, yamlExtra string, edit func(*config.Config)) *h {
 	t.Helper()
 	root := t.TempDir()
-	x := &h{t: t, audit: &recorder{}}
+	x := &h{t: t, audit: &recorder{}, cacheHome: filepath.Join(root, "cache")}
 	x.f = fake.New(func() time.Time { return time.Now().Add(time.Duration(x.skew.Load())) })
 	x.master = x.f.AddUser("master", 1)
 	x.bot = x.f.AddUser("agent", 2)
@@ -197,7 +198,7 @@ func (x *h) agentWith(edit func(*Agent)) *Agent {
 	}
 	x.a = &Agent{
 		Config: x.cfg, Forge: x.f, Judge: j, State: x.dir, Audit: x.audit,
-		Env:      append(os.Environ(), x.envExtra...),
+		Env:      append(append(os.Environ(), "XDG_CACHE_HOME="+x.cacheHome), x.envExtra...),
 		IntGrace: 200 * time.Millisecond, TermGrace: 200 * time.Millisecond,
 		CheckSandbox: noSandboxCheck,
 	}

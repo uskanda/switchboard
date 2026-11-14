@@ -34,6 +34,9 @@ type Settings struct {
 	Unsandboxed []string
 	// DenyRead are the paths commands in the sandbox may not read. Each should exist (V52).
 	DenyRead []string
+	// AllowWrite are the paths besides the working directory and $TMPDIR that commands in the sandbox may write
+	// (filesystem.allowWrite, V65): the run's Go build cache (ADR-073).
+	AllowWrite []string
 }
 
 // Request describes one run.
@@ -61,6 +64,8 @@ type Request struct {
 	IntGrace, TermGrace time.Duration
 	// Env is the parent environment to pick from (os.Environ() when nil).
 	Env []string
+	// GoCache, when set, is the GOCACHE claude and its commands get, in place of the parent's (ADR-073).
+	GoCache string
 }
 
 // Denial is a tool call the permission system refused.
@@ -148,6 +153,21 @@ func Env(parent []string, auth string) []string {
 	return out
 }
 
+// WithGoCache returns env with GOCACHE set to dir, dropping any GOCACHE it had; env itself when dir is empty.
+// The parent's GOCACHE, the user's own build cache, never reaches a run (ADR-073).
+func WithGoCache(env []string, dir string) []string {
+	out := make([]string, 0, len(env)+1)
+	for _, kv := range env {
+		if !strings.HasPrefix(kv, "GOCACHE=") {
+			out = append(out, kv)
+		}
+	}
+	if dir != "" {
+		out = append(out, "GOCACHE="+dir)
+	}
+	return out
+}
+
 // Efforts are the effort levels the CLI accepts for --effort.
 var Efforts = []string{"low", "medium", "high", "xhigh", "max"}
 
@@ -202,7 +222,7 @@ func writeFiles(req Request) error {
 			// The CLI's default, written out so that a change of default does not change what runs unasked.
 			"autoAllowBashIfSandboxed": true,
 			"excludedCommands":         list(s.Unsandboxed),
-			"filesystem":               map[string]any{"denyRead": list(s.DenyRead)},
+			"filesystem":               map[string]any{"denyRead": list(s.DenyRead), "allowWrite": list(s.AllowWrite)},
 		},
 	}, "", "  ")
 	if err != nil {
@@ -251,7 +271,7 @@ func Run(ctx context.Context, req Request) (*Result, error) {
 
 	cmd := exec.Command(req.Binary, Args(req)...)
 	cmd.Dir = req.Dir
-	cmd.Env = Env(parent, req.Auth)
+	cmd.Env = WithGoCache(Env(parent, req.Auth), req.GoCache)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, out, errLog
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {

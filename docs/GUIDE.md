@@ -176,11 +176,13 @@ You can also edit them on the Settings page of the web inbox. A save may be up t
 
 ### The run sandbox
 
-Shell commands in a run execute inside a sandbox of their own for each run. They can write only to the worktree and `$TMPDIR`, and they cannot connect to the network. Credential locations (`~/.ssh`, `~/.config/gh`, and so on) and switchboard's config and state directories are unreadable to them. Commands in the sandbox run without permission rules. Denied operations (`git push`, `git rebase`, `gh`, and so on) stay denied inside the sandbox too.
+Shell commands in a run execute inside a sandbox of their own for each run. They can write only to the worktree, `$TMPDIR`, and the Go build cache, and they cannot connect to the network. Credential locations (`~/.ssh`, `~/.config/gh`, and so on) and switchboard's config and state directories are unreadable to them. Commands in the sandbox run without permission rules. Denied operations (`git push`, `git rebase`, `gh`, and so on) stay denied inside the sandbox too.
 
 Only `git` and the project's whole verify command (`make verify` or similar) run outside the sandbox, and permission rules decide those two. Other commands of the same tool (`make deploy`, for example) run inside the sandbox.
 
 A run does not use the Claude Code user's global settings (the sandbox, hooks, plugins, and permission rules in `~/.claude/settings.json`). It does load the project settings of the target repository.
+
+The Go build cache is `switchboard/go-build` under `$XDG_CACHE_HOME` (or `~/.cache` when it is unset), one for every project. The agent creates it before it starts claude and passes it to claude as `GOCACHE`. The setup command and the verify command build with the same `GOCACHE`. Runs never write your own build cache (`~/.cache/go-build`) (ADR-073). Commands in the sandbox cannot download Go modules, so put `go mod download` in the setup command.
 
 Linux hosts need `bubblewrap` and `socat`. For each run, before it starts claude, the agent checks that bwrap can create namespaces. When it cannot, as inside another sandbox or a container, the agent does not start claude. It marks the run as an error and gives the reason in a comment.
 

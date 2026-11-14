@@ -154,6 +154,25 @@ func TestSetupCommandGetsNoToken(t *testing.T) {
 	}
 }
 
+// ADR-073: the setup command and the verify command the agent runs build with the runs' Go build cache.
+func TestSetupAndVerifyGetTheRunsGOCACHE(t *testing.T) {
+	x := withSetup(t, `env > __CTL__/setup-env`, nil)
+	x.cfg.Projects[0].VerifyCommand = "sh -c 'env > " + filepath.Join(x.ctl, "verify-env") + "'"
+	x.envExtra = []string{"GOCACHE=/elsewhere/go-build"}
+	x.agentWith(func(a *Agent) {})
+	x.step(1, commit("a.txt", "a")+done("Done."))
+	x.f.AddLabel(x.ref, "agent:ready", x.master)
+	x.poll()
+	x.settle()
+	want := "\nGOCACHE=" + filepath.Join(x.cacheHome, "switchboard", "go-build") + "\n"
+	for _, f := range []string{"setup-env", "verify-env"} {
+		env := "\n" + x.file(f)
+		if !strings.Contains(env, want) || strings.Contains(env, "/elsewhere/go-build") {
+			t.Errorf("%s GOCACHE wrong:\n%s", f, env)
+		}
+	}
+}
+
 func TestSetupCommandIsRecorded(t *testing.T) {
 	x := withSetup(t, `echo fetched-everything`, nil)
 	x.f.AddLabel(x.ref, "agent:ready", x.master)

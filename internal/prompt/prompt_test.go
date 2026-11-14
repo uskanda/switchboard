@@ -163,6 +163,9 @@ func TestPlanSystemPromptLeavesTheLabelsOfTheOptionsToSwitchboard(t *testing.T) 
 
 func TestPlanSystemPromptWeighsAndShapesTheQuestions(t *testing.T) {
 	s := PlanSystem("en", "/ok", "")
+	if skip := PlanSkipSystem("en", "/ok", ""); !strings.Contains(skip, "GOCACHE is set") {
+		t.Error("the skippable plan system prompt lacks the GOCACHE line")
+	}
 	for _, want := range []string{
 		"changes the options of other questions", "ask only that question in this round",
 		`"weight"`, `"decision"`, `"check"`, "follows from the issue, the code or the existing conventions",
@@ -312,7 +315,7 @@ func TestWithSandboxSaysHowToWorkInTheSandbox(t *testing.T) {
 	if !strings.HasPrefix(s, sys) {
 		t.Fatalf("WithSandbox changed the rules:\n%s", s)
 	}
-	for _, want := range []string{"## The sandbox", "$TMPDIR", "network", "Read, Grep, Glob, Edit and Write", "`make verify`", "on its own", "&&", "cd", "dangerouslyDisableSandbox"} {
+	for _, want := range []string{"## The sandbox", "$TMPDIR", "network", "Read, Grep, Glob, Edit and Write", "`make verify`", "on its own", "&&", "cd", "dangerouslyDisableSandbox", "GOCACHE is set"} {
 		if !strings.Contains(s[len(sys):], want) {
 			t.Errorf("the section lacks %q:\n%s", want, s[len(sys):])
 		}
@@ -324,7 +327,7 @@ func TestWithSandboxSaysHowToWorkInTheSandbox(t *testing.T) {
 
 func TestPlanSystemPromptSaysCommandsRunInTheSandbox(t *testing.T) {
 	s := PlanSystem("en", "/ok", "")
-	for _, want := range []string{"sandbox", "Read, Grep and Glob", "thrown away", "on its own"} {
+	for _, want := range []string{"sandbox", "Read, Grep and Glob", "thrown away", "on its own", "GOCACHE is set"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("plan system prompt lacks %q", want)
 		}
