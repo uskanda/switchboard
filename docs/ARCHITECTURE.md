@@ -102,13 +102,14 @@
 1. Claude が issue のブランチにコミットし、完了を宣言して終了
 2. エージェントが push 前の検査を通して push し、draft の PR/MR を作り、URL をコメントして `agent:done`
 3. マージは人間が行う。受信箱のWeb表示の「マージ」のボタンからも行え、そのときは受信箱のサービスが受信箱のトークン（人の身元）でdraftを解除してマージする。issueのcloseはPR/MRの `Closes #N` に任せる（ADR-043）
-4. 押したマージがPR/MRとbaseの衝突で断られたときは、受信箱のサービスが依頼を状態ディレクトリの `inbox/automerge.json` に覚える。エージェントの直す実行が新しいdone（マーカーに `fix=<ci|push|conflict>`）を投稿し、PR/MRのheadがそのコミットなら、受信箱のサービスがそのコミットを指定してマージする。依頼は `inbox.refresh_interval` ごとに、画面がつながっていなくても調べる。押したあとに人の指示の実行が入ったとき、issueやPR/MRが閉じたとき、`waiting` に移ったとき、人がpushしたときは打ち切る。WUIの詳細のペインから取り消せる（ADR-048）
+4. 押したマージがPR/MRとbaseの衝突で断られたときは、受信箱のサービスが依頼を状態ディレクトリの `inbox/automerge.json` に覚える。そのあとエージェントの直す実行が、新しいdone（マーカーに `fix=<ci|push|conflict|base>`）を投稿する。PR/MRのheadがそのコミットなら、受信箱のサービスがそのコミットを指定してマージする。headがdoneの `sha` と違う状態は2分まで待つ（ADR-075）。依頼は `inbox.refresh_interval` ごとに、画面がつながっていなくても調べる。押したあとに人の指示の実行が入ったとき、issueやPR/MRが閉じたとき、`waiting` に移ったとき、人がpushしたときは打ち切る。WUIの詳細のペインから取り消せる（ADR-048）
 
 ### 4.5 CIとpushの失敗（ADR-041）
 1. 完了のコメントのマーカーに、pushしたコミット（`sha`）と変更要求の番号（`cr`）を書く
 2. エージェントは `poll_interval` ごとに、そのコミットのCI（GitHub Actionsのjobとcommit status、GitLabのpipelineのjob）を読む。見張りの対象は端末に記録せず、照合のたびに `agent:done` のissueのマーカーから作り直す
 3. CIが全部終わって失敗があれば、失敗したjobのログの末尾を非信頼のデータとして渡し、直す実行を始める（`agent:done` → `agent:running`）。上限を超えたら `waiting(reason=ci)`
 4. pushがnon-fast-forwardで拒否されたら、リモートのブランチをfetchし、同じ実行の枠のまま直す実行に引き継ぐ。権限と規則による拒否は `waiting(reason=push)`
+5. CIの失敗と衝突では、直す実行の前にbaseの先頭のCIを読む。失敗したチェックがどれもbaseでも失敗していれば（衝突ではbaseが赤なら）、直す実行を始めず、回数にも数えずに待つ。待ち始めに `state=note reason=base` のコメントを1回書く。baseは `poll_interval` ごとにプロジェクトとbaseの組で1回だけ読む。緑に戻ったら、エージェントがClaudeを起動せずにbaseをmergeしてpushし、`fix=base` のdoneを投稿する。衝突したら衝突を直す実行に回す（ADR-075）
 
 ## 5. ディレクトリ構成
 

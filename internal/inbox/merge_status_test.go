@@ -143,3 +143,38 @@ func TestMergeStatusRefusesWhatThePageDidNotShow(t *testing.T) {
 		}
 	})
 }
+
+// The dialog also tells whether the CI of the base branch fails (ADR-075).
+func TestMergeStatusReadsTheBaseCI(t *testing.T) {
+	w := newWorld(t)
+	w.b.Config.Projects[0].BaseBranch = "main"
+	ref := mergeable(w, 50)
+	w.f.SetBranchHead("o", "r", "main", "base1")
+	w.f.SetChecks("o", "r", "base1",
+		forge.Check{Name: "verify", Done: true, Conclusion: forge.Failure, URL: "https://ci/9"},
+		forge.Check{Name: "lint", Done: true, Conclusion: forge.Success},
+	)
+	st, err := w.b.MergeStatus(ctx, w.f, ref, "abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.BaseBranch != "main" || len(st.BaseFailed) != 1 || st.BaseFailed[0] != (CheckStatus{Name: "verify", Status: CheckFailure, URL: "https://ci/9"}) {
+		t.Fatalf("base = %q %+v", st.BaseBranch, st.BaseFailed)
+	}
+
+	w.f.SetChecks("o", "r", "base1", forge.Check{Name: "verify", Done: true, Conclusion: forge.Success})
+	if st, err = w.b.MergeStatus(ctx, w.f, ref, "abc"); err != nil || st.BaseBranch != "main" || len(st.BaseFailed) != 0 {
+		t.Fatalf("a green base: %+v, %v", st, err)
+	}
+}
+
+func TestMergeStatusWithoutTheBase(t *testing.T) {
+	w := newWorld(t)
+	w.b.Config.Projects[0].BaseBranch = "main"
+	ref := mergeable(w, 50)
+	w.f.SetChecks("o", "r", "abc", forge.Check{Name: "test", Done: true, Conclusion: forge.Success})
+	st, err := w.b.MergeStatus(ctx, w.f, ref, "abc") // main has no head in the fake: the read fails
+	if err != nil || st.BaseBranch != "" || st.BaseFailed != nil || st.CI != CIRead || len(st.Checks) != 1 {
+		t.Fatalf("status = %+v, %v", st, err)
+	}
+}

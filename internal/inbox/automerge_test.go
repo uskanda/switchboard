@@ -168,7 +168,14 @@ func TestAutoMergeIsCancelled(t *testing.T) {
 			ref := conflicting(w, 50)
 			r := requested(t, w, ref)
 			tc.then(w, ref)
-			if s := step(t, w, r); s.Outcome != automerge.Cancelled || s.Reason != tc.reason {
+			s := step(t, w, r)
+			if s.Update != nil {
+				// A head that is not the agent's commit is given automerge.MovedGrace to be named by a done post.
+				r = *s.Update
+				w.now = w.now.Add(automerge.MovedGrace)
+				s = step(t, w, r)
+			}
+			if s.Outcome != automerge.Cancelled || s.Reason != tc.reason {
 				t.Fatalf("step = %+v, want cancelled for %s", s, tc.reason)
 			}
 			if c, _ := w.f.ChangeState("o", "r", 9); c.Merged && tc.reason != automerge.ReasonChangeClosed {
@@ -208,5 +215,45 @@ func TestAutoMergeReportsAForgeThatCannotBeRead(t *testing.T) {
 	w.f.FailMerge = errors.New("connection reset")
 	if _, err := w.b.AutoMergeStep(ctx, w.f, r); err == nil {
 		t.Fatal("no error for a merge that could not be sent")
+	}
+}
+
+// The agent pushes the merge of its base, green again, before it posts the done of fix=base: a head that is not yet
+// named by a done post is given a moment (ADR-075).
+func TestAutoMergeWaitsForTheDoneOfAMergedBase(t *testing.T) {
+	w := newWorld(t)
+	ref := conflicting(w, 50)
+	r := requested(t, w, ref)
+	w.fixed(ref, "def", marker.Conflict)
+	w.f.SetChange("o", "r", 9, fake.Change{Head: "def", Refuse: "Required status check is expected"})
+	if s := step(t, w, r); s.Outcome != "" {
+		t.Fatalf("step = %+v", s)
+	}
+	w.f.SetChange("o", "r", 9, fake.Change{Head: "ghi"})
+	s := step(t, w, r)
+	if s.Outcome != "" || s.Update == nil || !s.Update.Moved.Equal(w.now) {
+		t.Fatalf("the pushed merge ended the request: %+v", s)
+	}
+	r = *s.Update
+	w.now = w.now.Add(time.Minute)
+	w.as(ref, marker.Marker{Host: "desk", Run: "b", State: marker.Done, SHA: "ghi", CR: 9, Fix: marker.Base}, "agent:done")
+	if s := step(t, w, r); s.Outcome != automerge.Merged || s.SHA != "ghi" {
+		t.Fatalf("step = %+v", s)
+	}
+}
+
+// Once the head is the agent's commit again, a later push by a person is given the moment anew, not cut short.
+func TestAutoMergeForgetsAMovedHeadThatCameBack(t *testing.T) {
+	w := newWorld(t)
+	ref := conflicting(w, 50)
+	r := requested(t, w, ref)
+	w.fixed(ref, "def", marker.Conflict)
+	w.f.SetChange("o", "r", 9, fake.Change{Head: "ghi"})
+	s := step(t, w, r)
+	r = *s.Update
+	w.f.SetChange("o", "r", 9, fake.Change{Head: "def", Refuse: "Required status check is expected"})
+	s = step(t, w, r)
+	if s.Outcome != "" || s.Update == nil || !s.Update.Moved.IsZero() {
+		t.Fatalf("step = %+v", s)
 	}
 }

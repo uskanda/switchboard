@@ -62,6 +62,8 @@ type CI interface {
 	CheckLog(ctx context.Context, owner, repo string, c Check) (string, error)
 	// ChangeRequestHead returns the state, the head commit and the conflict with the base of the change request number.
 	ChangeRequestHead(ctx context.Context, owner, repo string, number int) (*ChangeRequestState, error)
+	// BranchHead returns the commit at the head of branch, whose CI tells whether the base of a change request is red.
+	BranchHead(ctx context.Context, owner, repo, branch string) (string, error)
 }
 
 var crNumber = regexp.MustCompile(`/(?:pull|merge_requests)/(\d+)/?$`)

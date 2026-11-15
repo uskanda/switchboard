@@ -320,6 +320,10 @@ type MergeStatus struct {
 	// CI is CIRead, CINone or CIForbidden; Checks are empty unless it is CIRead.
 	CI     string        `json:"ci"`
 	Checks []CheckStatus `json:"checks"`
+	// BaseBranch is the project's base branch when the CI at its head could be read, and BaseFailed the checks that
+	// failed there (ADR-075); both are empty otherwise. The dialog shows the failures and still lets the person merge.
+	BaseBranch string        `json:"base_branch,omitempty"`
+	BaseFailed []CheckStatus `json:"base_failed,omitempty"`
 }
 
 // CheckStatus is one check of the commit. Name is the forge's data, to be shown as text only.

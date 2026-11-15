@@ -30,7 +30,14 @@ type Request struct {
 	SHA   string    `json:"sha"`
 	Since time.Time `json:"since"`
 	After int64     `json:"after"`
+	// Moved is when the change request's head was first seen at a commit no done post named, or zero. The request is
+	// cancelled only when that lasts MovedGrace (ADR-075).
+	Moved time.Time `json:"moved,omitzero"`
 }
+
+// MovedGrace is how long a change request's head may be at a commit no done post names before the request is
+// cancelled: the agent pushes the merge of its base, green again, before it posts the done that names it (ADR-075).
+const MovedGrace = 2 * time.Minute
 
 // The outcomes of a finished request.
 const (
@@ -111,6 +118,19 @@ func (s *Store) Put(r Request) error {
 	s.data.Pending = slices.DeleteFunc(s.data.Pending, func(p Request) bool { return p.Ref == r.Ref })
 	s.data.Pending = append(s.data.Pending, r)
 	return s.save()
+}
+
+// Update replaces the request of the same issue with r, in its place; a request no longer kept is left out.
+func (s *Store) Update(r Request) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, p := range s.data.Pending {
+		if p.Ref == r.Ref && p.Since.Equal(r.Since) {
+			s.data.Pending[i] = r
+			return s.save()
+		}
+	}
+	return nil
 }
 
 // Get returns the request of the issue ref, and whether there is one.

@@ -11,13 +11,15 @@ var _ forge.CI = (*Forge)(nil)
 
 // ci is the CI state of the fake: the checks of each commit, the logs of jobs, and where each change request stands.
 type ci struct {
-	checks    map[string][]forge.Check // "owner/repo@sha" -> checks
-	logs      map[int64]string
-	heads     map[int]string // index into PRs -> head commit
-	merged    map[int]bool
-	conflicts map[int]bool // index into PRs -> conflicts with its base
-	calls     int          // calls of CommitChecks
-	prCalls   int          // calls of ChangeRequestHead
+	checks      map[string][]forge.Check // "owner/repo@sha" -> checks
+	logs        map[int64]string
+	heads       map[int]string // index into PRs -> head commit
+	merged      map[int]bool
+	conflicts   map[int]bool      // index into PRs -> conflicts with its base
+	calls       int               // calls of CommitChecks
+	prCalls     int               // calls of ChangeRequestHead
+	branches    map[string]string // "owner/repo:branch" -> head commit
+	branchCalls int               // calls of BranchHead
 }
 
 func (f *Forge) ciState() *ci {
@@ -123,4 +125,38 @@ func (f *Forge) ChangeRequestHead(_ context.Context, owner, repo string, number 
 		st.State = forge.CRClosed
 	}
 	return st, nil
+}
+
+// SetBranchHead moves the head of branch of owner/repo to sha.
+func (f *Forge) SetBranchHead(owner, repo, branch, sha string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	s := f.ciState()
+	if s.branches == nil {
+		s.branches = map[string]string{}
+	}
+	s.branches[owner+"/"+repo+":"+branch] = sha
+}
+
+// BranchCalls is how many times BranchHead was called.
+func (f *Forge) BranchCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.ciState().branchCalls
+}
+
+// BranchHead implements forge.CI. A branch never set has no head: ErrNotFound.
+func (f *Forge) BranchHead(_ context.Context, owner, repo, branch string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	s := f.ciState()
+	s.branchCalls++
+	if err := f.FailCI; err != nil {
+		return "", err
+	}
+	sha, ok := s.branches[owner+"/"+repo+":"+branch]
+	if !ok {
+		return "", fmt.Errorf("fake: branch %s/%s:%s: %w", owner, repo, branch, forge.ErrNotFound)
+	}
+	return sha, nil
 }

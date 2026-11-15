@@ -25,6 +25,10 @@ type texts struct {
 	// The claims of fix runs: of a CI failure (attempt, limit, checks), of a branch that moved on, and of a conflict
 	// with the base (attempt, limit).
 	fixCI, fixPush, fixConflict string
+	// The note of a done issue that waits for its red base (branch, the failed checks of the base).
+	baseNote string
+	// The done post of the base merged once it is green again (branch).
+	baseMerged string
 	// The wait after the CI failed for good: the title, the lead (change request, fixes made, limit; or the change
 	// request alone when fixes are off), the headings, and the reply hint.
 	ciTitle, ciFailed, ciNoFixes, ciChecks, ciAttempts, ciAttempt, ciLog, ciReply string
@@ -137,6 +141,8 @@ var english = texts{
 	fixCI:       "The CI failed, so the agent fixes it (%d/%d): %s",
 	fixPush:     "The push was refused because the issue branch on the remote moved on, so the agent merges it (%d/%d).",
 	fixConflict: "The change request conflicts with the base branch, so the agent merges the base (%d/%d).",
+	baseMerged:  "The CI of the base branch %s passes again, so the agent merged the base into this branch. The CI runs again.",
+	baseNote:    "The CI of the base branch fails as well (%s: %s), so this waits until it passes again. Then the agent merges the base and watches the CI again.",
 
 	ciTitle:    "The CI still fails",
 	ciFailed:   "The CI of %s failed again after %d automatic fix run(s); the limit is %d.",
@@ -246,6 +252,8 @@ var japanese = texts{
 	fixCI:       "CIが失敗したので直します（%d/%d）：%s",
 	fixPush:     "リモートのissueのブランチが先に進んでいてpushが拒否されたので、取り込んで直します（%d/%d）。",
 	fixConflict: "変更要求がbaseと衝突しているので、baseとの衝突を解消します（%d/%d）。",
+	baseMerged:  "base（%s）のCIが緑に戻ったので、baseを取り込みました。CIをもう一度見ます。",
+	baseNote:    "baseのCIが失敗しているため、緑に戻るまで待ちます（%s：%s）。緑に戻ったら、baseを取り込んでCIを見直します。",
 
 	ciTitle:    "CIが失敗したままです",
 	ciFailed:   "%sのCIが、%d回自動で直した後も失敗しました。上限は%d回です。",

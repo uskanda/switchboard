@@ -737,6 +737,8 @@ After it opens a PR or MR and sets `agent:done`, the agent checks the CI of the 
 
 An issue gets at most `agent.max_fix_attempts` fixes (2 by default). If the CI still fails after that many fixes, the issue waits with the reason `ci`. The comment carries the failed checks, a summary of each attempt, and the end of the logs. When a trusted person replies or the start label is put on again, the count starts over from 0. With 0, the agent fixes nothing automatically.
 
+If every check that failed on the PR also fails, under the same name, at the head of the base branch, the agent treats the base as red. It then starts no fix run and counts nothing. The issue stays `agent:done` and gets one comment saying that it waits until the CI of the base passes again. While the base is red, conflicts with it are not fixed either. Once the CI of the base passes, the agent merges the base into the PR's branch without starting claude, pushes, and watches the CI again. If that merge conflicts, it starts a conflict fix run, which counts as a fix.
+
 In these cases, the agent stops watching without writing anything:
 
 - The PR is closed or merged

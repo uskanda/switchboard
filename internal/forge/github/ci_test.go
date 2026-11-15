@@ -118,3 +118,18 @@ func TestChangeRequestConflict(t *testing.T) {
 		}
 	}
 }
+
+func TestBranchHead(t *testing.T) {
+	s, c := newServer(t)
+	s.on("GET /repos/o/r/branches/main", jsonReply(map[string]any{"name": "main", "commit": map[string]any{"sha": "base1"}}))
+	s.on("GET /repos/o/r/branches/gone", func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, `{"message":"Branch not found"}`, http.StatusNotFound)
+	})
+	sha, err := c.BranchHead(ctx, "o", "r", "main")
+	if err != nil || sha != "base1" {
+		t.Fatalf("BranchHead = %q, %v", sha, err)
+	}
+	if _, err := c.BranchHead(ctx, "o", "r", "gone"); !errors.Is(err, forge.ErrNotFound) {
+		t.Fatalf("missing branch: err = %v", err)
+	}
+}

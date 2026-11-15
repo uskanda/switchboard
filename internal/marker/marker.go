@@ -5,7 +5,7 @@
 // A claim made from a start label also carries mode=<plan|auto|direct>, and a post of plan questions q=<last number>.
 // A plan run that skips the questions and the approval posts its plan as a claim with mode=direct reason=plan-skipped.
 // A done post that names a change request carries sha=<the commit pushed> and cr=<its number>; the done post of a fix
-// run also carries fix=<ci|push|conflict>, what it fixed. A queued comment on a paused host, and the wait of a fix run
+// run also carries fix=<ci|push|conflict|base>, what it fixed. A queued comment on a paused host, and the wait of a fix run
 // that hit a usage limit, carry until=<RFC3339>, when the host starts runs again; the queued comment of a run that hit
 // the limit also names that run (run=), which marks the issue to resume.
 // Unknown keys are ignored, so that a newer version's marker still parses.
@@ -29,7 +29,7 @@ type Marker struct {
 	Host    string
 	Session string
 	Run     string
-	State   string // running (the claim of a run), progress (its progress comment), queued, waiting, done, attachment
+	State   string // running (the claim of a run), progress (its progress comment), queued, waiting, done, attachment, note
 	Reason  string // for waiting: question, permission, error, verify, limit, plan-questions, plan, push, ci, conflict; for queued: the limit or the pause; for running: fix on a fix run's claim, plan-skipped on the claim of a plan run's skip
 	Ack     int64  // the last comment ID the run took in
 	At      time.Time
@@ -37,7 +37,7 @@ type Marker struct {
 	Q       int    // on a post of plan questions: the number of its last question
 	SHA     string // on a done post: the commit pushed, whose CI the agent watches
 	CR      int    // on a done post: the number of the change request
-	Fix     string // on the done post of a fix run: what it fixed (CI, Push or Conflict); empty on any other post
+	Fix     string // on the done post of a fix run: what it fixed (CI, Push, Conflict or Base); empty on any other post
 	// Until, on a queued comment of a paused host or the wait of a fix run that hit a limit: when runs start again.
 	Until time.Time
 }
@@ -65,6 +65,9 @@ const (
 	Push     = "push"
 	CI       = "ci"
 	Conflict = "conflict"
+	// Base is what the note of an issue waiting for its red base branch names, and what the done post of the merge
+	// of that base, once green again, fixed (ADR-075).
+	Base = "base"
 )
 
 // The states a marker names.
@@ -76,12 +79,15 @@ const (
 	Done     = "done"
 	// Attachment marks the comment that attaches the images of a done run, posted after its done post (ADR-051).
 	Attachment = "attachment"
+	// Note marks a comment that tells why an issue stays as it is, such as waiting for its red base (reason base);
+	// it changes no state.
+	Note = "note"
 )
 
 // Transient reports whether m marks a post that says nothing about why an issue waits or how a run ended: the claim
-// of a run, its progress comment, the queued comment, or the comment that attaches a run's images.
+// of a run, its progress comment, the queued comment, the comment that attaches a run's images, or a note.
 func (m *Marker) Transient() bool {
-	return m.State == Running || m.State == Progress || m.State == Queued || m.State == Attachment
+	return m.State == Running || m.State == Progress || m.State == Queued || m.State == Attachment || m.State == Note
 }
 
 // clean keeps a value on one token: spaces become underscores and the comment terminator cannot appear.
