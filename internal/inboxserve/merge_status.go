@@ -49,5 +49,9 @@ func (s *Server) mergeStatus(w http.ResponseWriter, r *http.Request) {
 	for _, c := range st.Checks {
 		out.Checks = append(out.Checks, inboxapi.CheckStatus{Name: c.Name, Status: c.Status, URL: c.URL})
 	}
+	out.BaseBranch = st.BaseBranch
+	for _, c := range st.BaseFailed {
+		out.BaseFailed = append(out.BaseFailed, inboxapi.CheckStatus{Name: c.Name, Status: c.Status, URL: c.URL})
+	}
 	send(w, http.StatusOK, out)
 }

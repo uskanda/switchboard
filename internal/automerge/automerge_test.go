@@ -122,3 +122,38 @@ func TestABrokenFileIsAnError(t *testing.T) {
 		t.Fatal("a broken file was read as empty")
 	}
 }
+
+// Update keeps a request in its place, and leaves alone a request pressed again since.
+func TestUpdateKeepsTheRequestInPlace(t *testing.T) {
+	d := state.Dir{Path: t.TempDir()}
+	now := t0
+	s := open(t, d, &now)
+	a := Request{Ref: "gh:o/r#50", CR: 9, SHA: "abc", Since: t0, After: 1}
+	b := Request{Ref: "gh:o/r#51", CR: 10, SHA: "def", Since: t0, After: 2}
+	if err := s.Put(a); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Put(b); err != nil {
+		t.Fatal(err)
+	}
+	moved := a
+	moved.Moved = t0.Add(time.Minute)
+	if err := s.Update(moved); err != nil {
+		t.Fatal(err)
+	}
+	again := open(t, d, &now)
+	if p := again.Pending(); len(p) != 2 || p[0] != moved || p[1] != b {
+		t.Fatalf("pending = %+v", p)
+	}
+	pressed := a
+	pressed.Since, pressed.SHA = t0.Add(time.Hour), "ghi"
+	if err := s.Put(pressed); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Update(moved); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Get("gh:o/r#50"); got != pressed {
+		t.Fatalf("an old request replaced the new press: %+v", got)
+	}
+}

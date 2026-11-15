@@ -53,6 +53,9 @@ type AutoMergeStep struct {
 	Reason  string
 	// SHA is the commit merged, when Outcome is automerge.Merged.
 	SHA string
+	// Update, when set, is the request to keep in place of the one looked at: when the change request's head was
+	// first seen at a commit no done post names, or came back (ADR-075).
+	Update *automerge.Request
 }
 
 func cancelled(reason string) AutoMergeStep {
@@ -103,13 +106,24 @@ func (b *Inbox) AutoMergeStep(ctx context.Context, m forge.Merges, r automerge.R
 	if err != nil {
 		return AutoMergeStep{}, err
 	}
+	var wait AutoMergeStep // the step that waits: it keeps a change of r.Moved
 	switch {
 	case cr.State != forge.CROpen:
 		return cancelled(automerge.ReasonChangeClosed), nil
+	case cr.Head != dm.SHA && r.Moved.IsZero():
+		r.Moved = b.now()
+		return AutoMergeStep{Update: &r}, nil // the agent may be between the push of a merged base and its done
+	case cr.Head != dm.SHA && b.now().Sub(r.Moved) < automerge.MovedGrace:
+		return AutoMergeStep{}, nil
 	case cr.Head != dm.SHA:
 		return cancelled(automerge.ReasonPushed), nil
+	case !r.Moved.IsZero():
+		r.Moved = time.Time{}
+		wait.Update = &r
+	}
+	switch {
 	case dm.SHA == r.SHA:
-		return AutoMergeStep{}, nil // the agent has not fixed the conflict yet
+		return wait, nil // the agent has not fixed the conflict yet
 	case dm.Fix == "":
 		return cancelled(automerge.ReasonNotFix), nil
 	}
@@ -122,9 +136,9 @@ func (b *Inbox) AutoMergeStep(ctx context.Context, m forge.Merges, r automerge.R
 	case errors.Is(err, forge.ErrForbidden):
 		return cancelled(automerge.ReasonForbidden), nil
 	case errors.Is(err, forge.ErrNotMergeable):
-		return AutoMergeStep{}, nil // still conflicting, or the CI has not passed yet: tried again at the next look
+		return wait, nil // still conflicting, or the CI has not passed yet: tried again at the next look
 	}
-	return AutoMergeStep{}, err
+	return wait, err
 }
 
 // instructedAfter reports whether, after the comment after, a trusted person commented or the agent claimed a run that

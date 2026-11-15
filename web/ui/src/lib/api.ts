@@ -410,6 +410,8 @@ export type CheckStatus = { name: string; status: "success" | "failure" | "runni
  * MergeStatus is where the change request of a done issue stands before the merge (ADR-050): its state on the forge,
  * whether its head moved from the commit the page showed, whether it conflicts (computing while the forge works it
  * out), and the checks of that commit. ci is "forbidden" when the inbox token may not read CI, "none" without checks.
+ * base_branch and base_failed name the project's base branch and the checks failing at its head, when it could be
+ * read (ADR-075).
  */
 export type MergeStatus = {
   state: "open" | "closed" | "merged";
@@ -417,6 +419,8 @@ export type MergeStatus = {
   mergeable: "clean" | "conflict" | "computing";
   ci: "ok" | "none" | "forbidden";
   checks: CheckStatus[];
+  base_branch?: string;
+  base_failed?: CheckStatus[];
 };
 
 /** mergeStatus reads the status of the change request of a done issue at sha, for the merge dialog. */

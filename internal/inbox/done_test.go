@@ -108,3 +108,31 @@ func TestDoneIssueTakesAReplyUntilItIsClosed(t *testing.T) {
 		t.Fatalf("detail of the closed issue = %+v, %v", d, err)
 	}
 }
+
+// The note the agent posts while a done issue waits for its red base changes nothing: the issue is still done, and its
+// done post still names the change request (ADR-075).
+func TestBaseNoteKeepsTheIssueDone(t *testing.T) {
+	w := newWorld(t)
+	ref := doneIssue(w, 50, "Pull request: https://forge.test/o/r/pull/9", time.Hour)
+	w.f.PostAs = "bot"
+	w.f.PostComment(ctx, ref, "The CI of the base branch main failed; this waits until it passes again.\n\n"+
+		marker.Marker{Host: "desk", State: marker.Note, Reason: marker.Base, At: w.now}.Format())
+	w.f.PostAs = "me"
+
+	items, err := w.b.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, it := range items {
+		if it.Ref == "gh:o/r#50" {
+			found = true
+			if it.State != Done || it.ChangeURL != "https://forge.test/o/r/pull/9" || it.DoneSince == nil || !it.DoneSince.Equal(w.now.Add(-time.Hour)) {
+				t.Fatalf("item = %+v", it)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("items = %+v", items)
+	}
+}

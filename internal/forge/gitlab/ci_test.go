@@ -99,3 +99,18 @@ func TestChangeRequestConflict(t *testing.T) {
 		}
 	}
 }
+
+func TestBranchHead(t *testing.T) {
+	s, c := newServer(t)
+	s.on("GET /api/v4/projects/nas%2Fx/repository/branches/main", jsonReply(map[string]any{"name": "main", "commit": map[string]any{"id": "base1"}}))
+	s.on("GET /api/v4/projects/nas%2Fx/repository/branches/gone", func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, `{"message":"404 Branch Not Found"}`, http.StatusNotFound)
+	})
+	sha, err := c.BranchHead(ctx, "nas", "x", "main")
+	if err != nil || sha != "base1" {
+		t.Fatalf("BranchHead = %q, %v", sha, err)
+	}
+	if _, err := c.BranchHead(ctx, "nas", "x", "gone"); !errors.Is(err, forge.ErrNotFound) {
+		t.Fatalf("missing branch: err = %v", err)
+	}
+}

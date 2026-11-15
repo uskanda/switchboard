@@ -35,6 +35,13 @@ type watch struct {
 	// fixSince is when it began to wait. startFixes starts such a fix run before the queue (ADR-054).
 	fixWaiting string
 	fixSince   time.Time
+	// baseWait is set while the change request waits for its red base (ADR-075): the CI of sha failed as the base's
+	// did, or the change request conflicts with the red base. Only the change request and the base are read then,
+	// every poll_interval. baseNoted is set once the note of the wait is posted, or found after the done post.
+	baseWait  bool
+	baseNoted bool
+	// baseDone is the done of the base merged into the branch, kept until it is posted, so that a retry posts it.
+	baseDone *outcome
 }
 
 const (
@@ -98,7 +105,7 @@ func (a *Agent) watching() bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	for _, w := range a.watches {
-		if !w.conflictsOnly {
+		if !w.conflictsOnly || w.baseWait {
 			return true
 		}
 	}
@@ -151,13 +158,26 @@ func (a *Agent) findWatch(ctx context.Context, p config.Project, s forge.IssueSu
 	}
 	agentID := a.judgeOf(s.Ref).AgentIDOf(s.Ref)
 	var last *marker.Marker
+	noted := false
 	for i := len(comments) - 1; i >= 0 && last == nil; i-- {
-		if m, ok := marker.Parse(comments[i].Body); ok && comments[i].Author.ID == agentID && !m.Transient() {
+		m, ok := marker.Parse(comments[i].Body)
+		switch {
+		case !ok || comments[i].Author.ID != agentID:
+		case m.State == marker.Note && m.Reason == marker.Base:
+			noted = true
+		case !m.Transient():
 			last = m
 		}
 	}
 	if last != nil && last.State == marker.Done && last.SHA != "" && last.CR != 0 {
 		a.startWatch(p, s.Ref, last.SHA, last.CR, last.At)
+		if noted {
+			a.mu.Lock()
+			if w := a.watches[s.Ref]; w != nil {
+				w.baseNoted = true
+			}
+			a.mu.Unlock()
+		}
 		return
 	}
 	a.mu.Lock()
@@ -170,6 +190,7 @@ func (a *Agent) findWatch(ctx context.Context, p config.Project, s forge.IssueSu
 func (a *Agent) checkWatches(ctx context.Context) {
 	a.mu.Lock()
 	scan := a.now().Sub(a.scanned) >= a.Config.Agent.ReconcileInterval
+	a.cycle++ // the bases are read again in this cycle
 	a.mu.Unlock()
 	if scan {
 		a.scanWatches(ctx)
@@ -283,7 +304,11 @@ func (a *Agent) checkWatch(ctx context.Context, ref forge.IssueRef, w *watch, fo
 		a.writeGiveUp(ctx, ref, w)
 		return
 	}
-	if w.conflictsOnly {
+	if w.baseDone != nil {
+		a.writeBaseDone(ctx, ref, w)
+		return
+	}
+	if w.conflictsOnly && !w.baseWait {
 		if !force && a.now().Sub(w.checked) < a.Config.Agent.ReconcileInterval {
 			return
 		}
@@ -305,7 +330,12 @@ func (a *Agent) checkWatch(ctx context.Context, ref forge.IssueRef, w *watch, fo
 		return
 	case st.Conflict:
 		// A conflicting change request gets no CI on GitHub, and the CI it had is moot once the base is merged.
-		a.conflicted(ctx, ref, w)
+		if !a.baseHolds(ctx, ref, w, ci, nil) {
+			a.conflicted(ctx, ref, w)
+		}
+		return
+	case w.baseWait:
+		a.checkBaseWait(ctx, ref, w, ci)
 		return
 	}
 	a.endWait(w, prompt.FixConflict)
@@ -345,7 +375,9 @@ func (a *Agent) checkWatch(ctx context.Context, ref forge.IssueRef, w *watch, fo
 		a.endWait(w, "")
 		a.ciOver(ref, w, "the CI passed")
 	default:
-		a.ciFailed(ctx, ref, w, ci, failed)
+		if !a.baseHolds(ctx, ref, w, ci, failed) {
+			a.ciFailed(ctx, ref, w, ci, failed)
+		}
 	}
 }
 

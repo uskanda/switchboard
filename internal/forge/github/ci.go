@@ -127,3 +127,16 @@ func (c *Client) ChangeRequestHead(ctx context.Context, owner, repo string, numb
 	}
 	return st, nil
 }
+
+// BranchHead returns the commit at the head of branch.
+func (c *Client) BranchHead(ctx context.Context, owner, repo, branch string) (string, error) {
+	var b struct {
+		Commit struct {
+			SHA string `json:"sha"`
+		} `json:"commit"`
+	}
+	if _, err := c.do(ctx, http.MethodGet, c.url(fmt.Sprintf("/repos/%s/%s/branches/%s", owner, repo, branch), nil), nil, &b, nil); err != nil {
+		return "", err
+	}
+	return b.Commit.SHA, nil
+}

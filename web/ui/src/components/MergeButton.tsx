@@ -45,6 +45,7 @@ const messages = defineMessages({
     computing: "衝突の有無は、フォージが計算中です。",
     ciForbidden: "受信箱のトークンにCIを読む権限がありません（GitHubでは Actions と Commit statuses の読み取り）。",
     ciNone: "CIはありません",
+    baseFailed: (branch: string) => `base（${branch}）のCIが失敗しています`,
     ciSummary: (success: number, failure: number, running: number) => `CI：成功 ${success}／失敗 ${failure}／実行中 ${running}`,
     /** check names the state of one check of the CI. */
     check: { success: "成功", failure: "失敗", running: "実行中", other: "その他" },
@@ -92,6 +93,7 @@ const messages = defineMessages({
     computing: "The forge is still checking for conflicts.",
     ciForbidden: "The inbox token has no permission to read CI (on GitHub: read access to Actions and Commit statuses).",
     ciNone: "No CI",
+    baseFailed: (branch) => `The CI of the base branch ${branch} fails`,
     ciSummary: (success, failure, running) => `CI: ${success} passed, ${failure} failed, ${running} running`,
     check: { success: "Passed", failure: "Failed", running: "Running", other: "Other" },
     cancelAutoMerge: "Cancel auto-merge",
@@ -151,7 +153,8 @@ function webPage(url: string): string | undefined {
 
 /**
  * ChangeStatus shows where the change stands before the merge: the conflict, the commits added after the page was
- * read, and the CI of the commit. It only informs; the forge still decides whether the merge goes through (ADR-050).
+ * read, the CI of the commit, and the checks failing on the base (ADR-075). It only informs; the forge still decides
+ * whether the merge goes through (ADR-050).
  * The checks' names are the forge's data and are shown as text.
  */
 function ChangeStatus({ name, read }: { name: string; read: Read }) {
@@ -195,26 +198,41 @@ function ChangeStatus({ name, read }: { name: string; read: Read }) {
           </p>
           {listed.length > 0 && (
             <ul className="mt-xs flex flex-col">
-              {listed.map((c, i) => {
-                const href = webPage(c.url);
-                return (
-                  <li key={`${i}-${c.name}`} className="flex min-h-11 items-center gap-xs break-all">
-                    <span className={c.status === "failure" ? "shrink-0 text-error" : "shrink-0 text-muted"}>{t.check[c.status]}</span>
-                    {href ? (
-                      <a href={href} target="_blank" rel="noreferrer" className="underline">
-                        {c.name}
-                      </a>
-                    ) : (
-                      <span>{c.name}</span>
-                    )}
-                  </li>
-                );
-              })}
+              {listed.map((c, i) => (
+                <CheckLine key={`${i}-${c.name}`} check={c} label={t.check[c.status]} />
+              ))}
             </ul>
           )}
         </li>
       )}
+      {st.base_branch && st.base_failed && st.base_failed.length > 0 && (
+        <li>
+          <p className="font-medium text-error">{t.baseFailed(st.base_branch)}</p>
+          <ul className="mt-xs flex flex-col">
+            {st.base_failed.map((c, i) => (
+              <CheckLine key={`${i}-${c.name}`} check={c} label={t.check[c.status]} />
+            ))}
+          </ul>
+        </li>
+      )}
     </ul>
+  );
+}
+
+/** CheckLine is one listed check: its state, and its name linked to the forge when the address is a web page. */
+function CheckLine({ check: c, label }: { check: CheckStatus; label: string }) {
+  const href = webPage(c.url);
+  return (
+    <li className="flex min-h-11 items-center gap-xs break-all">
+      <span className={c.status === "failure" ? "shrink-0 text-error" : "shrink-0 text-muted"}>{label}</span>
+      {href ? (
+        <a href={href} target="_blank" rel="noreferrer" className="underline">
+          {c.name}
+        </a>
+      ) : (
+        <span>{c.name}</span>
+      )}
+    </li>
   );
 }
 

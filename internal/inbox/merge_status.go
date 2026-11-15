@@ -46,6 +46,10 @@ type MergeStatus struct {
 	Mergeable string        `json:"mergeable"`
 	CI        string        `json:"ci"`
 	Checks    []CheckStatus `json:"checks"`
+	// BaseBranch is the project's base branch when the CI at its head could be read, and BaseFailed the checks that
+	// failed there (ADR-075). Both are empty when the base could not be read.
+	BaseBranch string        `json:"base_branch,omitempty"`
+	BaseFailed []CheckStatus `json:"base_failed,omitempty"`
 }
 
 // MergeStatus reads the change request the agent's latest done post names, under the same conditions as Merge: the
@@ -94,7 +98,31 @@ func (b *Inbox) MergeStatus(ctx context.Context, c forge.CI, ref forge.IssueRef,
 	for _, ch := range checks {
 		out.Checks = append(out.Checks, CheckStatus{Name: ch.Name, Status: checkStatus(ch), URL: ch.URL})
 	}
+	b.readBase(ctx, c, ref, out)
 	return out, nil
+}
+
+// readBase adds the failed checks at the head of the project's base branch to out. A base that cannot be read leaves
+// out as it is: the dialog then says nothing of it.
+func (b *Inbox) readBase(ctx context.Context, c forge.CI, ref forge.IssueRef, out *MergeStatus) {
+	p, ok := b.project(ref.Kind(), ref.Owner, ref.Repo)
+	if !ok || p.BaseBranch == "" {
+		return
+	}
+	sha, err := c.BranchHead(ctx, ref.Owner, ref.Repo, p.BaseBranch)
+	if err != nil {
+		return
+	}
+	checks, err := c.CommitChecks(ctx, ref.Owner, ref.Repo, sha)
+	if err != nil {
+		return
+	}
+	out.BaseBranch = p.BaseBranch
+	for _, ch := range checks {
+		if ch.Failed() {
+			out.BaseFailed = append(out.BaseFailed, CheckStatus{Name: ch.Name, Status: CheckFailure, URL: ch.URL})
+		}
+	}
 }
 
 // checkStatus sorts a check into the four kinds the dialog counts.

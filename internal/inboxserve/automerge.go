@@ -131,6 +131,11 @@ func (s *Server) autoMergeOnce(ctx context.Context) {
 			s.logf("automerge: %s: %v", r.Ref, err)
 			continue
 		}
+		if st.Update != nil {
+			if err := s.AutoMerge.Update(*st.Update); err != nil {
+				s.logf("automerge: keep %s: %v", r.Ref, err)
+			}
+		}
 		if st.Outcome == "" {
 			continue
 		}

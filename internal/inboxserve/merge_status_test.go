@@ -86,3 +86,21 @@ func TestMergeStatusRefusals(t *testing.T) {
 		})
 	}
 }
+
+// The answer names the base branch and the checks failing at its head (ADR-075).
+func TestMergeStatusAnswersTheBaseCI(t *testing.T) {
+	w := withMergeStatus(t)
+	for i := range w.cfg.Projects {
+		w.cfg.Projects[i].BaseBranch = "main"
+	}
+	w.gh.SetChecks("o", "r", "abc", forge.Check{Name: "verify", Done: true, Conclusion: forge.Success})
+	w.gh.SetBranchHead("o", "r", "main", "base1")
+	w.gh.SetChecks("o", "r", "base1", forge.Check{Name: "verify", Done: true, Conclusion: forge.Failure, URL: "https://ci/9"})
+	code, st, e := w.mergeStatus("gh:o/r#50", "abc")
+	if code != http.StatusOK {
+		t.Fatalf("%d %+v", code, e)
+	}
+	if st.BaseBranch != "main" || len(st.BaseFailed) != 1 || st.BaseFailed[0] != (inboxapi.CheckStatus{Name: "verify", Status: inboxapi.CheckFailure, URL: "https://ci/9"}) {
+		t.Fatalf("base = %q %+v", st.BaseBranch, st.BaseFailed)
+	}
+}

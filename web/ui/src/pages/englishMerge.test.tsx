@@ -57,7 +57,9 @@ const statusPath = "GET /api/merge-status?ref=gh%3Ao%2Fr%2350&sha=abc";
 type Check = { name: string; status: "success" | "failure" | "running" | "other"; url: string };
 
 /** status is an answer of /api/merge-status: an open change without a conflict and without checks, unless changed. */
-function status(over: { head_moved?: boolean; mergeable?: string; ci?: string; checks?: Check[]; state?: string } = {}): Answer {
+function status(
+  over: { head_moved?: boolean; mergeable?: string; ci?: string; checks?: Check[]; state?: string; base_branch?: string; base_failed?: Check[] } = {},
+): Answer {
   return { status: 200, body: { state: "open", head_moved: false, mergeable: "clean", ci: "none", checks: [], ...over } };
 }
 
@@ -163,6 +165,18 @@ describe("the status of the change in English", () => {
     const dialog = await openDialog();
     expect(await within(dialog).findByText("No CI")).toBeInTheDocument();
     expect(within(dialog).getByText("The forge is still checking for conflicts.")).toBeInTheDocument();
+  });
+
+  it("says in English that the CI of the base fails", async () => {
+    setLanguageChoice("en");
+    answer({
+      "GET /api/inbox": listing,
+      [statusPath]: status({ base_branch: "main", base_failed: [{ name: "verify", status: "failure", url: "https://ci.test/9" }] }),
+    });
+    at("/");
+    const dialog = await openDialog();
+    expect(await within(dialog).findByText("The CI of the base branch main fails")).toBeInTheDocument();
+    expect(within(dialog).getByRole("link", { name: "verify" })).toHaveAttribute("href", "https://ci.test/9");
   });
 
   it("names the permissions when the inbox token cannot read CI", async () => {

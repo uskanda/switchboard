@@ -134,3 +134,14 @@ func TestDoneMarkerOfAFixRun(t *testing.T) {
 		t.Fatalf("an old marker reads as a fix: %+v", old)
 	}
 }
+
+func TestBaseNoteMarker(t *testing.T) {
+	m, ok := Parse("waits for the base\n\n" + Marker{Host: "desk", State: Note, Reason: Base, At: at}.Format())
+	if !ok || m.State != "note" || m.Reason != "base" || !m.Transient() {
+		t.Fatalf("Parse = %+v, %v", m, ok)
+	}
+	done, ok := Parse(Marker{Host: "desk", Run: "r-2", State: Done, SHA: "abc", CR: 9, Fix: Base, At: at}.Format())
+	if !ok || done.Fix != "base" || done.Transient() {
+		t.Fatalf("Parse = %+v, %v", done, ok)
+	}
+}
