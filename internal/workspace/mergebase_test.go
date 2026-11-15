@@ -21,6 +21,9 @@ func advance(t *testing.T, origin, branch, name, body string) string {
 func pushed(t *testing.T) (*Space, string, string) {
 	t.Helper()
 	sp, origin := space(t)
+	// The merge commit is made with the clone's identity, as the agent's commits are; CI has no global one.
+	git(t, sp.Repo, "config", "user.name", "agent")
+	git(t, sp.Repo, "config", "user.email", "agent@example.test")
 	dir, err := sp.Prepare(ctx)
 	if err != nil {
 		t.Fatal(err)
