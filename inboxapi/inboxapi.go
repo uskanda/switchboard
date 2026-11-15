@@ -135,6 +135,47 @@ type Detail struct {
 	CreatedAt *time.Time `json:"created_at"`
 	Body      string     `json:"body"`
 	Comments  []Comment  `json:"comments"`
+	// Denials are the operations the latest run was refused, on an issue that waits for a permission
+	// (add-permission-grants).
+	Denials []Denial `json:"denials,omitempty"`
+}
+
+// Denial is one operation a run was refused, with the allow rules the page may offer to let it through. Command is
+// the forge's data, written by claude: show it as text. Compound marks a command joined with others, which no rule
+// matches; Candidates is then empty.
+type Denial struct {
+	Tool       string   `json:"tool"`
+	Command    string   `json:"command,omitempty"`
+	Candidates []string `json:"candidates"`
+	Compound   bool     `json:"compound,omitempty"`
+}
+
+// Permissions is the answer to GET /v1/permissions: the allow rules granted from the web inbox to every project, to
+// each configured project and, when asked for, to one issue, as the files of this machine (Host) hold them.
+type Permissions struct {
+	Host  string            `json:"host"`
+	Items []PermissionScope `json:"items"`
+}
+
+// PermissionScope is the rules of one scope: "global", "project" (Ref is the project) or "issue" (Ref is the issue).
+type PermissionScope struct {
+	Scope string   `json:"scope"`
+	Ref   string   `json:"ref,omitempty"`
+	Rules []string `json:"rules"`
+}
+
+// SavePermissionsRequest is the body of POST /v1/permissions: the rules to add to and remove from one scope.
+type SavePermissionsRequest struct {
+	Scope  string   `json:"scope"`
+	Ref    string   `json:"ref,omitempty"`
+	Add    []string `json:"add,omitempty"`
+	Remove []string `json:"remove,omitempty"`
+}
+
+// RefusedRule is one rule a save of permissions refused, and why.
+type RefusedRule struct {
+	Rule   string `json:"rule"`
+	Reason string `json:"reason"`
 }
 
 // Comment is one comment of an issue. Agent is set on a post of the agent; Kind is then the state of its marker
@@ -392,6 +433,7 @@ const (
 	CodeTooLarge       = "too_large"       // 413
 	CodeSecret         = "secret"          // 422
 	CodeUnknownProject = "unknown_project" // 422
+	CodeRuleRefused    = "rule_refused"    // 422: a save of permissions named a rule the web inbox may not add
 	CodeForge          = "forge"           // 502
 
 	// The refusals of POST /v1/projects.
@@ -413,6 +455,8 @@ type Error struct {
 	Message string `json:"message"`
 	// User is who GitLab logged in, on CodeNotAllowed.
 	User string `json:"user,omitempty"`
+	// Rules are the rules a save of permissions refused, on CodeRuleRefused.
+	Rules []RefusedRule `json:"rules,omitempty"`
 }
 
 func (e *Error) Error() string { return e.Message }
@@ -438,6 +482,8 @@ func (e *Error) Is(target error) bool {
 		return e.Code == CodeSecret
 	case ErrUnknownProject:
 		return e.Code == CodeUnknownProject
+	case ErrRuleRefused:
+		return e.Code == CodeRuleRefused
 	case ErrAddingDisabled:
 		return e.Code == CodeAddingDisabled
 	case ErrProjectExists:
@@ -473,6 +519,8 @@ var (
 	ErrTooLarge       = errors.New("too large")
 	ErrSecret         = errors.New("the instructions look like they hold a secret")
 	ErrUnknownProject = errors.New("the project is not in the configuration")
+	// ErrRuleRefused refuses a save of permissions that names a rule the web inbox may not add; Error.Rules says which.
+	ErrRuleRefused = errors.New("a rule may not be added from the web inbox")
 	// The refusals of an addition of a project.
 	ErrAddingDisabled = errors.New("adding projects is disabled: set inbox.project_root")
 	ErrProjectExists  = errors.New("the project is in the configuration already")

@@ -206,7 +206,8 @@ func diagramOf(src string) (string, string) {
 }
 
 // planBaseAllow are the allow rules every plan run gets: read, search and look at the history.
-var planBaseAllow = append([]string{"Read", "Glob", "Grep", "WebSearch"}, claudecode.Commands("git status", "git diff", "git log")...)
+var planBaseAllow = append(append([]string{"Read", "Glob", "Grep", "WebSearch"}, claudecode.Commands("git status", "git diff", "git log")...),
+	claudecode.Commands(gitRead...)...)
 
 // planSettings are what a plan run may do: read, search and look at the history, and what the user added in extra
 // (agent.allow_tools_extra, then the project's). Nothing that writes, unless prototype (projects[].plan_prototype)

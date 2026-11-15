@@ -11,6 +11,7 @@ import (
 	"github.com/uskanda/switchboard/internal/claudecode"
 	"github.com/uskanda/switchboard/internal/config"
 	"github.com/uskanda/switchboard/internal/forge"
+	"github.com/uskanda/switchboard/internal/inbox"
 )
 
 // fixture is a step that prints a recorded stream-json output from the claudecode package.
@@ -337,5 +338,27 @@ func TestVerifyCommandGetsNoToken(t *testing.T) {
 	}
 	if !strings.Contains(env, "\nPATH=") {
 		t.Fatal("verify_command got no PATH")
+	}
+}
+
+// The web inbox reads the refused operations back from the permission wait, in either language of the comments
+// (add-permission-grants).
+func TestThePermissionWaitIsReadBackByTheInbox(t *testing.T) {
+	for _, lang := range []string{"en", "ja"} {
+		x := newH(t, "", func(c *config.Config) { c.Comments.Language = lang })
+		x.step(1, result(map[string]any{"status": "waiting", "summary": "Looked.", "question": "May I?"},
+			map[string]any{"tool_name": "Bash", "tool_use_id": "1", "tool_input": map[string]any{"command": "git mv `a` b"}},
+			map[string]any{"tool_name": "Skill", "tool_use_id": "2", "tool_input": map[string]any{"skill": "x"}}))
+		x.f.AddLabel(x.ref, "agent:ready", x.master)
+		x.poll()
+		x.settle()
+		p := x.lastPost(x.ref)
+		if p.Marker.Reason != "permission" {
+			t.Fatalf("%s: the run did not wait for a permission: %+v", lang, p.Marker)
+		}
+		got := inbox.ParseDenials(p.Body)
+		if len(got) != 2 || got[0].Tool != "Bash" || got[0].Command != "git mv 'a' b" || got[1].Tool != "Skill" || got[1].Command != "" {
+			t.Fatalf("%s: denials = %+v\n%s", lang, got, p.Body)
+		}
 	}
 }

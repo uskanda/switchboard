@@ -56,6 +56,8 @@ type Server struct {
 	Now   func() time.Time // time.Now when nil
 	// Instructions, when set, serves /v1/instructions.
 	Instructions *Instructions
+	// Permissions, when set, serves /v1/permissions.
+	Permissions *Permissions
 	// Interval is how often the forges are read while someone listens on /v1/events; DefaultInterval when zero.
 	Interval time.Duration
 	// Projects, when set, serves /v1/projects.
@@ -141,6 +143,9 @@ func (s *Server) Reload(cfg *config.Config, b Inbox) {
 	if s.Instructions != nil {
 		s.Instructions.Projects = refs(cfg.Projects)
 	}
+	if s.Permissions != nil {
+		s.Permissions.Projects = refs(cfg.Projects)
+	}
 	if s.Projects != nil {
 		s.Projects.Config = cfg
 	}
@@ -198,6 +203,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.Instructions != nil {
 		routes["/v1/instructions"] = route{"", s.instructions}
+	}
+	if s.Permissions != nil {
+		routes["/v1/permissions"] = route{"", s.permissionsRoute}
 	}
 	if s.Projects != nil {
 		routes["/v1/projects"] = route{"", s.projects}
@@ -503,6 +511,9 @@ func detailOf(d *inbox.Detail) inboxapi.Detail {
 	}
 	for _, c := range d.Comments {
 		out.Comments = append(out.Comments, inboxapi.Comment(c))
+	}
+	for _, dn := range d.Denials {
+		out.Denials = append(out.Denials, inboxapi.Denial(dn))
 	}
 	return out
 }

@@ -94,7 +94,7 @@ func TestSystemPromptsResolveConflictsByMergingTheBase(t *testing.T) {
 }
 
 func TestPlanSystemPromptAsksAndChangesNothing(t *testing.T) {
-	s := PlanSystem("ja", "/ok", "")
+	s := PlanSystem("ja", "main", "/ok", "")
 	for _, want := range []string{"plan stage", "Do not change", `"options"`, `"recommended"`, `"reason"`, `"diagram"`, "one group of options",
 		"flowchart", "stateDiagram-v2", "sequenceDiagram", "8 nodes", "flowchart TD", ":::focus", "questions", `"plan"`, "Japanese", "/ok", "git push", "untrusted"} {
 		if !strings.Contains(s, want) {
@@ -109,11 +109,11 @@ func TestPlanSystemPromptAsksAndChangesNothing(t *testing.T) {
 }
 
 func TestPlanSkipSystemPromptSaysWhenToSkip(t *testing.T) {
-	plain := PlanSystem("ja", "/ok", "")
+	plain := PlanSystem("ja", "main", "/ok", "")
 	if strings.Contains(plain, `"implement"`) || strings.Contains(plain, "## Skipping") {
 		t.Fatalf("a plan run that may not skip is told how to:\n%s", plain)
 	}
-	s := PlanSkipSystem("ja", "/ok", "Mind the API names.")
+	s := PlanSkipSystem("ja", "main", "/ok", "Mind the API names.")
 	for _, want := range []string{"## Skipping the questions and the approval", `status "implement"`, `"plan"`, `"title"`,
 		"settle every design decision", "not a single question", "When in doubt", `status "questions"`,
 		`Write "title", "questions", "plan" and "summary" in Japanese.`} {
@@ -144,7 +144,7 @@ func TestSkippedSystemNamesThePlan(t *testing.T) {
 }
 
 func TestPlanSystemPromptAsksForATitle(t *testing.T) {
-	s := PlanSystem("ja", "/ok", "")
+	s := PlanSystem("ja", "main", "/ok", "")
 	for _, want := range []string{`- "title" (required with both statuses)`, `Write "title", "questions", "plan" and "summary" in Japanese.`} {
 		if !strings.Contains(s, want) {
 			t.Errorf("the plan system prompt lacks %q:\n%s", want, s)
@@ -153,7 +153,7 @@ func TestPlanSystemPromptAsksForATitle(t *testing.T) {
 }
 
 func TestPlanSystemPromptLeavesTheLabelsOfTheOptionsToSwitchboard(t *testing.T) {
-	s := PlanSystem("ja", "/ok", "")
+	s := PlanSystem("ja", "main", "/ok", "")
 	for _, want := range []string{"Do not label them: switchboard labels them A, B, C… in this order.", "Do not list the options here."} {
 		if !strings.Contains(s, want) {
 			t.Errorf("the plan system prompt does not say how to give the options (%q):\n%s", want, s)
@@ -162,8 +162,8 @@ func TestPlanSystemPromptLeavesTheLabelsOfTheOptionsToSwitchboard(t *testing.T) 
 }
 
 func TestPlanSystemPromptWeighsAndShapesTheQuestions(t *testing.T) {
-	s := PlanSystem("en", "/ok", "")
-	if skip := PlanSkipSystem("en", "/ok", ""); !strings.Contains(skip, "GOCACHE is set") {
+	s := PlanSystem("en", "main", "/ok", "")
+	if skip := PlanSkipSystem("en", "main", "/ok", ""); !strings.Contains(skip, "GOCACHE is set") {
 		t.Error("the skippable plan system prompt lacks the GOCACHE line")
 	}
 	for _, want := range []string{
@@ -184,16 +184,16 @@ func TestPlanSystemPromptWeighsAndShapesTheQuestions(t *testing.T) {
 
 func TestPlanSkipSystemPromptDoesNotSkipForChecksAlone(t *testing.T) {
 	want := "Checks alone are no reason to skip"
-	if s := PlanSkipSystem("en", "/ok", ""); !strings.Contains(s, want) {
+	if s := PlanSkipSystem("en", "main", "/ok", ""); !strings.Contains(s, want) {
 		t.Errorf("the plan system prompt that may skip lacks %q:\n%s", want, s)
 	}
-	if s := PlanSystem("en", "/ok", ""); strings.Contains(s, want) {
+	if s := PlanSystem("en", "main", "/ok", ""); strings.Contains(s, want) {
 		t.Errorf("a plan run that may not skip is told about skipping:\n%s", s)
 	}
 }
 
 func TestPlanSystemPromptAddsTheUsersInstructionsLast(t *testing.T) {
-	s := PlanSystem("en", "/ok", "Always ask about the API names.")
+	s := PlanSystem("en", "main", "/ok", "Always ask about the API names.")
 	at := strings.Index(s, "Always ask about the API names.")
 	head := strings.Index(s, "## Additional instructions from the user")
 	if head < 0 || at < head || at < strings.Index(s, "## Language") {
@@ -302,7 +302,7 @@ func TestWithScreenshotsAddsThePlaceOfTheImages(t *testing.T) {
 			t.Errorf("the section lacks %q:\n%s", want, s[len(sys):])
 		}
 	}
-	for name, other := range map[string]string{"System": sys, "FixSystem": FixSystem("en", "main", FixCI), "PlanSystem": PlanSystem("en", "/ok", "")} {
+	for name, other := range map[string]string{"System": sys, "FixSystem": FixSystem("en", "main", FixCI), "PlanSystem": PlanSystem("en", "main", "/ok", "")} {
 		if strings.Contains(other, ".switchboard/screenshots") {
 			t.Errorf("%s holds the section by itself", name)
 		}
@@ -326,7 +326,7 @@ func TestWithSandboxSaysHowToWorkInTheSandbox(t *testing.T) {
 }
 
 func TestPlanSystemPromptSaysCommandsRunInTheSandbox(t *testing.T) {
-	s := PlanSystem("en", "/ok", "")
+	s := PlanSystem("en", "main", "/ok", "")
 	for _, want := range []string{"sandbox", "Read, Grep and Glob", "thrown away", "on its own", "GOCACHE is set"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("plan system prompt lacks %q", want)
@@ -353,7 +353,7 @@ func TestAContinuedPlanRoundSaysSoFirst(t *testing.T) {
 // A plan run that may use WebFetch is told to take the pages as data and to put nothing of the issue or the code
 // into a URL; a plan run without it is told nothing about web pages (ADR-074).
 func TestWithWebFetchAddsTheSectionBeforeTheRules(t *testing.T) {
-	for _, sys := range []string{PlanSystem("en", "/ok", ""), PlanSkipSystem("ja", "/ok", "")} {
+	for _, sys := range []string{PlanSystem("en", "main", "/ok", ""), PlanSkipSystem("ja", "main", "/ok", "")} {
 		if strings.Contains(sys, "WebFetch") {
 			t.Fatalf("the plan prompt mentions WebFetch without it:\n%s", sys)
 		}
@@ -371,7 +371,7 @@ func TestWithWebFetchAddsTheSectionBeforeTheRules(t *testing.T) {
 }
 
 func TestWithPlanImagesAddsTheSectionBeforeTheTools(t *testing.T) {
-	sys := PlanSystem("en", "/ok", "")
+	sys := PlanSystem("en", "main", "/ok", "")
 	s := WithPlanImages(sys, PlanImages{Shot: "/usr/local/bin/switchboard shot --browser /usr/bin/chromium"})
 	i, j, k := strings.Index(s, "## Diagrams"), strings.Index(s, "## Images"), strings.Index(s, "## Tools")
 	if i < 0 || j < i || k < j {
@@ -410,7 +410,7 @@ func TestWithPlanImagesAddsTheSectionBeforeTheTools(t *testing.T) {
 }
 
 func TestPlanSystemWithoutImagesHasNoSection(t *testing.T) {
-	if s := PlanSystem("en", "/ok", ""); strings.Contains(s, "## Images") || strings.Contains(s, "option_images") {
+	if s := PlanSystem("en", "main", "/ok", ""); strings.Contains(s, "## Images") || strings.Contains(s, "option_images") {
 		t.Fatal("a plan run without images is told about them")
 	}
 }
@@ -428,5 +428,23 @@ func TestWithSetupNamesTheCommandThatFetchedTheDependencies(t *testing.T) {
 	}
 	if none := WithSetup(sys, " "); none != sys {
 		t.Errorf("a project without a setup command got a section:\n%s", none[len(sys):])
+	}
+}
+
+// Every run is told that origin/<base> was fetched before it and that git fetch is refused (add-permission-grants).
+func TestEveryRunIsToldTheBaseIsFetched(t *testing.T) {
+	for name, s := range map[string]string{
+		"implementing": System("ja", "develop"),
+		"approved":     ApprovedSystem("en", "develop", 1, 2),
+		"fix":          FixSystem("en", "develop", FixCI),
+		"plan":         PlanSystem("ja", "develop", "/ok", ""),
+		"plan skip":    PlanSkipSystem("en", "develop", "/ok", ""),
+	} {
+		if !strings.Contains(s, "origin/develop was fetched just before this run") || !strings.Contains(s, "git fetch is refused") {
+			t.Errorf("%s: the system prompt does not tell the base is fetched:\n%s", name, s)
+		}
+	}
+	if !strings.Contains(PlanSystem("en", "main", "/ok", ""), "git show") {
+		t.Error("the plan run is not told it may run git show")
 	}
 }

@@ -30,6 +30,8 @@ type Inbox interface {
 	Reply(ctx context.Context, ref, text string, force bool) error
 	Instructions(ctx context.Context) (*inboxapi.Instructions, error)
 	SaveInstructions(ctx context.Context, req inboxapi.SaveInstructionsRequest) error
+	Permissions(ctx context.Context, issue string) (*inboxapi.Permissions, error)
+	SavePermissions(ctx context.Context, req inboxapi.SavePermissionsRequest) error
 	Projects(ctx context.Context) (*inboxapi.Projects, error)
 	AddProject(ctx context.Context, req inboxapi.AddProjectRequest) (*inboxapi.AddProjectResponse, error)
 	IssueTargets(ctx context.Context) (*inboxapi.IssueTargets, error)
@@ -107,6 +109,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.answer(w, out, err)
 	case r.URL.Path == "/api/instructions" && r.Method == http.MethodPost:
 		s.saveInstructions(w, r)
+	case r.URL.Path == "/api/permissions" && r.Method == http.MethodGet:
+		out, err := s.Inbox.Permissions(r.Context(), r.URL.Query().Get("issue"))
+		s.answer(w, out, err)
+	case r.URL.Path == "/api/permissions" && r.Method == http.MethodPost:
+		s.savePermissions(w, r)
 	case r.URL.Path == "/api/projects" && r.Method == http.MethodGet:
 		out, err := s.Inbox.Projects(r.Context())
 		s.answer(w, out, err)
@@ -191,6 +198,25 @@ func (s *Server) saveInstructions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Inbox.SaveInstructions(r.Context(), req); err != nil {
+		s.answer(w, nil, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// savePermissions passes a save of the allow rules granted from the web inbox on, from its own page only
+// (add-permission-grants).
+func (s *Server) savePermissions(w http.ResponseWriter, r *http.Request) {
+	if code, why := s.sameOrigin(r); code != 0 {
+		send(w, code, inboxapi.Error{Code: inboxapi.CodeInvalid, Message: why})
+		return
+	}
+	var req inboxapi.SavePermissionsRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
+		send(w, http.StatusBadRequest, inboxapi.Error{Code: inboxapi.CodeInvalid, Message: "the body is not a save of permissions"})
+		return
+	}
+	if err := s.Inbox.SavePermissions(r.Context(), req); err != nil {
 		s.answer(w, nil, err)
 		return
 	}
@@ -402,6 +428,7 @@ var status = map[string]int{
 	inboxapi.CodeTooLarge:       http.StatusRequestEntityTooLarge,
 	inboxapi.CodeSecret:         http.StatusUnprocessableEntity,
 	inboxapi.CodeUnknownProject: http.StatusUnprocessableEntity,
+	inboxapi.CodeRuleRefused:    http.StatusUnprocessableEntity,
 	inboxapi.CodeForge:          http.StatusBadGateway,
 	inboxapi.CodeAddingDisabled: http.StatusForbidden,
 	inboxapi.CodeProjectExists:  http.StatusConflict,

@@ -749,6 +749,8 @@ type Detail struct {
 	CreatedAt *time.Time      `json:"created_at"`
 	Body      string          `json:"body"`
 	Comments  []ThreadComment `json:"comments"`
+	// Denials are the operations the latest run was refused, on an issue that waits for a permission.
+	Denials []Denial `json:"denials,omitempty"`
 }
 
 // ThreadComment is one comment of an issue. Agent is set on a post of the agent (its identity, ending in a marker);
@@ -819,6 +821,9 @@ func (b *Inbox) Detail(ctx context.Context, ref forge.IssueRef) (*Detail, error)
 	d := &Detail{Ref: refString(ref), Title: is.Title, URL: is.URL, Waiting: waiting, Done: finished, ApproveWord: b.Config.Plan.ApproveWord}
 	if c != nil {
 		d.Host, d.State, d.Reason, d.Post = orQ(m.Host), orQ(m.State), orQ(m.Reason), body(c.Body)
+		if waiting && m.State == marker.Waiting && m.Reason == "permission" {
+			d.Denials = ParseDenials(d.Post)
+		}
 		if !m.At.IsZero() {
 			at := m.At
 			d.Since = &at

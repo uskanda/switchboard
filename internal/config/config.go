@@ -904,39 +904,53 @@ func (c *Config) ProjectsFor(host string) []Project {
 // deniedCommands are the commands every run refuses; an extra allow rule may not name them.
 var deniedCommands = [][]string{{"git", "push"}, {"git", "rebase"}, {"gh"}}
 
-// checkAllowTools refuses the extra allow rules under key that are blank, allow every command, or name what every
-// run refuses. A broader rule such as Bash(git *) passes: the deny rules of the run still take precedence over it.
+// checkAllowTools refuses the extra allow rules under key that CheckAllowRule refuses.
 func checkAllowTools(key string, rules []string) []error {
 	var errs []error
 	for _, r := range rules {
-		rule := strings.TrimSpace(r)
-		bad := ""
-		switch {
-		case rule == "":
-			bad = "is blank"
-		case strings.HasPrefix(rule, "WebFetch"):
-			bad = "allows WebFetch, which every run refuses"
-		case rule == "Bash":
-			bad = "allows every command"
-		case strings.HasPrefix(rule, "Bash(") && strings.HasSuffix(rule, ")"):
-			cmd := strings.TrimSuffix(strings.TrimPrefix(rule, "Bash("), ")")
-			for _, suffix := range []string{":*", " *", "*"} {
-				cmd = strings.TrimSuffix(cmd, suffix)
-			}
-			words := strings.Fields(cmd)
-			if len(words) == 0 {
-				bad = "allows every command"
-				break
-			}
-			for _, d := range deniedCommands {
-				if len(words) >= len(d) && slices.Equal(words[:len(d)], d) {
-					bad = fmt.Sprintf("allows %s, which every run refuses", strings.Join(d, " "))
-				}
-			}
-		}
-		if bad != "" {
+		if bad := CheckAllowRule(r); bad != "" {
 			errs = append(errs, fmt.Errorf("%s: %q %s", key, r, bad))
 		}
 	}
 	return errs
+}
+
+// CheckAllowRule tells why an extra allow rule may not be used, or "" when it may: it is blank, allows every
+// command, or names what every run refuses. A broader rule such as Bash(git *) passes: the deny rules of the run
+// still take precedence over it.
+func CheckAllowRule(r string) string {
+	rule := strings.TrimSpace(r)
+	switch {
+	case rule == "":
+		return "is blank"
+	case strings.HasPrefix(rule, "WebFetch"):
+		return "allows WebFetch, which every run refuses"
+	case rule == "Bash":
+		return "allows every command"
+	case strings.HasPrefix(rule, "Bash(") && strings.HasSuffix(rule, ")"):
+		words := RuleWords(rule)
+		if len(words) == 0 {
+			return "allows every command"
+		}
+		for _, d := range deniedCommands {
+			if len(words) >= len(d) && slices.Equal(words[:len(d)], d) {
+				return fmt.Sprintf("allows %s, which every run refuses", strings.Join(d, " "))
+			}
+		}
+	}
+	return ""
+}
+
+// RuleWords returns the words of the command a Bash rule names, without its trailing wildcard: git and ls-tree for
+// "Bash(git ls-tree *)". It is nil for a rule that is no Bash(...) rule, or names no command.
+func RuleWords(rule string) []string {
+	rule = strings.TrimSpace(rule)
+	if !strings.HasPrefix(rule, "Bash(") || !strings.HasSuffix(rule, ")") {
+		return nil
+	}
+	cmd := strings.TrimSuffix(strings.TrimPrefix(rule, "Bash("), ")")
+	for _, suffix := range []string{":*", " *", "*"} {
+		cmd = strings.TrimSuffix(cmd, suffix)
+	}
+	return strings.Fields(cmd)
 }

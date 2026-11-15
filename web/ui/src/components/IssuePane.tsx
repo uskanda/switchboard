@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router";
 import { IssueRef } from "@/components/IssueRef";
 import { Loading } from "@/components/Loading";
 import { AutoMergeBadge, CancelAutoMergeButton, MergeButton, changeName } from "@/components/MergeButton";
+import { DenialsBox, IssueGrants } from "@/components/PermissionGrants";
 import { PlanQuestions, QuestionChips } from "@/components/PlanQuestions";
 import { IssueImagesContext, projectBase } from "@/components/QuestionImage";
 import { ReasonBadge } from "@/components/ReasonBadge";
@@ -412,7 +413,8 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
   const sentLine = useRef<HTMLParagraphElement>(null);
   const nextButton = useRef<HTMLButtonElement>(null);
 
-  async function send(reply: string) {
+  // send posts reply and tells whether it went out.
+  async function send(reply: string): Promise<boolean> {
     const to = issueRef;
     setSendingFor(to);
     setError(null);
@@ -433,9 +435,11 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
         // Another issue opened meanwhile: the reply's own issue loses its draft, and the shown one is left alone.
         keepDraft(to, { text: "", choices: null });
       }
+      return true;
     } catch (err) {
       if (shown.current === to) setError({ err });
       else toast.error(failure(currentLang(), err), { description: messages[currentLang()].draftKept });
+      return false;
     } finally {
       setSendingFor((s) => (s === to ? null : s));
     }
@@ -671,6 +675,10 @@ export function IssuePane({ issueRef }: { issueRef: string }) {
             ) : (
               <p className="text-muted">{t.noNext}</p>
             ))}
+          {detail.reason === "permission" && detail.waiting && !sent && (
+            <DenialsBox key={detail.ref} detail={detail} retry={() => send(retryTextOf(lang, detail.reason))} />
+          )}
+          <IssueGrants issueRef={detail.ref} />
           {showForm && (
             <form onSubmit={submit} className="flex flex-col gap-sm">
               <label htmlFor="reply" className="text-label-md font-medium">
