@@ -49,8 +49,10 @@ export function Toaster() {
   const blur = (e: FocusEvent<HTMLDivElement>) => {
     if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false);
   };
+  // mouseover rather than mouseenter: after a toast closes under the pointer, lib/toast.ts counts the toasts as not
+  // hovered, and moving the pointer over the ones left must pause them again without leaving the toasts first.
   return (
-    <div className="contents" onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocus={() => setFocused(true)} onBlur={blur}>
+    <div className="contents" onMouseOver={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocus={() => setFocused(true)} onBlur={blur}>
       <Sonner
         position="bottom-right"
         expand
