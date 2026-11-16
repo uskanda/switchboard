@@ -60,6 +60,18 @@ function forget(id: ToastId) {
   if (entries.size === 0) hovered = focused = false;
 }
 
+/**
+ * closed forgets a toast the user closed, by its close button or a swipe. The pointer or the focus was on that toast,
+ * and it leaves the page without a leave or a blur, so the toasts count as neither hovered nor focused until the
+ * Toaster says so again: the next mouseover or focus in the toasts pauses the others.
+ */
+function closed(id: ToastId) {
+  // A toast closed through dismiss is forgotten before sonner calls back, so only a close by the user is still here.
+  if (entries.has(id)) hovered = focused = false;
+  forget(id);
+  update();
+}
+
 function update() {
   for (const [id, e] of entries) {
     if (paused()) stop(e);
@@ -87,7 +99,7 @@ function show(kind: ToastKind, message: ReactNode, opts: ToastOptions = {}): Toa
     opts.description ? createElement("p", { className: "break-words text-label-md opacity-90" }, opts.description) : null,
     opts.action ?? null,
   );
-  const id = sonner[kind](body, { duration: Infinity, onDismiss: (t) => forget(t.id), onAutoClose: (t) => forget(t.id) });
+  const id = sonner[kind](body, { duration: Infinity, onDismiss: (t) => closed(t.id), onAutoClose: (t) => forget(t.id) });
   const e: Entry = { remaining: opts.duration ?? defaultDuration, started: 0 };
   entries.set(id, e);
   if (!paused()) start(id, e);

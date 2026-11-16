@@ -118,6 +118,42 @@ describe("a toast", () => {
     expect(screen.queryByText("focused")).toBeNull();
   });
 
+  it("lets the others go away after one is closed by its close button", async () => {
+    render(<Toaster />);
+    act(() => {
+      toast.info("first");
+      toast.info("second");
+    });
+    await wait(1000);
+    const first = toasts().find((t) => t.textContent?.includes("first"))!;
+    const close = within(first).getByRole("button", { name: "閉じる" });
+    fireEvent.mouseOver(close);
+    act(() => close.focus());
+    fireEvent.click(close);
+    await wait(500);
+    expect(screen.queryByText("first")).toBeNull();
+    expect(screen.getByText("second")).toBeInTheDocument();
+    await wait(4000);
+    expect(screen.queryByText("second")).toBeNull();
+  });
+
+  it("stays when the pointer moves onto it after another one is closed", async () => {
+    render(<Toaster />);
+    act(() => {
+      toast.info("first");
+      toast.info("second");
+    });
+    await wait(1000);
+    const first = toasts().find((t) => t.textContent?.includes("first"))!;
+    const close = within(first).getByRole("button", { name: "閉じる" });
+    fireEvent.mouseOver(close);
+    fireEvent.click(close);
+    await wait(500);
+    fireEvent.mouseOver(toasts()[0]);
+    await wait(10000);
+    expect(screen.getByText("second")).toBeInTheDocument();
+  });
+
   it("shows at most five, dropping the oldest", async () => {
     render(<Toaster />);
     act(() => {
