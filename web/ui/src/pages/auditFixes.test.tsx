@@ -169,11 +169,11 @@ describe("the merge button after an automatic merge is cancelled", () => {
     await screen.findByRole("heading", { level: 2, name: "Finished" });
     const head = document.querySelector<HTMLElement>("[data-pane-head]")!;
     await user.click(await within(head).findByRole("button", { name: "PR #9をマージ" }));
-    await user.click(within(head).getByRole("button", { name: "マージする" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "マージする" }));
     await within(head).findByRole("button", { name: "PR #9は自動マージ待ち" });
     FakeEventSource.last!.emit("inbox", { items: [{ ...done, auto_merge: { sha: "abc", since: t0 } }], errors: [], fetched_at: t0 });
     await user.click(within(head).getByRole("button", { name: "自動マージを取り消す" }));
-    await user.click(within(head).getByRole("button", { name: "取り消す" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "取り消す" }));
     FakeEventSource.last!.emit("inbox", { items: [done], errors: [], fetched_at: t0 });
     const button = await within(head).findByRole("button", { name: "PR #9をマージ" });
     expect(button).not.toBeDisabled();
