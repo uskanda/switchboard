@@ -106,6 +106,23 @@ func (c *Client) SaveInstructions(ctx context.Context, req SaveInstructionsReque
 	return c.do(ctx, http.MethodPut, "/v1/instructions", req, nil)
 }
 
+// Permissions returns the allow rules granted from the web inbox: every project's, each configured project's, and
+// issue's when it is not empty.
+func (c *Client) Permissions(ctx context.Context, issue string) (*Permissions, error) {
+	var out Permissions
+	path := "/v1/permissions"
+	if issue != "" {
+		path += "?issue=" + url.QueryEscape(issue)
+	}
+	return &out, c.do(ctx, http.MethodGet, path, nil, &out)
+}
+
+// SavePermissions adds and removes the rules of one scope. It is refused with ErrRuleRefused, ErrUnknownProject,
+// ErrNotFound or ErrInvalid, and nothing is saved then.
+func (c *Client) SavePermissions(ctx context.Context, req SavePermissionsRequest) error {
+	return c.do(ctx, http.MethodPost, "/v1/permissions", req, nil)
+}
+
 // Projects returns the projects of the inbox service's machine and their state.
 func (c *Client) Projects(ctx context.Context) (*Projects, error) {
 	var out Projects

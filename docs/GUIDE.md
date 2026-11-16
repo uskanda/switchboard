@@ -226,7 +226,17 @@ Commands in the sandbox run without rules, so you rarely need `Bash` entries suc
 
 Plan runs can read web pages on any domain with `WebFetch`. The plan's comment lists the URLs they read, folded under "Pages read". Runs that write files never get `WebFetch`. For a project whose code should stay secret, `plan_web_fetch: false` turns it off. `agent.plan_web_fetch` sets the default for all projects, and a project's `plan_web_fetch` overrides it. A project's value takes effect without a restart; `agent.plan_web_fetch` needs a restart.
 
-When switchboard reads the config, three kinds of entries are errors. They are an empty entry, an unrestricted `Bash` or `Bash(*)`, and an entry that names an operation `allow_tools_extra` cannot open (`git push`, `git rebase`, `gh`, `WebFetch`). A broad entry such as `Bash(git *)` passes, but the denied operations stay denied. Changes to a project's `allow_tools_extra` take effect without a restart; `agent.allow_tools_extra` needs a restart. You can write permissions only in the config file. The web inbox cannot change them.
+When switchboard reads the config, three kinds of entries are errors. They are an empty entry, an unrestricted `Bash` or `Bash(*)`, and an entry that names an operation `allow_tools_extra` cannot open (`git push`, `git rebase`, `gh`, `WebFetch`). A broad entry such as `Bash(git *)` passes, but the denied operations stay denied. Changes to a project's `allow_tools_extra` take effect without a restart; `agent.allow_tools_extra` needs a restart.
+
+git runs outside the sandbox, so a git subcommand that no rule allows is denied. These git subcommands are allowed by default:
+
+- Runs that write files and plan runs: `status`, `diff`, `log`, and the read-only ones on the next line
+- Read-only: `ls-tree`, `ls-files`, `show`, `cat-file`, `merge-base`, `rev-parse`, `rev-list`, `blame`, `grep`, `shortlog`, `describe`
+- Runs that write files only: `add`, `commit`, `merge`, `mv`, `rm`, `restore`, `stash`
+
+ `git fetch` is denied. `origin/<base>` is fetched before every run.
+
+You can also add permissions from the web inbox. Open an issue that waits with the reason `permission`: it lists the denied operations and the rules that would allow them. Choose the scope (this issue, this project, or every project) and press "Allow and run again". The rules are saved, and the agent is asked to run again. On the Settings page, you can add and remove the rules for every project and for each project. The rules of an issue can be removed on the issue's page. With the login on, only an admin can add rules. The web inbox refuses `git config`, `git -c`, git without a subcommand (`Bash(git *)`), and rules made only of wildcards. Write such rules in the config file instead. No rule can allow commands joined with a pipe or `&&`. The rules go into `permissions/` in the config directory of the inbox service's machine, and only that machine's agent gives them to its runs that write files.
 
 The instructions go in the same directory as the plan instructions, in a file named `run.md`. For all projects, the file is `instructions/run.md`. A GitHub project's goes in `instructions/gh/<owner>/<repo>/run.md`, and a GitLab project's in `instructions/gl/<group>/<project>/run.md`. Saves get the same checks and audit log entries as the plan instructions, and you can also edit the files on the Settings page of the web inbox.
 

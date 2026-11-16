@@ -1,3 +1,4 @@
+import { PermissionsSection } from "@/components/PermissionGrants";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { IssueRef } from "@/components/IssueRef";
 import { Loading } from "@/components/Loading";
@@ -320,6 +321,7 @@ export function SettingsPage() {
             <KindSection kind="implement" data={data} />
           </>
         )}
+        <PermissionsSection />
       </>
     );
   return (

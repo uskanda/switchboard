@@ -164,6 +164,7 @@ You run unattended on an issue. Nobody can answer you during this run; you end t
 
 - Work in the current directory, on the current branch. Commit your work with git add and git commit; do not create other branches.
 - Never run git push, never use gh or glab, and never try to reach the forge: switchboard pushes and opens the pull request after checking your work.
+- origin/%[2]s was fetched just before this run, so it is the base branch as it stands now. git fetch is refused: do not try it.
 - When the branch conflicts with the base branch, resolve it with git merge origin/%[2]s and commit the merge. Never rebase, amend or otherwise rewrite the history of the branch: switchboard pushes without force.
 - Do not change .claude/, .mcp.json, CLAUDE.md, AGENTS.md or the CI configuration (.github/workflows/). A change there blocks the run.
 - Never write tokens, keys or other secrets into files, commits or your output.
@@ -232,11 +233,15 @@ Do not reopen decisions that the issue's comments already settled. End with stat
 
 // PlanSystem returns the system prompt of a run in the plan stage. word is the approval word; extra, when not
 // blank, is the user's additional instructions, added last.
-func PlanSystem(lang, word, extra string) string { return planSystem(lang, word, extra, false) }
+func PlanSystem(lang, base, word, extra string) string {
+	return planSystem(lang, base, word, extra, false)
+}
 
 // PlanSkipSystem is PlanSystem for the first plan run of a cycle that may skip the questions and the approval
 // (plan_first: auto): it also says when and how to declare implement.
-func PlanSkipSystem(lang, word, extra string) string { return planSystem(lang, word, extra, true) }
+func PlanSkipSystem(lang, base, word, extra string) string {
+	return planSystem(lang, base, word, extra, true)
+}
 
 // planSkip is the section of PlanSkipSystem, before the language.
 const planSkip = `
@@ -248,7 +253,7 @@ This run may skip the plan stage, when the requirements are clear already.
 - Checks alone are no reason to skip: when the only questions left are checks, end with status "plan", with their answers among the decisions it rests on, so that the owner approves them.
 `
 
-func planSystem(lang, word, extra string, skippable bool) string {
+func planSystem(lang, base, word, extra string, skippable bool) string {
 	name := languages[lang]
 	if name == "" {
 		name = "English"
@@ -300,7 +305,8 @@ You run unattended on an issue, in its plan stage. Nobody can answer you during 
 - Read and search files with Read, Grep and Glob, not with cat, grep or find.
 - Shell commands run in a sandbox: they cannot reach the network, and whatever they change in the worktree is thrown away after the run.
 - GOCACHE is set to a build cache that commands in the sandbox may write: run go commands as they are, without setting or changing GOCACHE.
-- git status, git diff and git log run outside the sandbox, each only as a single command on its own: not in a pipe, not after && or ;, and not starting with cd. Commands that write to the history, build or reach the forge are refused, and the run goes on without them.
+- git status, git diff, git log and the git commands that only read (git show, ls-tree, ls-files, cat-file, merge-base, rev-parse, rev-list, blame, grep, shortlog and describe) run outside the sandbox, each only as a single command on its own: not in a pipe, not after && or ;, and not starting with cd. Commands that write to the history, build or reach the forge are refused, and the run goes on without them.
+- origin/%[4]s was fetched just before this run, so it is the base branch as it stands now. git fetch is refused: do not try it.
 
 ## Rules
 
@@ -311,7 +317,7 @@ You run unattended on an issue, in its plan stage. Nobody can answer you during 
 ## Language
 
 Write "title", "questions", "plan" and "summary" in %[1]s.
-`, name, word, skip)
+`, name, word, skip, base)
 	return WithUserInstructions(s, extra)
 }
 

@@ -113,6 +113,8 @@ type Agent struct {
 	// watches, so that the waits on one base read it once per poll (ADR-075).
 	bases map[string]*baseRead
 	cycle int
+	// badGrants are the granted allow rules a run left out, already logged.
+	badGrants map[string]bool
 	// paused, when set, is the pause of this host on a usage limit or its API quota (ADR-053); pauseTimer takes the
 	// queue up again when it ends. cost is what the runs cost today and this month.
 	paused     *pause
@@ -251,6 +253,7 @@ func (a *Agent) Start(ctx context.Context) error {
 	a.unwatched = map[forge.IssueRef]time.Time{}
 	a.forbidden = map[string]bool{}
 	a.bases = map[string]*baseRead{}
+	a.badGrants = map[string]bool{}
 	a.resumes = map[forge.IssueRef]bool{}
 	a.limits = map[string]time.Time{}
 	a.paused, a.cost = nil, costs{}

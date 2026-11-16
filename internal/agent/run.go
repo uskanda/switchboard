@@ -21,6 +21,7 @@ import (
 	"github.com/uskanda/switchboard/internal/forge"
 	"github.com/uskanda/switchboard/internal/instructions"
 	"github.com/uskanda/switchboard/internal/labels"
+	"github.com/uskanda/switchboard/internal/permissions"
 	"github.com/uskanda/switchboard/internal/prompt"
 	"github.com/uskanda/switchboard/internal/trust"
 	"github.com/uskanda/switchboard/internal/workspace"
@@ -226,10 +227,24 @@ func modelKind(k runKind) config.RunKind {
 	return config.ImplementRun
 }
 
+// gitRead are the git commands that only look at the repository, which every run may use; gitWorktree those that
+// change the worktree alone, which a run that writes files may use. git runs outside the sandbox (gitUnsandboxed),
+// so that a git command not listed is refused: fetch, checkout, switch, reset, branch and config are not, nor is
+// git -c, which could run any program (add-permission-grants).
+var (
+	gitRead = []string{
+		"git ls-tree", "git ls-files", "git show", "git cat-file", "git merge-base", "git rev-parse", "git rev-list",
+		"git blame", "git grep", "git shortlog", "git describe",
+	}
+	gitWorktree = []string{"git mv", "git rm", "git restore", "git stash"}
+)
+
 // baseAllow are the allow rules every run that writes files gets.
 func baseAllow(verifyCommand string) []string {
 	allow := []string{"Read", "Edit", "Write", "Glob", "Grep", "WebSearch"}
 	allow = append(allow, claudecode.Commands("git status", "git diff", "git log", "git add", "git commit", "git merge")...)
+	allow = append(allow, claudecode.Commands(gitRead...)...)
+	allow = append(allow, claudecode.Commands(gitWorktree...)...)
 	if f := strings.Fields(verifyCommand); len(f) > 0 {
 		allow = append(allow, claudecode.Commands(f[0])...)
 	}
@@ -397,13 +412,15 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) (o *outcome) {
 	}
 	lang, word := a.Config.Comments.Language, a.Config.Plan.ApproveWord
 	base := baseAllow(p.VerifyCommand)
-	added := extraAllow(base, a.Config.Agent.AllowToolsExtra, p.AllowToolsExtra)
+	// A run that writes files also gets the rules granted from the web inbox; a plan run does not (below).
+	writing := append([][]string{a.Config.Agent.AllowToolsExtra, p.AllowToolsExtra}, a.grants(p, is.Ref)...)
+	added := extraAllow(base, writing...)
 	req := claudecode.Request{
 		Binary: a.Config.Claude.Binary, Dir: dir, RunDir: a.runDir(rec.Run), SessionID: rec.Session,
-		SystemPrompt: prompt.System(lang, p.BaseBranch), Settings: settings(p.VerifyCommand, a.Config.Agent.AllowToolsExtra, p.AllowToolsExtra), MaxTurns: a.Config.Agent.MaxTurns,
+		SystemPrompt: prompt.System(lang, p.BaseBranch), Settings: settings(p.VerifyCommand, writing...), MaxTurns: a.Config.Agent.MaxTurns,
 		Schema: Schema, Auth: a.Config.Claude.Auth, Timeout: a.Config.Agent.Timeout,
 		IntGrace: a.IntGrace, TermGrace: a.TermGrace, Env: a.Env,
-		Tools: tools(runTools, a.Config.Agent.AllowToolsExtra, p.AllowToolsExtra),
+		Tools: tools(runTools, writing...),
 	}
 	m := a.Config.Agent.ModelFor(modelKind(pl.kind))
 	req.Model, req.Effort = m.Model, m.Effort
@@ -423,9 +440,9 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) (o *outcome) {
 		extra := [][]string{a.Config.Agent.AllowToolsExtra, p.AllowToolsExtra}
 		fetch := a.Config.Agent.PlanWebFetchFor(p)
 		added = extraAllow(planSettings(p.PlanPrototype, fetch, shotCmd, imageDir).Allow, extra...)
-		req.SystemPrompt, req.Settings, req.Schema = prompt.PlanSystem(lang, word, used.Text), planSettings(p.PlanPrototype, fetch, shotCmd, imageDir, extra...), PlanSchema
+		req.SystemPrompt, req.Settings, req.Schema = prompt.PlanSystem(lang, p.BaseBranch, word, used.Text), planSettings(p.PlanPrototype, fetch, shotCmd, imageDir, extra...), PlanSchema
 		if pl.skippable {
-			req.SystemPrompt, req.Schema = prompt.PlanSkipSystem(lang, word, used.Text), PlanSkipSchema
+			req.SystemPrompt, req.Schema = prompt.PlanSkipSystem(lang, p.BaseBranch, word, used.Text), PlanSkipSchema
 		}
 		if fetch {
 			req.SystemPrompt = prompt.WithWebFetch(req.SystemPrompt)
@@ -736,6 +753,40 @@ func (a *Agent) planOutcome(ctx context.Context, res *claudecode.Result, pl *pla
 
 // loadInstructions returns the user's additional instructions of kind for a run of p, read again for every run. A
 // configuration that was not loaded from a file has none.
+// grants returns the allow rules granted from the web inbox to the runs of ref that write files: every project's,
+// the project's and the issue's, as the files hold them now (add-permission-grants). A rule the web inbox would
+// refuse, written by hand, is left out and logged once; a file that cannot be read is logged and left out.
+func (a *Agent) grants(p config.Project, ref forge.IssueRef) [][]string {
+	if a.Config.Path == "" {
+		return nil
+	}
+	s := permissions.For(a.Config.Path, nil)
+	var out [][]string
+	for _, sc := range []permissions.Scope{{}, {Project: p.Ref}, {Project: p.Ref, Issue: ref.Number}} {
+		rules, err := s.Read(sc)
+		if err != nil {
+			a.logf("%s: read the allow rules of %s: %v; they are left out", ref, sc, err)
+			continue
+		}
+		var ok []string
+		for _, r := range rules {
+			if why := permissions.Check(r); why != "" {
+				a.mu.Lock()
+				logged := a.badGrants[r]
+				a.badGrants[r] = true
+				a.mu.Unlock()
+				if !logged {
+					a.logf("the allow rule %q of %s %s; it is left out", r, sc, why)
+				}
+				continue
+			}
+			ok = append(ok, r)
+		}
+		out = append(out, ok)
+	}
+	return out
+}
+
 func (a *Agent) loadInstructions(kind instructions.Kind, p config.Project) instructions.Loaded {
 	if a.Config.Path == "" {
 		return instructions.Loaded{}

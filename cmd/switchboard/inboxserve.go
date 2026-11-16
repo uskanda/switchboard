@@ -23,6 +23,7 @@ import (
 	"github.com/uskanda/switchboard/internal/inbox"
 	"github.com/uskanda/switchboard/internal/inboxserve"
 	"github.com/uskanda/switchboard/internal/instructions"
+	"github.com/uskanda/switchboard/internal/permissions"
 	"github.com/uskanda/switchboard/internal/push"
 	"github.com/uskanda/switchboard/internal/relayclient"
 	"github.com/uskanda/switchboard/internal/secret"
@@ -85,6 +86,7 @@ func inboxAPI(cfg *config.Config, forges map[string]forge.Forge, store instructi
 	}
 	api = &inboxserve.Server{Inbox: newInbox(cfg, forges), Interval: cfg.Inbox.RefreshInterval, Relay: cfg.Inbox.Relay != nil,
 		Instructions: &inboxserve.Instructions{Store: store, Projects: refsOf(cfg.Projects), Host: cfg.Host.Name},
+		Permissions:  &inboxserve.Permissions{Store: permissions.For(cfg.Path, store.Audit), Projects: refsOf(cfg.Projects), Host: cfg.Host.Name},
 		Projects:     &inboxserve.Projects{Config: cfg, Repos: repos},
 		NewIssues:    &inboxserve.NewIssues{Config: cfg, Issues: issues},
 		Merges:       merges,

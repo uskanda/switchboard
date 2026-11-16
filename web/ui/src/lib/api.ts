@@ -223,7 +223,27 @@ export type Detail = {
   comments?: Comment[];
   /** With the login on, whether the agent takes the logged-in person's reply as an instruction (trusted_authors). */
   trusted?: boolean;
+  /** On a wait for a permission, the operations the latest run was refused (add-permission-grants). */
+  denials?: Denial[];
 };
+
+/**
+ * Denial is one operation a run was refused, with the allow rules the page offers to let it through. command is the
+ * forge's data, written by claude: show it as text. compound marks a command joined with others, which no rule matches.
+ */
+export type Denial = { tool: string; command?: string; candidates: string[]; compound?: boolean };
+
+/** PermissionScope is the granted rules of one scope: every project, a project, or an issue (ref). */
+export type PermissionScope = { scope: "global" | "project" | "issue"; ref?: string; rules: string[] };
+
+/** Permissions is GET /api/permissions: the rules granted from the web inbox, as the files of host hold them. */
+export type Permissions = { host: string; items: PermissionScope[] };
+
+/** SavePermissions is the body of a save of permissions: the rules to add to and remove from one scope. */
+export type SavePermissions = { scope: PermissionScope["scope"]; ref?: string; add?: string[]; remove?: string[] };
+
+/** RefusedRule is one rule a save refused, and why, as the inbox service says it. */
+export type RefusedRule = { rule: string; reason: string };
 
 /**
  * Comment is one comment of an issue. agent is set on a post of the agent, whose kind is then the state of its
@@ -296,6 +316,8 @@ export class ApiError extends Error {
   constructor(
     readonly code: string,
     message: string,
+    /** On rule_refused, the rules a save of permissions refused. */
+    readonly rules?: RefusedRule[],
   ) {
     super(message);
   }
@@ -306,7 +328,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     if (res.status === 401 && body.code === "unauthenticated") loggedOut();
-    throw new ApiError(body.code ?? "unknown", body.message ?? `${res.status} ${res.statusText}`);
+    throw new ApiError(body.code ?? "unknown", body.message ?? `${res.status} ${res.statusText}`, body.rules);
   }
   return (res.status === 204 ? undefined : await res.json()) as T;
 }
@@ -330,6 +352,14 @@ export const saveInstructions = (target: string, kind: InstructionKind, content:
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ target, kind, content }),
   });
+
+/** getPermissions reads the granted rules: every project's, each project's, and issue's when it is given. */
+export const getPermissions = (issue?: string) =>
+  call<Permissions>(issue ? `/api/permissions?issue=${encodeURIComponent(issue)}` : "/api/permissions");
+
+/** savePermissions adds and removes the rules of one scope; a refused rule fails it with ApiError.rules. */
+export const savePermissions = (req: SavePermissions) =>
+  call<void>("/api/permissions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(req) });
 
 export const getProjects = () => call<Projects>("/api/projects");
 
