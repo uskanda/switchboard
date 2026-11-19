@@ -116,6 +116,25 @@ func TestFixClaimMarker(t *testing.T) {
 	}
 }
 
+// The claim of a fix run taken up from the queue after its conflict fixes ran out names its round; others do not.
+func TestRequeuedFixClaimMarker(t *testing.T) {
+	line := Marker{Host: "h", Run: "r", State: Running, Reason: Fix, Requeue: 2, At: at}.Format()
+	if !strings.HasSuffix(line, " requeue=2 -->") {
+		t.Fatalf("Format = %q", line)
+	}
+	got, ok := Parse(line)
+	if !ok || got.Requeue != 2 || got.Reason != Fix {
+		t.Fatalf("Parse = %+v, %v", got, ok)
+	}
+	if plain := (Marker{Host: "h", State: Running, Reason: Fix, At: at}).Format(); strings.Contains(plain, "requeue=") {
+		t.Fatalf("a claim not taken up from the queue names a round: %q", plain)
+	}
+	q, ok := Parse("requeued\n\n" + Marker{Host: "h", Run: "r", State: Queued, Reason: Conflict, At: at}.Format())
+	if !ok || q.State != Queued || q.Reason != "conflict" || !q.Transient() {
+		t.Fatalf("Parse = %+v, %v", q, ok)
+	}
+}
+
 // A done post of a fix run names what it fixed; other done posts, and older markers, carry no fix.
 func TestDoneMarkerOfAFixRun(t *testing.T) {
 	line := Marker{Host: "h", State: Done, SHA: "def", CR: 48, Fix: Conflict, At: at}.Format()

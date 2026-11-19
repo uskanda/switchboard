@@ -397,7 +397,7 @@ func (a *Agent) work(ctx context.Context, pl *plan, rec record) (o *outcome) {
 	}
 	include := p.IncludeUntrusted && a.isPrivate(p.Ref)
 	in := prompt.Input{Ref: is.Ref, Title: is.Title, Body: is.Body, IncludeUntrusted: include, Nonce: newID(),
-		Resumed: pl.resumeNote != 0 && pl.kind != planRun}
+		Resumed: pl.resumeNote != 0 && isPause(pl.resumeReason) && pl.kind != planRun}
 	for i, c := range pl.comments {
 		var k prompt.Kind
 		switch pl.kinds[i] {

@@ -13,6 +13,11 @@ describe("queueText", () => {
     expect(queueText("ja", "quota", until)).toBe("APIのクオータに達しています（11/3 18:30まで）");
   });
 
+  it("says a conflict fix went back to the queue past its limit", () => {
+    expect(queueText("ja", "conflict")).toBe("衝突の直しを順番待ちに回しています");
+    expect(queueText("en", "conflict")).toBe("Conflict fix requeued");
+  });
+
   it("leaves the time out when there is none", () => {
     expect(queueText("ja", "limit")).toBe("利用上限に達しています");
     expect(queueText("ja", "quota", null)).toBe("APIのクオータに達しています");

@@ -179,20 +179,21 @@ func (a *Agent) overQuota(now time.Time) (time.Time, bool) {
 // isPause reports whether a queued reason is a pause of the host rather than a full slot.
 func isPause(reason string) bool { return reason == marker.QueuedLimit || reason == marker.QueuedQuota }
 
-// limitResume returns the comment that marks the issue to resume after a usage limit: the agent's queued comment of
-// a run that hit the limit, when it is the agent's latest post other than a progress comment or another queued
-// comment. It returns 0 when there is none.
-func (pl *plan) limitResume() int64 {
+// limitResume returns the comment that marks the issue to resume, and its reason: the agent's queued comment of a run
+// that hit a usage limit (marker.QueuedLimit or marker.QueuedQuota, ADR-053), or of a conflict fix put back in the
+// queue past the fix limit (marker.Conflict, ADR-077), when it is the agent's latest post other than a progress
+// comment or another queued comment. It returns 0 when there is none.
+func (pl *plan) limitResume() (int64, string) {
 	for i := len(pl.comments) - 1; i >= 0; i-- {
 		m := pl.agentMarker(i)
 		switch {
 		case m == nil, m.State == marker.Progress:
 		case m.State == marker.Queued && m.Run == "":
-		case m.State == marker.Queued && isPause(m.Reason):
-			return pl.comments[i].ID
+		case m.State == marker.Queued && (isPause(m.Reason) || isRequeue(m)):
+			return pl.comments[i].ID, m.Reason
 		default:
-			return 0
+			return 0, ""
 		}
 	}
-	return 0
+	return 0, ""
 }

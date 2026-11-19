@@ -505,11 +505,12 @@ func ciReport(sha string, failed []forge.Check, logs map[int]string) string {
 	return workspace.Redact(b.String())
 }
 
-// conflicted starts a fix run that merges the base into the conflicting change request of w, or, past the fix
-// limit, makes the issue wait (reason conflict). A fix run that finds no free slot waits for one: startFixes starts
-// it as soon as a slot frees, before the queue and before a waiting CI fix (ADR-054).
+// conflicted starts a fix run that merges the base into the conflicting change request of w. Past the fix limit, it
+// puts the issue back at the end of the queue, as long as it went back fewer times than the limit, and makes it wait
+// (reason conflict) after that (ADR-077). A fix run that finds no free slot waits for one: startFixes starts it as
+// soon as a slot frees, before the queue and before a waiting CI fix (ADR-054).
 func (a *Agent) conflicted(ctx context.Context, ref forge.IssueRef, w *watch) {
-	fix := &fixInfo{cause: prompt.FixConflict, report: fmt.Sprintf("Change request %s conflicts with the base branch %s.", crName(ref, w.cr), w.project.BaseBranch)}
+	fix := &fixInfo{cause: prompt.FixConflict, report: conflictReport(ref, w.cr, w.project.BaseBranch)}
 	pl, err := a.fixPlan(ctx, w.project, ref, a.Config.Labels.Done, fix)
 	switch {
 	case err != nil:
@@ -522,7 +523,11 @@ func (a *Agent) conflicted(ctx context.Context, ref forge.IssueRef, w *watch) {
 	limit := a.Config.Agent.FixAttempts()
 	if fix.attempt > limit {
 		a.endWait(w, "")
-		w.giveUp = a.conflictOutcome(pl, w, fix.attempt-1, limit)
+		if n := pl.requeues(); n < limit {
+			w.giveUp = a.requeueOutcome(pl, w, fix.attempt-1, n+1, limit)
+		} else {
+			w.giveUp = a.conflictOutcome(pl, w, fix.attempt-1, limit, n)
+		}
 		a.writeGiveUp(ctx, ref, w)
 		return
 	}
@@ -552,18 +557,34 @@ func crName(ref forge.IssueRef, cr int) string {
 	return fmt.Sprintf("#%d", cr)
 }
 
+// conflictReport is the failure report of a conflict fix run of change request cr of ref.
+func conflictReport(ref forge.IssueRef, cr int, base string) string {
+	return fmt.Sprintf("Change request %s conflicts with the base branch %s.", crName(ref, cr), base)
+}
+
 // conflictOutcome is the wait (reason conflict) of a change request that kept conflicting with its base past the
-// fix limit: a summary of each fix run.
-func (a *Agent) conflictOutcome(pl *plan, w *watch, made, limit int) *outcome {
+// fix limit, after it went back to the queue requeued times: a summary of each fix run.
+func (a *Agent) conflictOutcome(pl *plan, w *watch, made, limit, requeued int) *outcome {
 	o := &outcome{Run: newID(), Ack: pl.ack(), msg: a.msg}
 	cr := crName(pl.issue.Ref, w.cr)
 	lead := fmt.Sprintf(a.msg.conflictFailed, cr, made, limit)
 	if limit == 0 {
 		lead = fmt.Sprintf(a.msg.conflictNoFixes, cr)
 	}
+	if requeued > 0 {
+		lead += " " + fmt.Sprintf(a.msg.conflictRequeues, requeued, limit)
+	}
 	parts := append([]string{lead}, a.fixAttempts(pl)...)
 	parts = append(parts, a.msg.ciReply)
 	return o.set("waiting", marker.Conflict, a.msg.conflictTitle, parts...)
+}
+
+// requeueOutcome puts the issue of a change request that kept conflicting with its base past the fix limit back at
+// the end of the queue, for its round-th time: its comment is the queued comment (reason conflict, with a run) that
+// marks the issue to take up as a conflict fix run (ADR-077).
+func (a *Agent) requeueOutcome(pl *plan, w *watch, made, round, limit int) *outcome {
+	o := &outcome{Run: newID(), Ack: pl.ack(), msg: a.msg}
+	return o.set(marker.Queued, marker.Conflict, a.msg.requeueTitle, fmt.Sprintf(a.msg.requeued, crName(pl.issue.Ref, w.cr), made, round, limit))
 }
 
 // fixAttempts is the list of the fix runs since the last reset, as a wait shows them, or nothing.
@@ -607,10 +628,17 @@ func (a *Agent) giveUpOutcome(pl *plan, w *watch, failed []forge.Check, logs map
 	return o.set("waiting", marker.CI, a.msg.ciTitle, parts...)
 }
 
-// writeGiveUp writes back the kept wait of w; a failure is tried again at the next poll.
+// writeGiveUp writes back the kept wait of w, or the queued comment of a conflict fix put back in the queue, which
+// then enters the queue at once (ADR-077); a failure is tried again at the next poll. Call it with pollMu held.
 func (a *Agent) writeGiveUp(ctx context.Context, ref forge.IssueRef, w *watch) {
 	if err := a.writeBack(ctx, ref, w.giveUp); err != nil {
 		a.logf("%s: write back the wait past the fix limit: %v; tried again at the next poll", ref, err)
+		return
+	}
+	if w.giveUp.State == marker.Queued {
+		a.unwatch(ref, "past the limit of fix runs, the issue went back to the queue ("+w.giveUp.Reason+")")
+		a.Audit.Log("run.requeued", map[string]any{"issue": ref.String(), "run": w.giveUp.Run, "reason": w.giveUp.Reason})
+		a.resume(w.project, ref)
 		return
 	}
 	a.unwatch(ref, "past the limit of fix runs, the issue waits ("+w.giveUp.Reason+")")

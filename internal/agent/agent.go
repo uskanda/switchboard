@@ -653,7 +653,8 @@ type plan struct {
 
 	start        string   // the start label the run starts from, or "" when it resumes on a reply or after a limit
 	mode         string   // with start: the mode its claim records
-	resumeNote   int64    // the queued comment that marks the run to resume after a usage limit, or 0
+	resumeNote   int64    // the queued comment that marks the run to resume after a usage limit or a requeue, or 0
+	resumeReason string   // with resumeNote: its reason, a pause (limit, quota) or a requeued conflict fix (conflict)
 	kind         runKind  // set by classify
 	planID, okID int64    // for approvedRun: the plan and the comment that approved it; for skippedRun: the plan
 	qNext        int      // for planRun: the number of its first question
@@ -716,12 +717,23 @@ func (a *Agent) decide(ctx context.Context, p config.Project, ref forge.IssueRef
 		// limited run was in, as a resume on a reply does (ADR-053). Without the mark, the label is a person's when the
 		// agent's account is also a trusted user's, which the forge cannot tell apart (ADR-056). With the web inbox's
 		// login on, people and the agent post as different accounts, and the exception does not hold (issue #146).
-		if pl.resumeNote = pl.limitResume(); pl.resumeNote == 0 {
+		if pl.resumeNote, pl.resumeReason = pl.limitResume(); pl.resumeNote == 0 {
 			if a.Config.Inbox.Auth != nil || !j.ReadyLabel(ref, actor) {
 				return nil, nil
 			}
 			byAgent = false
 		}
+	}
+	if byAgent && pl.resumeReason == marker.Conflict {
+		// A conflict fix put back in the queue past the fix limit is taken up as a conflict fix run (ADR-077).
+		if !j.Body(is) {
+			return nil, nil
+		}
+		if !pl.requeuedFix() {
+			a.logf("%s: no done post names the change request of the requeued conflict fix; nothing runs", ref)
+			return nil, nil
+		}
+		return pl, nil
 	}
 	if byAgent {
 		pl.classify(a.Config.Plan.ApproveWord)
@@ -754,7 +766,7 @@ func (a *Agent) decide(ctx context.Context, p config.Project, ref forge.IssueRef
 	if labels.IsStart(st, n) {
 		// A person put a start label on an issue a limit put back in the queue: a new cycle, which still takes the
 		// limited run's worktree on and removes its resume mark.
-		pl.resumeNote = pl.limitResume()
+		pl.resumeNote, pl.resumeReason = pl.limitResume()
 	}
 	if (st == n.Waiting || st == n.Done) && !pl.hasReply() {
 		return nil, nil
@@ -809,10 +821,11 @@ func (a *Agent) launch(ctx context.Context, pl *plan) error {
 		return nil
 	}
 	if ok, limitKind, value := a.hasSlot(ref, limit); !ok {
-		if pl.fix != nil {
+		if pl.fix != nil && pl.fix.requeue == 0 {
 			a.mu.Unlock()
 			return errQueued // the watch keeps the fix run waiting for startFixes; a done issue is never queued
 		}
+		// A conflict fix put back in the queue past the fix limit waits in the queue as any issue (ADR-077).
 		// An issue already queued keeps its place; its kind may have changed meanwhile (a plan approved).
 		q, ok := a.pending[ref]
 		if !ok {
@@ -823,7 +836,7 @@ func (a *Agent) launch(ctx context.Context, pl *plan) error {
 		_, noted := a.queued[ref]
 		switch {
 		case !noted && pl.resumeNote != 0:
-			// The resume mark of a run that hit a limit serves as the queued comment.
+			// The resume mark of a run that hit a limit, or of a requeued conflict fix, serves as the queued comment.
 			a.queued[ref], a.resumes[ref], noted = pl.resumeNote, true, true
 			a.saveQueued()
 		case !noted:
@@ -928,7 +941,8 @@ type queuedRun struct {
 
 // queueOrder is the order in which drain offers the slots (ADR-046): the plan runs first when preferPlan is on, then
 // the earliest in the queue, then by ref. The fix runs that wait for a slot are not in the queue: startFixes starts
-// them before it (ADR-054). Call it with mu held.
+// them before it (ADR-054). A conflict fix put back in the queue past the fix limit is, at its end (ADR-077). Call it
+// with mu held.
 func (a *Agent) queueOrder() []forge.IssueRef {
 	refs := make([]forge.IssueRef, 0, len(a.pending))
 	for ref := range a.pending {
@@ -1110,6 +1124,7 @@ func (a *Agent) claim(ctx context.Context, pl *plan, act *active) (bool, error) 
 	}
 	if pl.fix != nil {
 		m.Reason = marker.Fix // counted toward agent.max_fix_attempts
+		m.Requeue = pl.fix.requeue
 	}
 	mine, err := f.PostComment(ctx, ref, a.claimText(pl)+"\n\n"+m.Format()+"\n")
 	if err != nil {

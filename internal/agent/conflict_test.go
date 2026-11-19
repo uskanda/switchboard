@@ -201,10 +201,14 @@ func TestAConflictAfterTheFixesAreUsedUpListsThem(t *testing.T) {
 	w.poll()
 	w.settle()
 	w.syncHead()
+	w.step(3, commit("merge2.txt", "merged")+done("Merged main from the queue."))
+	w.poll() // past the limit: back to the queue, and taken up again (ADR-077)
+	w.settle()
+	w.syncHead()
 	w.poll()
 	w.settle()
 	p := w.lastPost(w.ref)
-	if w.starts() != 2 || p.Marker.Reason != marker.Conflict || !strings.Contains(p.Body, "Merged main once.") || !strings.Contains(p.Body, "1 automatic fix run(s)") {
+	if w.starts() != 3 || p.Marker.Reason != marker.Conflict || !strings.Contains(p.Body, "Merged main once.") || !strings.Contains(p.Body, "Merged main from the queue.") || !strings.Contains(p.Body, "1 automatic fix run(s)") {
 		t.Fatalf("starts=%d marker=%+v\n%s", w.starts(), p.Marker, p.Body)
 	}
 }
