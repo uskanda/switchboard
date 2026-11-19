@@ -21,11 +21,15 @@ type fixInfo struct {
 	report  string // the failure report, fenced in the prompt; redacted
 	checks  string // for a CI fix: the failed checks, as the claim names them
 	attempt int    // the run's number among the fix runs since the last reset, from 1
+	// requeue, for a conflict fix taken up from the queue after the fixes ran out, is its round, from 1; its claim
+	// carries it (requeue=), and the fix runs are counted again from there (ADR-077).
+	requeue int
 }
 
-// fixes counts the fix runs of the issue since the last reset: a trusted comment, or a claim made from a start label.
-// The fix runs are known by the reason of their claims, so every host counts the same. A fix run that stopped on a
-// usage limit, whose wait carries until, is not counted (ADR-053).
+// fixes counts the fix runs of the issue since the last reset: a trusted comment, a claim made from a start label, the
+// claim of a conflict fix taken up from the queue (itself counted), or the queued comment that put one back in the
+// queue (ADR-077). The fix runs are known by the reason of their claims, so every host counts the same. A fix run that
+// stopped on a usage limit, whose wait carries until, is not counted (ADR-053).
 func (pl *plan) fixes() int {
 	n := 0
 	limited := map[string]bool{} // the runs whose wait says they hit a usage limit
@@ -37,6 +41,9 @@ func (pl *plan) fixes() int {
 		if m != nil && m.State == marker.Waiting && !m.Until.IsZero() {
 			limited[m.Run] = true
 		}
+		if m != nil && isRequeue(m) {
+			break
+		}
 		if m == nil || m.State != marker.Running {
 			continue
 		}
@@ -46,8 +53,38 @@ func (pl *plan) fixes() int {
 		if m.Reason == marker.Fix && !limited[m.Run] {
 			n++
 		}
+		if m.Requeue != 0 {
+			break
+		}
 	}
 	return n
+}
+
+// requeues counts the times the issue went back to the queue after its conflict fixes ran out, since a trusted comment
+// or a claim made from a start label: the claims of the fix runs taken up from the queue (ADR-077).
+func (pl *plan) requeues() int {
+	n := 0
+	for i := len(pl.comments) - 1; i >= 0; i-- {
+		if pl.kinds[i] == trust.Instruction {
+			break
+		}
+		m := pl.agentMarker(i)
+		if m == nil || m.State != marker.Running {
+			continue
+		}
+		if m.Mode != "" {
+			break
+		}
+		if m.Requeue != 0 {
+			n++
+		}
+	}
+	return n
+}
+
+// isRequeue reports whether m marks the queued comment of a conflict fix put back in the queue past the fix limit.
+func isRequeue(m *marker.Marker) bool {
+	return m.State == marker.Queued && m.Reason == marker.Conflict && m.Run != ""
 }
 
 // fixesDone is how many fix runs the issue had, counting this run when it is one.
@@ -90,8 +127,31 @@ func (a *Agent) claimText(pl *plan) string {
 		default:
 			s += "\n\n" + fmt.Sprintf(a.msg.fixCI, f.attempt, limit, f.checks)
 		}
+		if f.requeue != 0 {
+			s += "\n\n" + fmt.Sprintf(a.msg.fixRequeued, f.requeue, limit)
+		}
 	}
 	return s
+}
+
+// requeuedFix makes pl, whose issue went back to the queue after its conflict fixes ran out, the plan of a conflict
+// fix run of the change request its latest done post names. It reports false when no done post names one. The
+// conflict is not read again: the fix run merges the base, which does no harm once the conflict is gone (ADR-077).
+func (pl *plan) requeuedFix() bool {
+	cr := 0
+	for i := len(pl.comments) - 1; i >= 0 && cr == 0; i-- {
+		if m := pl.agentMarker(i); m != nil && m.State == marker.Done {
+			cr = m.CR
+		}
+	}
+	if cr == 0 {
+		return false
+	}
+	ref := pl.issue.Ref
+	pl.kind = fixRun
+	pl.fix = &fixInfo{cause: prompt.FixConflict, report: conflictReport(ref, cr, pl.project.BaseBranch), requeue: pl.requeues() + 1}
+	pl.fix.attempt = pl.fixes() + 1
+	return true
 }
 
 // fixAgain ends the run of rec, whose push was refused because the issue branch moved on, and starts a fix run of

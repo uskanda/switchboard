@@ -14,7 +14,8 @@ import (
 // have a row number (N), numbered in this order; an open done issue has DoneSince and ChangeURL, the pull or merge
 // request its done post names ("" without one); a running one has RunningSince and Progress, the last line of its
 // progress comment ("?" without one); a queued one has QueuedSince, and Reason names the limit reached (max-parallel,
-// project-max-parallel, or the pause of its host: limit or quota, with QueuedUntil).
+// project-max-parallel, or the pause of its host: limit or quota, with QueuedUntil), or conflict for a conflict fix put
+// back in the queue past its limit (ADR-077).
 type Item struct {
 	N            int        `json:"n,omitempty"`
 	State        string     `json:"state"` // waiting, done, running or queued

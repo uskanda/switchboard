@@ -25,6 +25,9 @@ type texts struct {
 	// The claims of fix runs: of a CI failure (attempt, limit, checks), of a branch that moved on, and of a conflict
 	// with the base (attempt, limit).
 	fixCI, fixPush, fixConflict string
+	// The line a claim adds for a conflict fix taken up from the queue past the fix limit (round, limit), and the
+	// queued comment that put it back there: the title and the text (change request, fixes made, round, limit).
+	fixRequeued, requeueTitle, requeued string
 	// The note of a done issue that waits for its red base (branch, the failed checks of the base).
 	baseNote string
 	// The done post of the base merged once it is green again (branch).
@@ -32,8 +35,9 @@ type texts struct {
 	// The wait after the CI failed for good: the title, the lead (change request, fixes made, limit; or the change
 	// request alone when fixes are off), the headings, and the reply hint.
 	ciTitle, ciFailed, ciNoFixes, ciChecks, ciAttempts, ciAttempt, ciLog, ciReply string
-	// The wait after the change request kept conflicting with its base: the title and the lead, as for the CI.
-	conflictTitle, conflictFailed, conflictNoFixes string
+	// The wait after the change request kept conflicting with its base: the title and the lead, as for the CI, and
+	// the sentence on the times it went back to the queue (times, limit).
+	conflictTitle, conflictFailed, conflictNoFixes, conflictRequeues string
 
 	// The queued comment: on the host's limit (host name, value) or on the project's (value), and on a pause of the
 	// host for a usage limit or the API quota (host name, when it ends).
@@ -141,8 +145,12 @@ var english = texts{
 	fixCI:       "The CI failed, so the agent fixes it (%d/%d): %s",
 	fixPush:     "The push was refused because the issue branch on the remote moved on, so the agent merges it (%d/%d).",
 	fixConflict: "The change request conflicts with the base branch, so the agent merges the base (%d/%d).",
+	fixRequeued: "Taken up from the queue (requeue %d/%d).",
 	baseMerged:  "The CI of the base branch %s passes again, so the agent merged the base into this branch. The CI runs again.",
-	baseNote:    "The CI of the base branch fails as well (%s: %s), so this waits until it passes again. Then the agent merges the base and watches the CI again.",
+
+	requeueTitle: "The conflict fix went back to the queue",
+	requeued:     "%s still conflicts with the base branch after %d automatic fix run(s), so the issue went back to the end of the queue (requeue %d/%d). When its turn comes, the agent fixes the conflict again and counts the fixes from 1.",
+	baseNote:     "The CI of the base branch fails as well (%s: %s), so this waits until it passes again. Then the agent merges the base and watches the CI again.",
 
 	ciTitle:    "The CI still fails",
 	ciFailed:   "The CI of %s failed again after %d automatic fix run(s); the limit is %d.",
@@ -156,6 +164,8 @@ var english = texts{
 	conflictTitle:   "The change request still conflicts with the base branch",
 	conflictFailed:  "%s still conflicts with the base branch after %d automatic fix run(s); the limit is %d.",
 	conflictNoFixes: "%s conflicts with the base branch. Automatic fixes are off (agent.max_fix_attempts is 0).",
+
+	conflictRequeues: "The issue went back to the queue %d time(s) to try again later; the limit is %d.",
 
 	progressTitle:    "Progress of the run",
 	toolSep:          ", ",
@@ -252,8 +262,12 @@ var japanese = texts{
 	fixCI:       "CIが失敗したので直します（%d/%d）：%s",
 	fixPush:     "リモートのissueのブランチが先に進んでいてpushが拒否されたので、取り込んで直します（%d/%d）。",
 	fixConflict: "変更要求がbaseと衝突しているので、baseとの衝突を解消します（%d/%d）。",
+	fixRequeued: "順番待ちから再開しました（入り直し%d/%d）。",
 	baseMerged:  "base（%s）のCIが緑に戻ったので、baseを取り込みました。CIをもう一度見ます。",
-	baseNote:    "baseのCIが失敗しているため、緑に戻るまで待ちます（%s：%s）。緑に戻ったら、baseを取り込んでCIを見直します。",
+
+	requeueTitle: "衝突の直しを順番待ちに回しました",
+	requeued:     "%sは、%d回自動で直した後もbaseと衝突しています。issueを順番待ちの最後尾に戻しました（入り直し%d/%d）。順番が来たら、直す回数を1から数え直して、もう一度衝突を直します。",
+	baseNote:     "baseのCIが失敗しているため、緑に戻るまで待ちます（%s：%s）。緑に戻ったら、baseを取り込んでCIを見直します。",
 
 	ciTitle:    "CIが失敗したままです",
 	ciFailed:   "%sのCIが、%d回自動で直した後も失敗しました。上限は%d回です。",
@@ -267,6 +281,8 @@ var japanese = texts{
 	conflictTitle:   "baseとの衝突が残っています",
 	conflictFailed:  "%sは、%d回自動で直した後もbaseと衝突しています。上限は%d回です。",
 	conflictNoFixes: "%sがbaseと衝突しています。自動で直す設定は切ってあります（agent.max_fix_attemptsが0）。",
+
+	conflictRequeues: "順番待ちに%d回入り直しても解けませんでした。入り直しの上限は%d回です。",
 
 	progressTitle:    "実行の進捗",
 	toolSep:          "・",

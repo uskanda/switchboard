@@ -279,15 +279,19 @@ func TestUntrustedStartLabelOnAQueuedLimitIsNoResume(t *testing.T) {
 	// The resume mark is only the agent's own queued comment of a run; a start label put by someone untrusted next
 	// to an ordinary queued comment does not start anything.
 	pl := thread(agentPost(marker.Marker{V: 1, State: marker.Queued, Reason: marker.QueuedLimit, Until: time.Now()}))
-	if pl.limitResume() != 0 {
+	if id, _ := pl.limitResume(); id != 0 {
 		t.Fatal("a queued comment without a run is a resume mark")
 	}
 	pl = thread(agentPost(marker.Marker{V: 1, State: marker.Queued, Reason: marker.QueuedLimit, Run: "r1", Until: time.Now()}))
-	if pl.limitResume() == 0 {
+	if id, reason := pl.limitResume(); id == 0 || reason != marker.QueuedLimit {
 		t.Fatal("the queued comment of a limited run is no resume mark")
 	}
+	pl = thread(agentPost(marker.Marker{V: 1, State: marker.Queued, Reason: marker.Conflict, Run: "r1"}))
+	if id, reason := pl.limitResume(); id == 0 || reason != marker.Conflict {
+		t.Fatal("the queued comment of a requeued conflict fix is no resume mark")
+	}
 	pl = thread(agentPost(marker.Marker{V: 1, State: marker.Queued, Reason: marker.QueuedLimit, Run: "r1"}), resumed())
-	if pl.limitResume() != 0 {
+	if id, _ := pl.limitResume(); id != 0 {
 		t.Fatal("a resume mark followed by a claim still counts")
 	}
 }

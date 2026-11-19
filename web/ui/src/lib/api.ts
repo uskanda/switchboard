@@ -22,7 +22,7 @@ export type Item = {
   running_since?: string | null;
   /** The last line of the run's progress comment, "?" without one. */
   progress?: string;
-  /** When the issue was queued for a free slot; reason then names the limit reached. */
+  /** When the issue was queued for a free slot; reason then names the limit reached, or conflict for a requeued conflict fix. */
   queued_since?: string | null;
   /** When the pause of the host ends, for an issue queued on one (reason limit or quota). */
   queued_until?: string | null;
@@ -152,10 +152,12 @@ export const plainText = (s: string) => s.replace(/\*\*|__|`/g, "").replace(/^#+
 
 /**
  * queueText says which limit a queued issue waits on: a full slot of the host or the project, or a pause of the host
- * on a usage limit or the API quota, with the time the pause ends (local time) when there is one.
+ * on a usage limit or the API quota, with the time the pause ends (local time) when there is one. A conflict fix put
+ * back in the queue past its limit (reason conflict) waits on no limit, and says so.
  */
 export function queueText(lang: Lang, reason: string, until?: string | null): string {
   const t = queueTexts[lang];
+  if (reason === "conflict") return t.conflict;
   const pause: Record<string, string> = { limit: t.limit, quota: t.quota };
   if (reason in pause) {
     if (!until) return pause[reason];
@@ -171,6 +173,7 @@ const queueTexts = defineMessages({
     quota: "APIのクオータに達しています",
     project: "プロジェクトの上限に達しています",
     host: "端末の上限に達しています",
+    conflict: "衝突の直しを順番待ちに回しています",
     until: (pause: string, day: string, hm: string) => `${pause}（${day} ${hm}まで）`,
   },
   en: {
@@ -178,6 +181,7 @@ const queueTexts = defineMessages({
     quota: "API quota reached",
     project: "Project limit reached",
     host: "Host limit reached",
+    conflict: "Conflict fix requeued",
     until: (pause, day, hm) => `${pause} (until ${day}, ${hm})`,
   },
 });

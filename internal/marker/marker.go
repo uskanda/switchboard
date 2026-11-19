@@ -7,7 +7,9 @@
 // A done post that names a change request carries sha=<the commit pushed> and cr=<its number>; the done post of a fix
 // run also carries fix=<ci|push|conflict|base>, what it fixed. A queued comment on a paused host, and the wait of a fix run
 // that hit a usage limit, carry until=<RFC3339>, when the host starts runs again; the queued comment of a run that hit
-// the limit also names that run (run=), which marks the issue to resume.
+// the limit also names that run (run=), which marks the issue to resume. A change request that kept conflicting past
+// the fix limit is put back in the queue with a queued comment of reason conflict that names a run (run=); the claim of
+// the fix run taken up from it carries requeue=<its round>, from which the fix runs are counted again (ADR-077).
 // Unknown keys are ignored, so that a newer version's marker still parses.
 package marker
 
@@ -30,7 +32,7 @@ type Marker struct {
 	Session string
 	Run     string
 	State   string // running (the claim of a run), progress (its progress comment), queued, waiting, done, attachment, note
-	Reason  string // for waiting: question, permission, error, verify, limit, plan-questions, plan, push, ci, conflict; for queued: the limit or the pause; for running: fix on a fix run's claim, plan-skipped on the claim of a plan run's skip
+	Reason  string // for waiting: question, permission, error, verify, limit, plan-questions, plan, push, ci, conflict; for queued: the limit or the pause, or conflict for a requeued conflict fix; for running: fix on a fix run's claim, plan-skipped on the claim of a plan run's skip
 	Ack     int64  // the last comment ID the run took in
 	At      time.Time
 	Mode    string // on a claim made from a start label: plan, auto or direct; direct on the claim of a plan run's skip
@@ -40,6 +42,8 @@ type Marker struct {
 	Fix     string // on the done post of a fix run: what it fixed (CI, Push, Conflict or Base); empty on any other post
 	// Until, on a queued comment of a paused host or the wait of a fix run that hit a limit: when runs start again.
 	Until time.Time
+	// Requeue, on the claim of a fix run taken up from the queue after the conflict fixes ran out: its round, from 1.
+	Requeue int
 }
 
 // The modes a claim names, and the reasons of the waits in the plan stage.
@@ -129,6 +133,9 @@ func (m Marker) Format() string {
 	if !m.Until.IsZero() {
 		fmt.Fprintf(&b, " until=%s", m.Until.UTC().Format(time.RFC3339))
 	}
+	if m.Requeue != 0 {
+		fmt.Fprintf(&b, " requeue=%d", m.Requeue)
+	}
 	b.WriteString(" -->")
 	return b.String()
 }
@@ -177,6 +184,8 @@ func Parse(body string) (*Marker, bool) {
 			m.Fix = v
 		case "until":
 			m.Until, _ = time.Parse(time.RFC3339, v)
+		case "requeue":
+			m.Requeue, _ = strconv.Atoi(v)
 		}
 	}
 	if m.V < 1 {
