@@ -130,7 +130,7 @@ GitHubには「XをYに置き換える」操作がない。書き込み系APIも
 
 1. detector：ポーリング（既定）または中継SSEで、更新の可能性があるissueを検出して次の段へ渡す。中継モードでも `reconcile_interval` ごとに全担当プロジェクトをポーリングして照合する。中継イベントはissue単位で3秒程度デバウンスする（ラベル変更とコメントは別イベントで届くため）
 2. evaluator：issueを **自分のトークンで** 取得し直し、6章の信頼判定と5.1の遷移表から「やること」を決める。担当外プロジェクト・非信頼入力は理由付きで監査ログに記録して捨てる
-3. scheduler：端末内の同時実行数（`agent.max_parallel`、既定1）とissue単位のファイルロックを管理する。プロジェクトごとの同時実行数（`projects[].max_parallel`）も、設定にあれば守る。空いたスロットは、順番待ちに入った順に渡す。`agent.prefer_plan` がオンなら、計画の実行を先に渡す（ADR-046）。ただし、スロットを待つ直す実行（衝突、CIの失敗の順）が、順番待ちより先に受け取る（ADR-054）。利用上限か、API利用のクオータ（`quota`）に達したら、その端末の新規実行を解除時刻まで止め、その間のissueは順番待ちとする（ADR-053）〔検証V12〕
+3. scheduler：端末内の同時実行数（`agent.max_parallel`、既定1）とissue単位のファイルロックを管理する。プロジェクトごとの同時実行数（`projects[].max_parallel`）も、設定にあれば守る。空いたスロットは、順番待ちに入った順に渡す。`agent.prefer_plan` がオンなら、計画の実行を先に渡す（ADR-046）。ただし、スロットを待つ直す実行（衝突、CIの失敗の順）が、順番待ちより先に受け取る（ADR-054）。衝突の直しが上限を超えて順番待ちに入り直したissueは、順番待ちの最後尾に並ぶ（ADR-077）。利用上限か、API利用のクオータ（`quota`）に達したら、その端末の新規実行を解除時刻まで止め、その間のissueは順番待ちとする（ADR-053）〔検証V12〕
 4. runner：worktreeを用意し `claude -p` を起動・監視する（4.4）
 5. finalizer：終了プロトコルを解釈し（5章）、出力検査 → push・PR → コメント → ラベルの順で書き戻す。書き戻しは冪等（同じrunの結果を二重投稿しない：コメント本文のマーカーに `run=` を入れ、投稿前に同じrunのマーカーがないか確認する）
 
@@ -276,6 +276,8 @@ ADR-007（公開方法）は、当面は公開しないと決めた。ADR-060で
 | running | 実行終了 | outcome = done / 出力検査 OK | push → PR 作成 → 結果コメント | done |
 | running | 実行終了 | outcome なし・異常終了・タイムアウト・max-turns・出力検査 NG | 理由をコメント | waiting（reason=error / verify） |
 | running | 実行終了 | 利用上限（直す実行を除く） | 端末の scheduler を解除時刻まで停止、解除予定を順番待ちのコメント（`reason=limit run=<実行> until=<時刻>`）で知らせる（ADR-053） | ready（順番待ち。解除後に同じ周期で再開） |
+| done | 衝突の見張り | 衝突を直す回数が `agent.max_fix_attempts` を超えた / 順番待ちへの入り直しが同じ上限未満 | 順番待ちのコメント（`reason=conflict run=<id>`）を付け、順番待ちの最後尾に入れる。順番が来たら、着手（`reason=fix requeue=<番号>`）で衝突を直す実行を始める（ADR-077） | ready（順番待ち） |
+| done | 衝突の見張り | 衝突を直す回数と順番待ちへの入り直しが、どちらも上限に達した | 直した回数、各回の要約、入り直した回数をコメント | waiting（reason=conflict） |
 | running | 実行終了 | 直す実行が利用上限 | 端末の scheduler を停止、理由と解除予定をコメント（`until` 付き、直す回数に数えない） | waiting（reason=error） |
 | running | 実行中 | close された / `agent:running` が外された | プロセス停止、キャンセルを記録（ラベルは触らない） | （人間の操作のまま） |
 | waiting | 新着コメント | `ack` より後に信頼済みコメントがある / 担当端末が自分 / worktree の Claude 設定ファイルがベースと一致（ADR-018） / ロック取得 | ラベル付け替え → resume または新規起動 | running |
@@ -383,7 +385,8 @@ CI設定の変更を止める理由：pushしただけでCIが走るため、CI�
 |---|---|---|
 | `host` `session` `state` `at` | 既存 | SPEC.md 5 章のとおり |
 | `run` | 追加 | 実行ID（ULID）。finalizer の二重投稿防止と監査ログとの突合 |
-| `reason` | 追加 | waiting の理由：`question` / `permission` / `error` / `verify` ほか。queued の理由：`max-parallel` / `project-max-parallel` / `limit` / `quota`（ADR-053） |
+| `reason` | 追加 | waiting の理由：`question` / `permission` / `error` / `verify` ほか。queued の理由：`max-parallel` / `project-max-parallel` / `limit` / `quota`（ADR-053）、衝突の直しが上限を超えて入り直した `conflict`（ADR-077） |
+| `requeue` | 追加 | 衝突の直しが上限を超えて順番待ちに入り直し、そこから再開した直す実行の着手に付く、入り直しの番号（1から）。直す回数はこの着手から数え直す（ADR-077） |
 | `until` | 追加 | 端末が新しい実行を再び始める時刻。上限とクオータの順番待ちと、上限で止まった直す実行の待ちに付く（ADR-053） |
 | `ack` | 追加 | この実行が取り込んだ最後のコメントID（5.3） |
 

@@ -67,6 +67,7 @@ ready ──▶ running ──▶ waiting ──(信頼済みコメント)──
 - doneからrunningへ：openのまま `agent:done` のissueに、エージェントのdoneの投稿より後で信頼済みのコメントが付くと、作業を再開する。PR/MRは開いたものを使い続ける。closeすると受信箱から消える（ADR-042）
 - ラベルは常に 1 つだけ付く（付け替えはエージェント側で原子的に行う）
 - `agent:done` のissueでも、エージェントがpushしたコミットのCIが失敗したら、エージェントが `agent:running` に戻して直す（ADR-041）。上限まで直しても失敗したら `agent:waiting`
+- PR/MRがbaseと衝突したときも、エージェントが直す（ADR-044）。上限まで直しても衝突が残ったら、`agent:ready` に戻して順番待ちの最後尾に入れ、順番が来たらもう一度直す。入り直しも上限に達したら `agent:waiting`（ADR-077）
 - 人間が `agent:ready` を外す・issue を close した場合は実行を止める
 
 ## 5. メタデータ埋め込み

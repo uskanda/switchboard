@@ -14,13 +14,13 @@
 
 ## 3. 受信箱の表示
 
-- [ ] 3.1 `queueText.test.ts`に`reason=conflict`の文の失敗するテストを書き、`queueText`に足して通す。`inboxapi`のコメントにreasonの値を足す
+- [x] 3.1 `queueText.test.ts`に`reason=conflict`の文の失敗するテストを書き、`queueText`に足して通す。`inboxapi`のコメントにreasonの値を足す
 
 ## 4. 文書
 
-- [ ] 4.1 `docs/DECISIONS.md`にADR-077を足し、ADR-054と衝突の待ちのADRから参照する
-- [ ] 4.2 `docs/DESIGN.md`のマーカーの表、`docs/GUIDE.md`と`docs/GUIDE.ja.md`の直す回数と順番待ちの節、`docs/SPEC.md`の該当箇所を直す
+- [x] 4.1 `docs/DECISIONS.md`にADR-077を足し、ADR-054と衝突の待ちのADRから参照する
+- [x] 4.2 `docs/DESIGN.md`のマーカーの表、`docs/GUIDE.md`と`docs/GUIDE.ja.md`の直す回数と順番待ちの節、`docs/SPEC.md`の該当箇所を直す
 
 ## 5. 全体の確認
 
-- [ ] 5.1 `make verify`と`openspec validate requeue-conflict-fixes --strict`が通ることを確かめる
+- [x] 5.1 `make verify`と`openspec validate requeue-conflict-fixes --strict`が通ることを確かめる
